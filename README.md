@@ -1,6 +1,4 @@
-
-
-[enhanced_readme.md](https://github.com/user-attachments/files/23962268/enhanced_readme.md)
+[enhanced_readme.md](https://github.com/user-attachments/files/23962357/enhanced_readme.md)
 # LiFePO4 Battery Banks: Architectural Immunity Study
 
 ## Overview
@@ -71,29 +69,34 @@ Result: Voltage spread maintained at **20-40mV at rest** despite different manuf
 
 ## 📊 Download Reports & Data
 
+**👉 All files available on the [Releases page](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/releases)**
+
 ### Reports (PDF)
 
-📘 **[Master Battery Bank Report v5.0](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/releases/download/lifepo4/Master.Battery.Bank.Report.Dec.4.2025.pdf)** (48 pages)
+📘 **Master Battery Bank Report v5.0** (48 pages)
 - Complete discharge test protocol and results  
 - 10.5-hour capacity validation (397Ah delivered)  
 - Long-term monitoring analysis (39 days)  
 - Economic analysis and maintenance schedule  
 - **Start here** for comprehensive overview
+- [Download from Releases →](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/releases/tag/lifepo4)
 
-🔬 **[Architectural Immunity Report](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/releases/download/Parallel_Battery_Bank/12V.500Ah.LiFePO.Parallel.Bank.-.Architectural.Immunity.Report.pdf)** (7 pages)
+🔬 **Architectural Immunity Report** (7 pages)
 - Scientific analysis of parallel topology benefits  
 - Statistical validation (p<0.001 for voltage stability)  
 - Physical mechanisms explained (Kirchhoff damping, etc.)  
 - **Six-step replication protocol** for independent verification  
 - **Read this** for theoretical framework
+- [Download from Releases →](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/releases/tag/Parallel_Battery_Bank)
 
 ### Raw Data (CSV)
 
-📈 **[Raw Voltage Monitoring Data](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/releases/download/Voltage_Data_Set/combined_output.csv)** (936 hourly samples)
+📈 **Raw Voltage Monitoring Data** (936 hourly samples)
 - Complete 39-day voltage logs: Oct 26 – Dec 3, 2025  
 - Columns: timestamp, min_voltage, max_voltage, avg_voltage  
 - Captured: Surface charge dissipation, self-discharge, thermal events  
 - **Use this** for independent analysis and validation
+- [Download from Releases →](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/releases/tag/Voltage_Data_Set)
 
 ---
 
