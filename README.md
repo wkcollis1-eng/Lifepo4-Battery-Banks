@@ -73,7 +73,7 @@ Result: Voltage spread maintained at **20-40mV at rest** despite different manuf
 
 ### Reports (PDF)
 
-📘 **Master Battery Bank Report v5.0** (48 pages)
+📘 **Master Battery Bank Report v5.0** (13 pages)
 - Complete discharge test protocol and results  
 - 10.5-hour capacity validation (397Ah delivered)  
 - Long-term monitoring analysis (39 days)  
