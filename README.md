@@ -399,5 +399,21 @@ This project is licensed under [CC BY 4.0](https://creativecommons.org/licenses/
 **Repository:** [github.com/wkcollis1-eng/Lifepo4-Battery-Banks](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks)
 
 ---
+## ⭐ Support This Project — LiFePO₄ Battery Banks
+
+This repository contains a long-term, empirical study of a 12 V 500 Ah LiFePO₄ battery bank, including high-frequency telemetry, turbulence metrics, drift analysis, and reproducible reporting pipelines. All releases are archived with DOIs through Zenodo for permanent accessibility and citation.
+
+If this project has helped you understand, diagnose, or optimize your own LiFePO₄ system — or if you want to support open, measurement-based energy research — consider sponsoring the work:
+
+**👉 [Become a Sponsor](https://github.com/sponsors/wkcollis1-eng)**  
+**👉 [Buy Me a Coffee](https://www.buymeacoffee.com/wkcollis)**  
+
+Your support helps fund:
+- Expanded long-term measurement campaigns  
+- New diagnostics and modeling tools  
+- Improved reproducible pipelines (GitHub Actions, dashboards, automation)  
+- Publication-grade reports and open educational materials  
+
+Thank you for supporting open, empirical battery research.
 
 *Last updated: January 10, 2026*
