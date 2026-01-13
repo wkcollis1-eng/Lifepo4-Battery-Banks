@@ -1,5 +1,6 @@
 # LiFePO₄ Battery Bank: Architectural Immunity Study
 
+[![DOI](https://zenodo.org/badge/1110266162.svg)](https://doi.org/10.5281/zenodo.18232628)
 [![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
 [![Data: Available](https://img.shields.io/badge/Data-Available-green.svg)](Data/)
 [![Status: Active](https://img.shields.io/badge/Status-Active%20Research-blue.svg)](#update-history)
