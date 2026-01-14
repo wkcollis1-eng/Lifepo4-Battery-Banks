@@ -1,0 +1,18 @@
+Metric,Value
+Analysis Date,2026-01-14 00:08
+Data Period,2025-10-29 to 2026-01-11
+Total Days,74
+Total Hours,1742
+Missing Hours,58
+Missing After Dec 1,0
+Voltage Range (V),12.610 - 14.570
+Current Voltage (V),13.230
+Eco Mode Shift (mV),-6.2
+Parasitic Current (mA),13.3 ± 4.5
+Current SOC (%),95.9 ± 3
+Temperature Mean (°F),54.6
+Temperature Daily Swing (°F),0.20
+MA-60 Noise Reduction (%),51.2
+Raw Voltage Std Dev (mV),10.30
+MA-60 Voltage Std Dev (mV),5.03
+Recent Envelope Mean (mV),45.6
