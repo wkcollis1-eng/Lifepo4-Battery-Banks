@@ -44,9 +44,7 @@ This folder contains the raw and processed datasets for the LiFePO₄ battery mo
 
 ---
 
-### `high_freq/` — High-Frequency Voltage Data
-
-Due to file size (~25+ MB combined), high-frequency data is distributed via [GitHub Releases](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/releases).
+### `history.csv` — High-Frequency Voltage Data
 
 | Column | Type | Unit | Description |
 |--------|------|------|-------------|
@@ -54,23 +52,12 @@ Due to file size (~25+ MB combined), high-frequency data is distributed via [Git
 | `state` | float | V | Instantaneous voltage reading |
 | `last_changed` | datetime | ISO 8601 UTC | Timestamp of measurement |
 
-**Coverage:** Dec 26, 2025 → Feb 1, 2026  
-**Records:** ~328,000 (combined from multiple exports)  
+**Coverage:** Jan 27, 2026 → Feb 1, 2026 (partial; see releases for full HF data)  
+**Records:** ~67,000 in this file  
 **Cadence:** ~3 seconds median (variable; gaps inflate mean to ~10s)  
 **Source:** Shelly Plus Uni voltmeter, state-change logging
 
-**Note:** Some files contain hourly pre-aggregated means (identified by timestamps at :00:00.000Z); raw sub-minute samples have millisecond-resolution timestamps.
-
----
-
-## Missingness & Gaps
-
-- **Hourly data:** No significant gaps; continuous coverage
-- **Temperature data:** Starts Dec 29 (sensor added mid-study)
-- **High-frequency data:** Variable gaps due to:
-  - Home Assistant state-change-only logging (no change = no record)
-  - Export window boundaries
-  - Brief network interruptions
+**Note:** For the complete high-frequency dataset (~328,000 samples, Dec 26 2025 → Feb 1 2026), see [GitHub Releases](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/releases).
 
 ---
 
@@ -100,8 +87,8 @@ temp = pd.read_csv('data/combined_temperature.csv')
 temp['datetime'] = pd.to_datetime(temp['Date'] + ' ' + temp['Time'], 
                                    format='%d/%m/%Y %H:%M')
 
-# High-frequency (from release download)
-hf = pd.read_csv('data/high_freq/history.csv')
+# High-frequency
+hf = pd.read_csv('data/history.csv')
 hf.columns = ['entity_id', 'voltage', 'timestamp']
 hf['timestamp'] = pd.to_datetime(hf['timestamp'])
 ```
