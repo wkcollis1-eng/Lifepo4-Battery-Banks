@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+title: "LiFePO₄ Battery Bank: Architectural Immunity & Long-Term Storage Study"
+message: "If you use this data or methodology, please cite as below."
+type: dataset
+authors:
+  - family-names: Collis
+    given-names: William K.
+    orcid: ""
+repository-code: "https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks"
+url: "https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks"
+doi: "10.5281/zenodo.14538065"
+license: CC-BY-4.0
+version: "2026-01-31"
+date-released: "2026-02-01"
+keywords:
+  - LiFePO4
+  - battery
+  - energy storage
+  - DIY
+  - monitoring
+  - parallel configuration
+abstract: >-
+  Long-term monitoring study of a DIY 12V 500Ah LiFePO₄ battery bank 
+  demonstrating "architectural immunity" - the principle that parallel-connected 
+  mixed-brand cells achieve monolithic behavior through topology. Includes 
+  94+ days of continuous voltage monitoring, discharge testing, and 
+  storage viability analysis.
