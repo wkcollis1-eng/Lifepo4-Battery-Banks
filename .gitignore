@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Output artifacts (regenerate via scripts)
+*.log
+temp/
+scratch/
+
+# Large data files (use releases for HF data)
+data/high_freq/*.csv
+
+# Local config
+.env
+*.local
