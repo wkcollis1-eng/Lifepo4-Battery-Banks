@@ -6,7 +6,7 @@
 [![Data: Open](https://img.shields.io/badge/Data-Open%20Access-green.svg)](data/)
 [![Last Updated](https://img.shields.io/badge/Data%20Through-Jan%2031%2C%202026-blue.svg)](reports/)
 
-<a href="https://www.buymeacoffee.com/wkcollis1" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="40"></a>
+<a href="https://www.buymeacoffee.com/wkcollis" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="40"></a>
 
 ---
 
