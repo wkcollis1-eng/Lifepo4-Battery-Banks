@@ -1,6 +1,6 @@
 # LiFePO₄ Battery Bank: Architectural Immunity & Long-Term Storage Study
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.14538065.svg)](https://doi.org/10.5281/zenodo.14538065)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18452542.svg)](https://doi.org/10.5281/zenodo.18452542)
 [![License: CC BY 4.0](https://img.shields.io/badge/Data-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
 [![License: MIT](https://img.shields.io/badge/Code-MIT-blue.svg)](LICENSE-CODE)
 [![Data: Open](https://img.shields.io/badge/Data-Open%20Access-green.svg)](data/)
