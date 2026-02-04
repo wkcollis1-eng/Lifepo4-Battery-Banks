@@ -110,11 +110,11 @@ System-level coefficient of **+1.0 ± 0.3 mV/°F** (pack + measurement chain com
 ```bibtex
 @misc{collis2026lifepo4,
   author       = {Collis, William K.},
-  title        = {{LiFePO₄ Battery Bank: Architectural Immunity & Long-Term Storage Study}},
+  title        = {LiFePO4 Battery Bank: Architectural Immunity \& Long-Term Storage Study},
   year         = {2026},
-  publisher    = {GitHub},
-  doi          = {10.5281/zenodo.14538065},
-  url          = {https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks}
+  doi          = {10.5281/zenodo.18452542},
+  url          = {https://doi.org/10.5281/zenodo.18452542},
+  note         = {GitHub repository: https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks}
 }
 ```
 
