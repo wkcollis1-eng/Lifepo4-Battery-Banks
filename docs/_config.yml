@@ -1,0 +1,46 @@
+# Jekyll configuration for GitHub Pages
+# Site served from /docs folder
+
+title: LiFePO₄ Battery Bank Study
+description: >-
+  Architectural Immunity & Long-Term Storage Analysis: 
+  94+ days of continuous monitoring of a DIY 12V 500Ah LiFePO₄ battery bank.
+baseurl: "/Lifepo4-Battery-Banks"
+url: "https://wkcollis1-eng.github.io"
+
+# Theme
+remote_theme: pages-themes/cayman@v0.2.0
+plugins:
+  - jekyll-remote-theme
+
+# Build settings
+markdown: kramdown
+highlighter: rouge
+
+# Exclude from processing
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - README.md
+
+# Default layout
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: "default"
+
+# Navigation (for themes that support it)
+navigation:
+  - title: Home
+    url: /
+  - title: Report
+    url: https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/blob/main/reports/LiFePO4_Report_2026-01-31.md
+  - title: Methodology
+    url: /methodology
+  - title: Replication
+    url: /replication
+  - title: FAQ
+    url: /faq
+  - title: GitHub
+    url: https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks
