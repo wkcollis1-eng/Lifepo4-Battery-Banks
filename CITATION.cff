@@ -5,7 +5,6 @@ type: dataset
 authors:
   - family-names: Collis
     given-names: William K.
-    orcid: ""
 repository-code: "https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks"
 url: "https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks"
 doi: "10.5281/zenodo.14538065"
@@ -16,12 +15,20 @@ keywords:
   - LiFePO4
   - battery
   - energy storage
-  - DIY
+  - DIY solar
   - monitoring
   - parallel configuration
+  - architectural immunity
+  - home-assistant
+  - shelly
+  - open data
+  - reproducible research
+  - time series analysis
 abstract: >-
   Long-term monitoring study of a DIY 12V 500Ah LiFePO₄ battery bank 
-  demonstrating "architectural immunity" - the principle that parallel-connected 
-  mixed-brand cells achieve monolithic behavior through topology. Includes 
-  94+ days of continuous voltage monitoring, discharge testing, and 
-  storage viability analysis.
+  demonstrating "architectural immunity" — the principle that parallel-connected 
+  mixed-brand cells achieve monolithic behavior through topology rather than 
+  cell matching. This dataset includes 94+ days of continuous voltage monitoring, 
+  ~328,000 high-frequency samples, temperature correlation analysis, and 
+  storage viability projections. The study validates 99.3% usable capacity 
+  (397 Ah) and projects 7–10 months to 80% SOC under typical parasitic loads.
