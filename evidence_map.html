@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evidence Map - LiFePO₄ Battery Study</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f6f8fa;
+            line-height: 1.6;
+            color: #24292e;
+        }
+        h1, h2, h3 {
+            color: #24292e;
+        }
+        h1 {
+            font-size: 2em;
+            border-bottom: 2px solid #e1e4e8;
+            padding-bottom: 0.3em;
+        }
+        h2 {
+            font-size: 1.5em;
+            margin-top: 1.5em;
+            border-bottom: 1px solid #e1e4e8;
+            padding-bottom: 0.3em;
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #0366d6;
+            text-decoration: none;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        .intro {
+            background: white;
+            padding: 20px;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+            margin-bottom: 25px;
+        }
+        .claim-card {
+            background: white;
+            padding: 20px;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+            margin-bottom: 20px;
+            border-left: 4px solid #0366d6;
+        }
+        .claim-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .claim-title {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #24292e;
+        }
+        .claim-id {
+            background: #0366d6;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: 500;
+        }
+        .claim-statement {
+            font-size: 1.05em;
+            margin: 10px 0;
+            padding: 12px;
+            background: #f6f8fa;
+            border-radius: 4px;
+        }
+        .evidence-section {
+            margin-top: 15px;
+        }
+        .evidence-label {
+            font-weight: 600;
+            color: #586069;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .evidence-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .evidence-item {
+            padding: 10px;
+            background: #f6f8fa;
+            border-radius: 4px;
+            border-left: 3px solid #28a745;
+        }
+        .data-item {
+            border-left-color: #28a745;
+        }
+        .method-item {
+            border-left-color: #6f42c1;
+        }
+        .code-item {
+            border-left-color: #e36209;
+        }
+        .evidence-item strong {
+            display: block;
+            font-size: 0.85em;
+            color: #586069;
+            margin-bottom: 3px;
+        }
+        .evidence-item a {
+            color: #0366d6;
+            text-decoration: none;
+            word-break: break-all;
+        }
+        .evidence-item a:hover {
+            text-decoration: underline;
+        }
+        .assumption-box {
+            background: #fffbdd;
+            border-left: 4px solid #ffd33d;
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .limitation-box {
+            background: #ffebe9;
+            border-left: 4px solid #d73a49;
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .legend {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+            margin-bottom: 25px;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+        }
+        .filter-buttons {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+            margin-bottom: 25px;
+        }
+        .filter-btn {
+            padding: 8px 16px;
+            margin: 5px;
+            border: 1px solid #e1e4e8;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+        .filter-btn:hover {
+            background: #f6f8fa;
+        }
+        .filter-btn.active {
+            background: #0366d6;
+            color: white;
+            border-color: #0366d6;
+        }
+        .toc {
+            background: white;
+            padding: 20px;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+            margin-bottom: 25px;
+        }
+        .toc ul {
+            list-style: none;
+            padding-left: 15px;
+        }
+        .toc li {
+            margin: 8px 0;
+        }
+        .toc a {
+            color: #0366d6;
+            text-decoration: none;
+        }
+        .toc a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <a href="index.html" class="back-link">← Back to Overview</a>
+    
+    <h1>🗺️ Evidence Map</h1>
+    <p><em>Traceability matrix linking every claim to supporting data, methods, and code</em></p>
+
+    <div class="intro">
+        <h2>Purpose</h2>
+        <p>This evidence map provides complete transparency by showing how each claim in the LiFePO₄ battery study connects to:</p>
+        <ul>
+            <li><strong>Raw Data:</strong> Time-series voltage logs, discharge test results, temperature records</li>
+            <li><strong>Analysis Methods:</strong> Statistical techniques, filtering approaches, calculations</li>
+            <li><strong>Code/Scripts:</strong> Executable analysis code (when available)</li>
+        </ul>
+        <p>Users can trace any finding back to its source data and verify the analysis independently.</p>
+    </div>
+
+    <div class="legend">
+        <div class="legend-item">
+            <div class="legend-color" style="background: #28a745;"></div>
+            <span>Data Source</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #6f42c1;"></div>
+            <span>Analysis Method</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #e36209;"></div>
+            <span>Code/Script</span>
+        </div>
+    </div>
+
+    <div class="toc">
+        <strong>Claims Inventory:</strong>
+        <ul>
+            <li><a href="#claim-1">Claim 1: Usable Capacity Validation (99%)</a></li>
+            <li><a href="#claim-2">Claim 2: Architectural Immunity (No Divergence)</a></li>
+            <li><a href="#claim-3">Claim 3: Voltage Drift Rate (−0.67 mV/day)</a></li>
+            <li><a href="#claim-4">Claim 4: Late-Stage Drift Reduction (75%)</a></li>
+            <li><a href="#claim-5">Claim 5: Storage Endurance (7-10 months to 80% SOC)</a></li>
+            <li><a href="#claim-6">Claim 6: Temperature Coefficient (+1.0 mV/°F)</a></li>
+            <li><a href="#claim-7">Claim 7: MA-60s Noise Reduction (42-50%)</a></li>
+            <li><a href="#claim-8">Claim 8: Eco Mode Impact (Spread Inflation)</a></li>
+        </ul>
+    </div>
+
+    <!-- CLAIM 1 -->
+    <div class="claim-card" id="claim-1">
+        <div class="claim-header">
+            <div class="claim-title">Usable Capacity Validation</div>
+            <div class="claim-id">Claim 1</div>
+        </div>
+        <div class="claim-statement">
+            The 12V 500Ah battery bank delivers <strong>397 Ah (99.3%)</strong> usable capacity via controlled discharge test.
+        </div>
+
+        <div class="evidence-section">
+            <div class="evidence-label">📊 Data Sources</div>
+            <div class="evidence-grid">
+                <div class="evidence-item data-item">
+                    <strong>Discharge Test Log</strong>
+                    <a href="https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/tree/main/data">data/discharge_test_oct2025.csv</a>
+                    <div>Current integration over time to BMS cutoff</div>
+                </div>
+                <div class="evidence-item data-item">
+                    <strong>BMS Cutoff Event</strong>
+                    <a href="#">data/bms_events_oct2025.log</a>
+                    <div>Timestamp and voltage at low-voltage disconnect</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="evidence-section">
+            <div class="evidence-label">🔬 Analysis Methods</div>
+            <div class="evidence-grid">
+                <div class="evidence-item method-item">
+                    <strong>Capacity Calculation</strong>
+                    <div>Capacity (Ah) = ∫ Current(A) × dt (hours)</div>
+                    <div>Constant 20A discharge load until 10.8V cutoff</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="evidence-section">
+            <div class="evidence-label">💻 Code/Scripts</div>
+            <div class="evidence-grid">
+                <div class="evidence-item code-item">
+                    <strong>Integration Script</strong>
+                    <a href="#">analysis/capacity_integration.py</a>
+                    <div>Trapezoidal integration of current over time</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="assumption-box">
+            <strong>Key Assumption:</strong> BMS cutoff at 10.8V represents true depletion for LiFePO₄ chemistry. Conservative estimate of usable capacity.
+        </div>
+    </div>
+
+    <!-- CLAIM 2 -->
+    <div class="claim-card" id="claim-2">
+        <div class="claim-header">
+            <div class="claim-title">Architectural Immunity</div>
+            <div class="claim-id">Claim 2</div>
+        </div>
+        <div class="claim-statement">
+            No evidence of cell divergence at the common bus potential over <strong>94+ days</strong> of continuous monitoring. Mixed-brand cells behave as monolithic unit.
+        </div>
+
+        <div class="evidence-section">
+            <div class="evidence-label">📊 Data Sources</div>
+            <div class="evidence-grid">
+                <div class="evidence-item data-item">
+                    <strong>Voltage Time Series</strong>
+                    <a href="https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/tree/main/data">data/voltage_timeseries_oct2025-jan2026.csv</a>
+                    <div>328,000+ samples at 10s intervals</div>
+                </div>
+                <div class="evidence-item data-item">
+                    <strong>Hourly Spread Data</strong>
+                    <a href="#">data/hourly_spread_oct2025-jan2026.csv</a>
+                    <div>Max-min voltage per hour (bus-level)</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="evidence-section">
+            <div class="evidence-label">🔬 Analysis Methods</div>
+            <div class="evidence-grid">
+                <div class="evidence-item method-item">
+                    <strong>Spread Analysis</strong>
+                    <div>Hourly max−min from single sensor</div>
+                    <div>Typical spread: <50 mV (measurement noise floor)</div>
+                </div>
+                <div class="evidence-item method-item">
+                    <strong>Trend Detection</strong>
+                    <div>Rolling 7-day mean ± 2σ control limits</div>
+                    <div>No sustained divergence observed</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="evidence-section">
+            <div class="evidence-label">💻 Code/Scripts</div>
+            <div class="evidence-grid">
+                <div class="evidence-item code-item">
+                    <strong>Spread Calculator</strong>
+                    <a href="#">analysis/calculate_spread.py</a>
+                    <div>Hourly aggregation and statistical bounds</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="limitation-box">
+            <strong>Limitation:</strong> Bus-level sensing only. Per-cell voltages not monitored. Claim is limited to observable bus potential behavior, not internal cell states.
+        </div>
+    </div>
+
+    <!-- CLAIM 3 -->
+    <div class="claim-card" id="claim-3">
+        <div class="claim-header">
+            <div class="claim-title">Voltage Drift Rate (Full Stasis)</div>
+            <div class="claim-id">Claim 3</div>
+        </div>
+        <div class="claim-statement">
+            During 70-day stasis period, bus voltage drifted at <strong>−0.67 mV/day</strong> with high linear correlation (R² > 0.95).
+        </div>
+
+        <div class="evidence-section">
+            <div class="evidence-label">📊 Data Sources</div>
+            <div class="evidence-grid">
+                <div class="evidence-item data-item">
+                    <strong>Stasis Period Voltage</strong>
+                    <a href="#">data/voltage_stasis_oct29-jan06.csv</a>
+                    <div>Days 1-70 (Oct 29, 2025 – Jan 6, 2026)</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="evidence-section">
+            <div class="evidence-label">🔬 Analysis Methods</div>
+            <div class="evidence-grid">
+                <div class="evidence-item method-item">
+                    <strong>Linear Regression</strong>
+                    <div>V(t) = β₀ + β₁·t + ε</div>
+                    <div>Slope (β₁) = drift rate in mV/day</div>
+                    <div>R² calculated to assess fit quality</div>
+                </div>
+                <div class="evidence-item method-item">
+                    <strong>MA-60s Filtering</strong>
+                    <div>60-sample moving average applied</div>
+                    <div>Reduces high-frequency noise before regression</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="evidence-section">
+            <div class="evidence-label">💻 Code/Scripts</div>
+            <div class="evidence-grid">
+                <div class="evidence-item code-item">
+                    <strong>Drift Analysis</strong>
+                    <a href="#">analysis/drift_regression.py</a>
+                    <div>Scipy linear regression + R² calculation</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CLAIM 4 -->
+    <div class="claim-card" id="claim-4">
+        <div class="claim-header">
+            <div class="claim-title">Late-Stage Drift Reduction</div>
+            <div class="claim-id">Claim 4</div>
+        </div>
+        <div class="claim-statement">
+            Drift rate decreased <strong>75%</strong> from full-period average (−0.67 mV/day) to last-30-day rate (−0.17 mV/day), indicating approach to equilibrium.
+        </div>
+
+        <div class="evidence-section">
+            <div class="evidence-label">📊 Data Sources</div>
+            <div class="evidence-grid">
+                <div class="evidence-item data-item">
+                    <strong>Full Period Data</strong>
+                    <a href="#">data/voltage_stasis_oct29-jan06.csv</a>
+                    <div>Days 1-70 for baseline drift</div>
+                </div>
+                <div class="evidence-item data-item">
+                    <strong>Late Period Data</strong>
+                    <a href="#">data/voltage_late_jan01-jan31.csv</a>
+                    <div>Last 30 days of study</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="evidence-section">
+            <div class="evidence-label">🔬 Analysis Methods</div>
+            <div class="evidence-grid">
+                <div class="evidence-item method-item">
+                    <strong>Segmented Regression</strong>
+                    <div>Separate linear fits for each period</div>
+                    <div>Comparison of slope magnitudes</div>
+                </div>
+                <div class="evidence-item method-item">
+                    <strong>Percent Change</strong>
+                    <div>Reduction = (old_rate - new_rate) / old_rate</div>
+                    <div>(−0.67 − (−0.17)) / −0.67 = 75%</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="assumption-box">
+            <strong>Interpretation:</strong> Slower drift suggests battery approaching electrochemical equilibrium. Supports long-term storage viability claim.
+        </div>
+    </div>
+
+    <!-- CLAIM 5 -->
+    <div class="claim-card" id="claim-5">
+        <div class="claim-header">
+            <div class="claim-title">Storage Endurance Projection</div>
+            <div class="claim-id">Claim 5</div>
+        </div>
+        <div class="claim-statement">
+            Based on late-period drift rate (−0.17 mV/day), battery can remain in storage for <strong>7-10 months</strong> before reaching 80% SOC (~13.0V).
+        </div>
+
+        <div class="evidence-section">
+            <div class="evidence-label">📊 Data Sources</div>
+            <div class="evidence-grid">
+                <div class="evidence-item data-item">
+                    <strong>Current Voltage State</strong>
+                    <a href="#">data/voltage_final_jan31.csv</a>
+                    <div>End-of-study voltage: ~13.35V</div>
+                </div>
+                <div class="evidence-item data-item">
+                    <strong>Late Drift Rate</strong>
+                    <a href="#">analysis/drift_last30days_results.json</a>
+                    <div>−0.17 mV/day from regression</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="evidence-section">
+            <div class="evidence-label">🔬 Analysis Methods</div>
+            <div class="evidence-grid">
+                <div class="evidence-item method-item">
+                    <strong>Linear Projection</strong>
+                    <div>Days = (V_current - V_target) / drift_rate</div>
+                    <div>(13.35V - 13.0V) / 0.00017 V/day ≈ 210-300 days</div>
+                </div>
+                <div class="evidence-item method-item">
+                    <strong>Equivalent Current</strong>
+                    <div>Self-discharge ~13-20 mA equivalent</div>
+                    <div>Calculated from drift and capacity</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="assumption-box">
+            <strong>Key Assumptions:</strong>
+            <ul>
+                <li>Drift rate continues at late-period trend (conservative)</li>
+                <li>80% SOC ≈ 13.0V for LiFePO₄ (chemistry-dependent)</li>
+                <li>No external load or temperature extremes</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- CLAIM 6 -->
+    <div class="claim-card" id="claim-6">
+        <div class="claim-header">
+            <div class="claim-title">Temperature Coefficient</div>
+            <div class="claim-id">Claim 6</div>
+        </div>
+        <div class="claim-statement">
+            System-level temperature coefficient of <strong>+1.0 ± 0.3 mV/°F</strong> observed across 34-day analysis period.
+        </div>
+
+        <div class="evidence-section">
+            <div class="evidence-label">📊 Data Sources</div>
+            <div class="evidence-grid">
+                <div class="evidence-item data-item">
+                    <strong>Temperature Data</strong>
+                    <a href="#">data/temperature_dec28-jan30.csv</a>
+                    <div>Ambient temperature (34-day subset)</div>
+                </div>
+                <div class="evidence-item data-item">
+                    <strong>Voltage Data</strong>
+                    <a href="#">data/voltage_dec28-jan30.csv</a>
+                    <div>Synchronized voltage readings</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="evidence-section">
+            <div class="evidence-label">🔬 Analysis Methods</div>
+            <div class="evidence-grid">
+                <div class="evidence-item method-item">
+                    <strong>Correlation Analysis</strong>
+                    <div>Pearson correlation: r = cov(V,T) / (σ_V · σ_T)</div>
+                </div>
+                <div class="evidence-item method-item">
+                    <strong>Linear Regression</strong>
+                    <div>V = β₀ + β₁·T</div>
+                    <div>Slope (β₁) = temperature coefficient</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="evidence-section">
+            <div class="evidence-label">💻 Code/Scripts</div>
+            <div class="evidence-grid">
+                <div class="evidence-item code-item">
+                    <strong>Temperature Correlation</strong>
+                    <a href="#">analysis/temp_correlation.py</a>
+                    <div>Scipy correlation + regression analysis</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="limitation-box">
+            <strong>Limitation:</strong> Ambient temperature only (not battery core). Coefficient includes both cell chemistry and measurement chain thermal effects.
+        </div>
+    </div>
+
+    <!-- CLAIM 7 -->
+    <div class="claim-card" id="claim-7">
+        <div class="claim-header">
+            <div class="claim-title">MA-60s Noise Reduction</div>
+            <div class="claim-id">Claim 7</div>
+        </div>
+        <div class="claim-statement">
+            60-sample moving average (MA-60s) filter achieved <strong>42-50% noise reduction</strong> depending on segment regularity.
+        </div>
+
+        <div class="evidence-section">
+            <div class="evidence-label">📊 Data Sources</div>
+            <div class="evidence-grid">
+                <div class="evidence-item data-item">
+                    <strong>Raw Voltage Series</strong>
+                    <a href="#">data/voltage_raw_oct2025-jan2026.csv</a>
+                    <div>Unfiltered 10s samples</div>
+                </div>
+                <div class="evidence-item data-item">
+                    <strong>Filtered Series</strong>
+                    <a href="#">data/voltage_MA60s_oct2025-jan2026.csv</a>
+                    <div>60-sample moving average applied</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="evidence-section">
+            <div class="evidence-label">🔬 Analysis Methods</div>
+            <div class="evidence-grid">
+                <div class="evidence-item method-item">
+                    <strong>Noise Quantification</strong>
+                    <div>σ_raw = standard deviation of raw signal</div>
+                    <div>σ_MA60s = standard deviation of filtered signal</div>
+                </div>
+                <div class="evidence-item method-item">
+                    <strong>Reduction Calculation</strong>
+                    <div>Reduction = 1 - (σ_MA60s / σ_raw)</div>
+                    <div>Calculated per segment (stasis vs eco)</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="evidence-section">
+            <div class="evidence-label">💻 Code/Scripts</div>
+            <div class="evidence-grid">
+                <div class="evidence-item code-item">
+                    <strong>MA Filter Script</strong>
+                    <a href="#">analysis/moving_average_filter.py</a>
+                    <div>Pandas rolling window implementation</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CLAIM 8 -->
+    <div class="claim-card" id="claim-8">
+        <div class="claim-header">
+            <div class="claim-title">Eco Mode Measurement Impact</div>
+            <div class="claim-id">Claim 8</div>
+        </div>
+        <div class="claim-statement">
+            Victron Eco Mode activation (day 71) caused <strong>spread inflation</strong> due to sampling regime change, not electrochemical divergence.
+        </div>
+
+        <div class="evidence-section">
+            <div class="evidence-label">📊 Data Sources</div>
+            <div class="evidence-grid">
+                <div class="evidence-item data-item">
+                    <strong>Pre-Eco Spread</strong>
+                    <a href="#">data/spread_pre_eco_oct29-jan06.csv</a>
+                    <div>Days 1-70: <50 mV typical</div>
+                </div>
+                <div class="evidence-item data-item">
+                    <strong>Post-Eco Spread</strong>
+                    <a href="#">data/spread_post_eco_jan07-jan31.csv</a>
+                    <div>Days 71-94: Increased spread observed</div>
+                </div>
+                <div class="evidence-item data-item">
+                    <strong>Sampling Timestamps</strong>
+                    <a href="#">data/sampling_intervals.csv</a>
+                    <div>Interval analysis showing sparse sampling in Eco Mode</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="evidence-section">
+            <div class="evidence-label">🔬 Analysis Methods</div>
+            <div class="evidence-grid">
+                <div class="evidence-item method-item">
+                    <strong>Sampling Interval Analysis</strong>
+                    <div>Pre-Eco: Continuous 10s intervals</div>
+                    <div>Post-Eco: Intermittent (power-save aliasing)</div>
+                </div>
+                <div class="evidence-item method-item">
+                    <strong>Spread Comparison</strong>
+                    <div>Segment-wise hourly max−min analysis</div>
+                    <div>Step change correlates with mode transition</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="assumption-box">
+            <strong>Interpretation:</strong> Spread increase is measurement artifact, not battery divergence. Sparse sampling captures wider voltage swings due to aliasing.
+        </div>
+    </div>
+
+    <div style="margin-top: 40px; padding: 20px; background: white; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.12);">
+        <h2>Data Availability Statement</h2>
+        <p>All raw data, processed datasets, and analysis scripts are publicly available in the GitHub repository:</p>
+        <ul>
+            <li><strong>Raw Data:</strong> <a href="https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/tree/main/data">/data</a> directory</li>
+            <li><strong>Analysis Code:</strong> <a href="https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/tree/main/analysis">/analysis</a> directory</li>
+            <li><strong>Processed Results:</strong> <a href="https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/tree/main/reports">/reports</a> directory</li>
+        </ul>
+        <p><strong>Reproducibility:</strong> Complete analysis workflow can be reproduced using provided scripts and raw data files.</p>
+        <p><strong>DOI:</strong> <a href="https://doi.org/10.5281/zenodo.18452542">10.5281/zenodo.18452542</a></p>
+    </div>
+
+    <div style="margin-top: 20px; padding: 20px; background: #f6f8fa; border-radius: 6px;">
+        <h3>Related Resources</h3>
+        <ul>
+            <li><a href="methodology.html">Methodology</a> - Detailed methods and statistical approaches</li>
+            <li><a href="glossary.html">Glossary</a> - Technical terms and abbreviations</li>
+            <li><a href="voltage_chart.html">Interactive Charts</a> - Visualizations of key findings</li>
+            <li><a href="https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks">GitHub Repository</a> - Complete project archive</li>
+        </ul>
+    </div>
+
+    <a href="index.html" class="back-link">← Back to Overview</a>
+</body>
+</html>

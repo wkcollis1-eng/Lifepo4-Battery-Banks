@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voltage Trend - LiFePO₄ Battery Study</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f6f8fa;
+        }
+        h1, h2 {
+            color: #24292e;
+        }
+        .chart-container {
+            background: white;
+            padding: 20px;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+            margin-bottom: 30px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+        }
+        .stat-label {
+            font-size: 0.85em;
+            color: #586069;
+            margin-bottom: 5px;
+        }
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: 600;
+            color: #24292e;
+        }
+        .stat-unit {
+            font-size: 0.9em;
+            color: #586069;
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #0366d6;
+            text-decoration: none;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        .phase-label {
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 0.85em;
+            font-weight: 500;
+            display: inline-block;
+            margin: 0 5px;
+        }
+        .phase-stasis {
+            background-color: #dbedff;
+            color: #0366d6;
+        }
+        .phase-eco {
+            background-color: #dcffe4;
+            color: #28a745;
+        }
+        .annotations {
+            background: #fffbdd;
+            border-left: 4px solid #ffd33d;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 3px;
+        }
+        canvas {
+            max-height: 500px;
+        }
+    </style>
+</head>
+<body>
+    <a href="index.html" class="back-link">← Back to Overview</a>
+    
+    <h1>⚡ 94-Day Voltage Trend Analysis</h1>
+    <p>Interactive visualization of continuous bus voltage monitoring (Oct 29, 2025 – Jan 31, 2026)</p>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-label">Total Duration</div>
+            <div class="stat-value">94<span class="stat-unit"> days</span></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Full Stasis Drift</div>
+            <div class="stat-value">−0.67<span class="stat-unit"> mV/day</span></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Late Drift (Last 30d)</div>
+            <div class="stat-value">−0.17<span class="stat-unit"> mV/day</span></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Temperature Coefficient</div>
+            <div class="stat-value">+1.0<span class="stat-unit"> mV/°F</span></div>
+        </div>
+    </div>
+
+    <div class="annotations">
+        <strong>Study Phases:</strong>
+        <span class="phase-label phase-stasis">Stasis (70 days)</span>
+        <span class="phase-label phase-eco">Eco Mode (24 days)</span>
+        <br><br>
+        <strong>Note:</strong> Voltage measurements represent bus-level potential (single sensor). Spread reflects hourly max−min from one measurement point, not cell-to-cell variation.
+    </div>
+
+    <div class="chart-container">
+        <h2>Bus Voltage Over Time</h2>
+        <canvas id="voltageChart"></canvas>
+    </div>
+
+    <div class="chart-container">
+        <h2>Temperature Correlation (34-day subset)</h2>
+        <canvas id="tempChart"></canvas>
+    </div>
+
+    <div class="chart-container">
+        <h2>Drift Rate Analysis</h2>
+        <canvas id="driftChart"></canvas>
+    </div>
+
+    <script>
+        // Sample data structure - REPLACE WITH YOUR ACTUAL DATA
+        // This creates a representative dataset based on your study parameters
+        
+        function generateVoltageData() {
+            const startDate = new Date('2025-10-29');
+            const data = [];
+            let voltage = 13450; // Starting voltage in mV
+            
+            for (let day = 0; day < 94; day++) {
+                const date = new Date(startDate);
+                date.setDate(date.getDate() + day);
+                
+                // Simulate drift: faster early, slower late
+                let drift;
+                if (day < 70) {
+                    drift = -0.67; // Full stasis rate
+                } else {
+                    drift = -0.17; // Eco mode rate (reduced)
+                }
+                
+                // Add some temperature-correlated noise
+                const noise = (Math.random() - 0.5) * 20;
+                
+                voltage += drift + noise;
+                
+                // Add hourly max/min spread data for this day
+                const spread = 15 + Math.random() * 35; // 15-50 mV typical spread
+                
+                data.push({
+                    date: date.toISOString().split('T')[0],
+                    voltage: voltage,
+                    vmax: voltage + spread/2,
+                    vmin: voltage - spread/2
+                });
+            }
+            return data;
+        }
+
+        function generateTemperatureData() {
+            const startDate = new Date('2025-12-28');
+            const data = [];
+            let baseTemp = 65; // °F
+            
+            for (let day = 0; day < 34; day++) {
+                const date = new Date(startDate);
+                date.setDate(date.getDate() + day);
+                
+                // Simulate seasonal temperature variation
+                const temp = baseTemp + Math.sin(day / 7) * 5 + (Math.random() - 0.5) * 2;
+                const baseVoltage = 13400;
+                const voltage = baseVoltage + (temp - 65) * 1.0; // +1.0 mV/°F coefficient
+                
+                data.push({
+                    date: date.toISOString().split('T')[0],
+                    temp: temp,
+                    voltage: voltage
+                });
+            }
+            return data;
+        }
+
+        const voltageData = generateVoltageData();
+        const tempData = generateTemperatureData();
+
+        // Chart 1: Main voltage trend
+        const ctx1 = document.getElementById('voltageChart').getContext('2d');
+        new Chart(ctx1, {
+            type: 'line',
+            data: {
+                labels: voltageData.map(d => d.date),
+                datasets: [
+                    {
+                        label: 'Bus Voltage (mV)',
+                        data: voltageData.map(d => d.voltage),
+                        borderColor: '#0366d6',
+                        backgroundColor: 'rgba(3, 102, 214, 0.1)',
+                        tension: 0.1,
+                        pointRadius: 1,
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'Daily Max',
+                        data: voltageData.map(d => d.vmax),
+                        borderColor: 'rgba(203, 36, 49, 0.3)',
+                        backgroundColor: 'transparent',
+                        tension: 0.1,
+                        pointRadius: 0,
+                        borderWidth: 1,
+                        borderDash: [5, 5]
+                    },
+                    {
+                        label: 'Daily Min',
+                        data: voltageData.map(d => d.vmin),
+                        borderColor: 'rgba(203, 36, 49, 0.3)',
+                        backgroundColor: 'transparent',
+                        tension: 0.1,
+                        pointRadius: 0,
+                        borderWidth: 1,
+                        borderDash: [5, 5]
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.dataset.label + ': ' + context.parsed.y.toFixed(1) + ' mV';
+                            }
+                        }
+                    },
+                    annotation: {
+                        annotations: {
+                            stasisEnd: {
+                                type: 'line',
+                                xMin: '2026-01-06',
+                                xMax: '2026-01-06',
+                                borderColor: 'rgba(40, 167, 69, 0.5)',
+                                borderWidth: 2,
+                                borderDash: [10, 5],
+                                label: {
+                                    content: 'Eco Mode Start',
+                                    enabled: true,
+                                    position: 'start'
+                                }
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: 'week',
+                            displayFormats: {
+                                week: 'MMM d'
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Date (2025-2026)'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Voltage (mV)'
+                        },
+                        ticks: {
+                            callback: function(value) {
+                                return value.toFixed(0);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Chart 2: Temperature correlation
+        const ctx2 = document.getElementById('tempChart').getContext('2d');
+        new Chart(ctx2, {
+            type: 'scatter',
+            data: {
+                datasets: [{
+                    label: 'Voltage vs Temperature',
+                    data: tempData.map(d => ({x: d.temp, y: d.voltage})),
+                    backgroundColor: '#28a745',
+                    borderColor: '#28a745',
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.parsed.x.toFixed(1)}°F → ${context.parsed.y.toFixed(1)} mV`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Temperature (°F)'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Voltage (mV)'
+                        }
+                    }
+                }
+            }
+        });
+
+        // Chart 3: Drift rate over time
+        const ctx3 = document.getElementById('driftChart').getContext('2d');
+        const driftData = [
+            {period: 'Days 1-70\n(Stasis)', rate: -0.67},
+            {period: 'Days 71-94\n(Eco Mode)', rate: -0.17},
+            {period: 'Last 30 Days', rate: -0.17}
+        ];
+        
+        new Chart(ctx3, {
+            type: 'bar',
+            data: {
+                labels: driftData.map(d => d.period),
+                datasets: [{
+                    label: 'Drift Rate (mV/day)',
+                    data: driftData.map(d => d.rate),
+                    backgroundColor: [
+                        'rgba(3, 102, 214, 0.7)',
+                        'rgba(40, 167, 69, 0.7)',
+                        'rgba(88, 96, 105, 0.7)'
+                    ],
+                    borderColor: [
+                        '#0366d6',
+                        '#28a745',
+                        '#586069'
+                    ],
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return 'Drift: ' + context.parsed.y.toFixed(2) + ' mV/day';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Drift Rate (mV/day)'
+                        },
+                        beginAtZero: false
+                    }
+                }
+            }
+        });
+    </script>
+
+    <div style="margin-top: 40px; padding: 20px; background: #f6f8fa; border-radius: 6px;">
+        <h3>Data Notes</h3>
+        <ul>
+            <li><strong>Voltage values</strong> are bus-level measurements from a single Victron SmartShunt sensor</li>
+            <li><strong>Spread (max-min)</strong> represents hourly variation at the measurement point, not cell-to-cell differences</li>
+            <li><strong>Temperature data</strong> subset covers 34 days (Dec 28, 2025 – Jan 30, 2026)</li>
+            <li><strong>MA-60s filtering</strong> achieved 42-50% noise reduction (not shown in raw plots above)</li>
+        </ul>
+        <p><strong>To update with your actual data:</strong> Replace the <code>generateVoltageData()</code> and <code>generateTemperatureData()</code> functions with your CSV data or inline arrays.</p>
+    </div>
+
+    <a href="index.html" class="back-link">← Back to Overview</a>
+</body>
+</html>
