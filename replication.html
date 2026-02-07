@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Replication Guide - LiFePO₄ Battery Study</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f6f8fa;
+            line-height: 1.6;
+            color: #24292e;
+        }
+        h1, h2, h3, h4 {
+            color: #24292e;
+        }
+        h1 {
+            font-size: 2em;
+            border-bottom: 2px solid #e1e4e8;
+            padding-bottom: 0.3em;
+        }
+        h2 {
+            font-size: 1.5em;
+            margin-top: 1.5em;
+            border-bottom: 1px solid #e1e4e8;
+            padding-bottom: 0.3em;
+        }
+        h3 {
+            font-size: 1.25em;
+            margin-top: 1.2em;
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #0366d6;
+            text-decoration: none;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        .intro {
+            background: white;
+            padding: 20px;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+            margin-bottom: 25px;
+        }
+        .section {
+            background: white;
+            padding: 25px;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+            margin-bottom: 20px;
+        }
+        .step {
+            margin-bottom: 30px;
+            padding: 20px;
+            border-left: 4px solid #0366d6;
+            background: #f6f8fa;
+        }
+        .step-number {
+            display: inline-block;
+            background: #0366d6;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        .step-title {
+            font-size: 1.1em;
+            font-weight: 600;
+            margin: 10px 0;
+        }
+        .step-content {
+            margin-top: 10px;
+        }
+        .safety-warning {
+            background-color: #ffebe9;
+            border-left: 4px solid #d73a49;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 3px;
+        }
+        .safety-warning::before {
+            content: "⚠️ SAFETY WARNING";
+            display: block;
+            font-weight: 700;
+            color: #d73a49;
+            margin-bottom: 8px;
+        }
+        .tip-box {
+            background-color: #dbedff;
+            border-left: 4px solid #0366d6;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 3px;
+        }
+        .tip-box::before {
+            content: "💡 Tip";
+            display: block;
+            font-weight: 600;
+            color: #0366d6;
+            margin-bottom: 5px;
+        }
+        .note-box {
+            background-color: #fffbdd;
+            border-left: 4px solid #ffd33d;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 3px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #e1e4e8;
+            padding: 10px;
+            text-align: left;
+        }
+        th {
+            background-color: #f6f8fa;
+            font-weight: 600;
+        }
+        ul, ol {
+            padding-left: 25px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        code {
+            background-color: #f6f8fa;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        .checklist {
+            list-style: none;
+            padding-left: 0;
+        }
+        .checklist li::before {
+            content: "☐ ";
+            margin-right: 8px;
+            color: #586069;
+        }
+        .equipment-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .equipment-card {
+            background: #f6f8fa;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #e1e4e8;
+        }
+        .equipment-card h4 {
+            margin-top: 0;
+            color: #0366d6;
+        }
+    </style>
+</head>
+<body>
+    <a href="index.html" class="back-link">← Back to Overview</a>
+    
+    <h1>🔧 Replication Guide</h1>
+    <p><em>Step-by-step instructions for setting up your own LiFePO₄ battery monitoring study</em></p>
+
+    <div class="intro">
+        <p>This guide walks through the complete process of replicating the 94-day battery monitoring study, from hardware selection through data collection and analysis. Whether you're validating architectural immunity or simply implementing robust battery monitoring, these steps provide a proven methodology.</p>
+        <p><strong>Time commitment:</strong> 2-4 hours for hardware setup, plus ongoing data collection (minimum 30 days recommended).</p>
+        <p><strong>Skill level:</strong> Intermediate electrical/electronics experience recommended. Familiarity with basic programming helpful but not required.</p>
+    </div>
+
+    <div class="safety-warning">
+        Lithium batteries can deliver thousands of amps in a short circuit and store enough energy to cause serious injury or fire. If you are not comfortable working with high-current DC systems and battery technology, seek assistance from someone with appropriate experience. This guide assumes you understand basic electrical safety and battery handling procedures.
+    </div>
+
+    <!-- PART 1: EQUIPMENT -->
+    <div class="section">
+        <h2>Part 1: Equipment Selection</h2>
+
+        <h3>Required Components</h3>
+
+        <div class="equipment-grid">
+            <div class="equipment-card">
+                <h4>Battery Bank</h4>
+                <ul>
+                    <li><strong>Chemistry:</strong> LiFePO₄ (LFP)</li>
+                    <li><strong>Capacity:</strong> ≥100 Ah recommended</li>
+                    <li><strong>Configuration:</strong> 12V (4S) or 24V (8S)</li>
+                    <li><strong>Quality:</strong> Grade A cells</li>
+                </ul>
+            </div>
+
+            <div class="equipment-card">
+                <h4>Battery Management System</h4>
+                <ul>
+                    <li><strong>Type:</strong> Appropriate for cell count (4S, 8S, etc.)</li>
+                    <li><strong>Current rating:</strong> ≥100A recommended</li>
+                    <li><strong>Features:</strong> Over/under voltage, temp protection</li>
+                    <li><strong>Example:</strong> JBD/Xiaoxiang 4S 100-200A</li>
+                </ul>
+            </div>
+
+            <div class="equipment-card">
+                <h4>Voltage Monitor</h4>
+                <ul>
+                    <li><strong>Resolution:</strong> ≤10 mV</li>
+                    <li><strong>Accuracy:</strong> ±1% or better</li>
+                    <li><strong>Interface:</strong> Bluetooth, WiFi, or serial</li>
+                    <li><strong>Example:</strong> Victron SmartShunt 500A</li>
+                </ul>
+            </div>
+
+            <div class="equipment-card">
+                <h4>Data Logger</h4>
+                <ul>
+                    <li><strong>Platform:</strong> Home Assistant, Raspberry Pi, Arduino, etc.</li>
+                    <li><strong>Storage:</strong> Time-series database or CSV</li>
+                    <li><strong>Sampling:</strong> 10-60 second intervals</li>
+                    <li><strong>Uptime:</strong> >99% reliability</li>
+                </ul>
+            </div>
+
+            <div class="equipment-card">
+                <h4>Safety Equipment</h4>
+                <ul>
+                    <li><strong>Fuses:</strong> Class T DC-rated fuses</li>
+                    <li><strong>Fuse holders:</strong> Appropriate for current</li>
+                    <li><strong>Fire extinguisher:</strong> Class D (metal fires)</li>
+                    <li><strong>Smoke detector:</strong> Near battery location</li>
+                </ul>
+            </div>
+
+            <div class="equipment-card">
+                <h4>Optional Enhancements</h4>
+                <ul>
+                    <li>Temperature sensors (ambient + battery)</li>
+                    <li>Fireproof battery enclosure</li>
+                    <li>DC circuit breaker or disconnect</li>
+                    <li>Multimeter for calibration verification</li>
+                </ul>
+            </div>
+        </div>
+
+        <h3>Cost Estimate</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Component</th>
+                    <th>Typical Cost (USD)</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Battery Bank</td>
+                    <td>$200-1000+</td>
+                    <td>Depends on capacity (excluding if already owned)</td>
+                </tr>
+                <tr>
+                    <td>BMS</td>
+                    <td>$30-80</td>
+                    <td>Quality 4S BMS with Bluetooth</td>
+                </tr>
+                <tr>
+                    <td>Victron SmartShunt</td>
+                    <td>$100-150</td>
+                    <td>Or equivalent voltage monitor</td>
+                </tr>
+                <tr>
+                    <td>Raspberry Pi + SD Card</td>
+                    <td>$50-80</td>
+                    <td>For data logging (if not using existing system)</td>
+                </tr>
+                <tr>
+                    <td>Safety Equipment</td>
+                    <td>$40-100</td>
+                    <td>Fuses, holders, fire extinguisher</td>
+                </tr>
+                <tr>
+                    <td>Wiring & Connectors</td>
+                    <td>$20-50</td>
+                    <td>Appropriate gauge for current rating</td>
+                </tr>
+                <tr>
+                    <td><strong>Total (monitoring only)</strong></td>
+                    <td><strong>$240-460</strong></td>
+                    <td>Excluding battery if already owned</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- PART 2: PHYSICAL ASSEMBLY -->
+    <div class="section">
+        <h2>Part 2: Physical Assembly</h2>
+
+        <div class="step">
+            <span class="step-number">Step 1</span>
+            <div class="step-title">Cell Configuration & Bus Bars</div>
+            <div class="step-content">
+                <p><strong>For parallel cells:</strong></p>
+                <ol>
+                    <li>Ensure all cells are at similar voltage (within 100 mV) before first connection</li>
+                    <li>Use thick copper bus bars (appropriate for current rating):
+                        <ul>
+                            <li>100A system: ≥6 AWG / 10mm²</li>
+                            <li>200A system: ≥4 AWG / 16mm²</li>
+                            <li>500A system: ≥2 AWG / 25mm²</li>
+                        </ul>
+                    </li>
+                    <li>Keep all connection resistances as equal as possible</li>
+                    <li>Use star topology for parallel connections (not daisy chain)</li>
+                    <li>Torque all terminals to manufacturer specifications</li>
+                </ol>
+
+                <div class="tip-box">
+                    <strong>Star topology:</strong> All positive terminals connect to a central positive bus bar, all negative terminals to a central negative bus bar. This ensures equal resistance paths and prevents one cell from carrying disproportionate current.
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <span class="step-number">Step 2</span>
+            <div class="step-title">BMS Installation</div>
+            <div class="step-content">
+                <ol>
+                    <li>Connect BMS balance wires to each cell in the series string:
+                        <ul>
+                            <li>B- to battery negative</li>
+                            <li>B0 to cell 1 positive (= cell 2 negative)</li>
+                            <li>B1 to cell 2 positive (= cell 3 negative)</li>
+                            <li>Continue for all cells in series</li>
+                        </ul>
+                    </li>
+                    <li>Verify polarity BEFORE connecting power wires</li>
+                    <li>Route balance wires away from high-current paths</li>
+                    <li>Secure BMS in location with adequate ventilation</li>
+                </ol>
+
+                <div class="safety-warning">
+                    Double-check all balance wire connections. Reversed polarity can destroy the BMS and potentially cause battery damage or fire.
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <span class="step-number">Step 3</span>
+            <div class="step-title">Fuse Installation</div>
+            <div class="step-content">
+                <ol>
+                    <li>Select Class T fuses rated for:
+                        <ul>
+                            <li>Voltage: ≥1.5× system voltage (e.g., ≥32V for 12V system)</li>
+                            <li>Current: Based on maximum expected load + 25% safety margin</li>
+                        </ul>
+                    </li>
+                    <li>Install fuses as close to battery positive terminal as possible (within 7 inches / 18 cm)</li>
+                    <li>Use properly rated fuse holders with low contact resistance</li>
+                    <li>Consider installing fuses on both positive AND negative sides for maximum safety</li>
+                </ol>
+
+                <div class="note-box">
+                    <strong>Fuse sizing example:</strong> For a 500Ah 12V bank with expected 50A continuous load:
+                    <br>• Minimum: 50A × 1.25 = 63A fuse
+                    <br>• Recommended: 80A or 100A Class T fuse (allows for surge currents)
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <span class="step-number">Step 4</span>
+            <div class="step-title">SmartShunt Installation</div>
+            <div class="step-content">
+                <ol>
+                    <li>Install SmartShunt on the <strong>negative</strong> side of the battery bank</li>
+                    <li>All negative loads must flow through the shunt for accurate current measurement</li>
+                    <li>Wiring order (from battery to loads):
+                        <ul>
+                            <li>Battery negative → SmartShunt battery terminal</li>
+                            <li>SmartShunt load terminal → All loads/chargers negative</li>
+                        </ul>
+                    </li>
+                    <li>Connect voltage sense wire (red) to battery positive (or BMS positive output)</li>
+                    <li>Ensure all connections are tight and clean (low resistance)</li>
+                </ol>
+
+                <div class="tip-box">
+                    The SmartShunt measures voltage at its sense wire connection point. For bus-level monitoring (as in this study), connect sense wire directly to the main positive bus bar, not to individual cell terminals.
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <span class="step-number">Step 5</span>
+            <div class="step-title">Temperature Monitoring (Optional)</div>
+            <div class="step-content">
+                <ol>
+                    <li>Place ambient temperature sensor near battery location (not in direct sunlight)</li>
+                    <li>For battery core temperature, attach sensor to middle cells:
+                        <ul>
+                            <li>Use thermal paste or adhesive pad for good contact</li>
+                            <li>Insulate sensor from air currents</li>
+                            <li>Route wires away from terminals</li>
+                        </ul>
+                    </li>
+                    <li>Connect to data logger via appropriate interface (1-Wire, I2C, analog, etc.)</li>
+                </ol>
+            </div>
+        </div>
+
+        <h3>Safety Verification Checklist</h3>
+        <ul class="checklist">
+            <li>All terminals torqued to specification</li>
+            <li>No exposed conductors or loose wires</li>
+            <li>Fuses installed and properly rated</li>
+            <li>BMS balance wires connected with correct polarity</li>
+            <li>Fire extinguisher accessible</li>
+            <li>Smoke detector installed and tested</li>
+            <li>Area well-ventilated</li>
+            <li>Flammable materials removed from battery area</li>
+        </ul>
+    </div>
+
+    <!-- PART 3: SENSOR CALIBRATION -->
+    <div class="section">
+        <h2>Part 3: Sensor Calibration & Configuration</h2>
+
+        <div class="step">
+            <span class="step-number">Step 6</span>
+            <div class="step-title">SmartShunt Configuration</div>
+            <div class="step-content">
+                <ol>
+                    <li>Download VictronConnect app (iOS, Android, or Windows)</li>
+                    <li>Connect to SmartShunt via Bluetooth</li>
+                    <li>Configure battery parameters:
+                        <ul>
+                            <li><strong>Battery capacity:</strong> Enter rated Ah (e.g., 500 Ah)</li>
+                            <li><strong>Charged voltage:</strong> 13.6V for 12V LiFePO₄</li>
+                            <li><strong>Tail current:</strong> 4% of capacity (e.g., 20A for 500Ah)</li>
+                            <li><strong>Charged detection time:</strong> 3 minutes</li>
+                            <li><strong>Peukert exponent:</strong> 1.05 for LiFePO₄</li>
+                        </ul>
+                    </li>
+                    <li>Zero current measurement:
+                        <ul>
+                            <li>Disconnect all loads and chargers</li>
+                            <li>Wait 1 minute for stabilization</li>
+                            <li>Select "Zero current" in app settings</li>
+                        </ul>
+                    </li>
+                    <li>Verify voltage reading matches a quality multimeter (±10 mV)</li>
+                </ol>
+            </div>
+        </div>
+
+        <div class="step">
+            <span class="step-number">Step 7</span>
+            <div class="step-title">BMS Configuration</div>
+            <div class="step-content">
+                <ol>
+                    <li>Connect to BMS via Bluetooth using manufacturer app (e.g., Xiaoxiang BMS app)</li>
+                    <li>Configure protection parameters:
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Parameter</th>
+                                    <th>Recommended Value (12V LiFePO₄)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Over-voltage protection (OVP)</td>
+                                    <td>3.65V per cell (14.6V total)</td>
+                                </tr>
+                                <tr>
+                                    <td>Over-voltage release</td>
+                                    <td>3.55V per cell (14.2V total)</td>
+                                </tr>
+                                <tr>
+                                    <td>Under-voltage protection (UVP)</td>
+                                    <td>2.7V per cell (10.8V total)</td>
+                                </tr>
+                                <tr>
+                                    <td>Under-voltage release</td>
+                                    <td>3.0V per cell (12.0V total)</td>
+                                </tr>
+                                <tr>
+                                    <td>Charge over-current</td>
+                                    <td>0.5C (e.g., 250A for 500Ah)</td>
+                                </tr>
+                                <tr>
+                                    <td>Discharge over-current</td>
+                                    <td>1C (e.g., 500A for 500Ah)</td>
+                                </tr>
+                                <tr>
+                                    <td>Over-temperature (charge)</td>
+                                    <td>45°C (113°F)</td>
+                                </tr>
+                                <tr>
+                                    <td>Under-temperature (charge)</td>
+                                    <td>0°C (32°F)</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </li>
+                    <li>Enable balance function if available (typical threshold: 30-50 mV difference)</li>
+                    <li>Record baseline cell voltages for reference</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <!-- PART 4: DATA LOGGING -->
+    <div class="section">
+        <h2>Part 4: Data Logging Setup</h2>
+
+        <div class="step">
+            <span class="step-number">Step 8</span>
+            <div class="step-title">Home Assistant Setup (Recommended)</div>
+            <div class="step-content">
+                <p><strong>Option A: Using Home Assistant</strong></p>
+                <ol>
+                    <li>Install Home Assistant on Raspberry Pi or dedicated hardware</li>
+                    <li>Add Victron integration:
+                        <ul>
+                            <li>Configuration → Integrations → Add Integration</li>
+                            <li>Search for "Victron" and follow setup wizard</li>
+                            <li>SmartShunt should auto-discover via Bluetooth</li>
+                        </ul>
+                    </li>
+                    <li>Configure InfluxDB for time-series storage:
+                        <ul>
+                            <li>Install InfluxDB add-on</li>
+                            <li>Enable in configuration.yaml</li>
+                            <li>Select battery entities to record</li>
+                        </ul>
+                    </li>
+                    <li>Create automations for data export:
+                        <ul>
+                            <li>Daily CSV export as backup</li>
+                            <li>Alert on data gaps or sensor failures</li>
+                        </ul>
+                    </li>
+                </ol>
+
+                <p><strong>Option B: Direct Python Logging</strong></p>
+                <ol>
+                    <li>Install Python libraries: <code>bleak</code> (Bluetooth), <code>pandas</code>, <code>sqlite3</code></li>
+                    <li>Write script to poll SmartShunt via Bluetooth every 10-60 seconds</li>
+                    <li>Store readings in SQLite database or CSV file</li>
+                    <li>Run as systemd service for automatic startup</li>
+                </ol>
+
+                <div class="tip-box">
+                    Sample Python skeleton available in repository: <code>scripts/smartshunt_logger.py</code>
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <span class="step-number">Step 9</span>
+            <div class="step-title">Data Collection Verification</div>
+            <div class="step-content">
+                <ol>
+                    <li>Run data logger for 24 hours as a test</li>
+                    <li>Verify data is being recorded correctly:
+                        <ul>
+                            <li>Check for gaps in timestamps (should be <1% missing)</li>
+                            <li>Verify voltage values are reasonable (12-14V range for 12V LiFePO₄)</li>
+                            <li>Confirm sampling interval is consistent</li>
+                        </ul>
+                    </li>
+                    <li>Set up automated backup:
+                        <ul>
+                            <li>Daily export to external storage (USB, network drive, cloud)</li>
+                            <li>Multiple backup locations recommended</li>
+                        </ul>
+                    </li>
+                    <li>Test data logger restart/recovery:
+                        <ul>
+                            <li>Reboot system, verify logging resumes automatically</li>
+                            <li>Disconnect power, verify graceful recovery</li>
+                        </ul>
+                    </li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <!-- PART 5: STUDY EXECUTION -->
+    <div class="section">
+        <h2>Part 5: Study Execution</h2>
+
+        <div class="step">
+            <span class="step-number">Step 10</span>
+            <div class="step-title">Initial Capacity Test (Optional but Recommended)</div>
+            <div class="step-content">
+                <ol>
+                    <li>Fully charge battery to 14.6V (BMS limit)</li>
+                    <li>Let battery rest for 2+ hours</li>
+                    <li>Discharge at constant current (0.2C recommended):
+                        <ul>
+                            <li>100Ah bank: 20A discharge</li>
+                            <li>500Ah bank: 100A discharge</li>
+                        </ul>
+                    </li>
+                    <li>Continue until BMS disconnects (typically 10.8V)</li>
+                    <li>Record total Ah delivered (SmartShunt tracks this)</li>
+                    <li>Compare to rated capacity</li>
+                </ol>
+
+                <div class="note-box">
+                    Capacity test validates your bank's baseline performance before long-term monitoring begins. Expected: ≥95% of rated capacity for Grade A cells.
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <span class="step-number">Step 11</span>
+            <div class="step-title">Begin Monitoring Period</div>
+            <div class="step-content">
+                <ol>
+                    <li>After capacity test (or from current state), let battery rest without load</li>
+                    <li>Verify data logging is running continuously</li>
+                    <li>Record study start date and initial conditions:
+                        <ul>
+                            <li>Starting voltage</li>
+                            <li>Ambient temperature</li>
+                            <li>Cell individual voltages (from BMS)</li>
+                            <li>Any recent charge/discharge activity</li>
+                        </ul>
+                    </li>
+                    <li>Minimize battery disturbances:
+                        <ul>
+                            <li>No charging (unless testing specific scenarios)</li>
+                            <li>No loads (pure stasis monitoring)</li>
+                            <li>Stable temperature environment</li>
+                        </ul>
+                    </li>
+                    <li>Check data collection weekly:
+                        <ul>
+                            <li>Verify no gaps or sensor failures</li>
+                            <li>Confirm backups are working</li>
+                            <li>Spot-check voltage readings for reasonableness</li>
+                        </ul>
+                    </li>
+                </ol>
+
+                <div class="tip-box">
+                    <strong>Minimum study duration:</strong> 30 days provides meaningful drift data. 60-90 days better captures long-term behavior. The original study ran 94 days.
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <span class="step-number">Step 12</span>
+            <div class="step-title">Weekly Monitoring & Maintenance</div>
+            <div class="step-content">
+                <ul class="checklist">
+                    <li>Check for data gaps or sensor disconnections</li>
+                    <li>Verify voltage trend is as expected (gradual decline)</li>
+                    <li>Confirm no BMS fault alarms</li>
+                    <li>Verify backup data exports are current</li>
+                    <li>Visual inspection of battery area (no swelling, leaks, unusual heat)</li>
+                    <li>Record any environmental changes (temperature swings, humidity, etc.)</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- PART 6: ANALYSIS -->
+    <div class="section">
+        <h2>Part 6: Data Analysis</h2>
+
+        <div class="step">
+            <span class="step-number">Step 13</span>
+            <div class="step-title">Export & Process Data</div>
+            <div class="step-content">
+                <ol>
+                    <li>Export time-series voltage data to CSV format</li>
+                    <li>Include columns:
+                        <ul>
+                            <li>Timestamp (ISO 8601 format recommended)</li>
+                            <li>Voltage (mV or V)</li>
+                            <li>Temperature (if available)</li>
+                            <li>Any other relevant sensors</li>
+                        </ul>
+                    </li>
+                    <li>Clean data:
+                        <ul>
+                            <li>Remove duplicates</li>
+                            <li>Flag outliers (>3σ from rolling mean)</li>
+                            <li>Document any known sensor failures or gaps</li>
+                        </ul>
+                    </li>
+                </ol>
+            </div>
+        </div>
+
+        <div class="step">
+            <span class="step-number">Step 14</span>
+            <div class="step-title">Calculate Key Metrics</div>
+            <div class="step-content">
+                <p><strong>Voltage Drift Rate:</strong></p>
+                <ol>
+                    <li>Apply moving average filter (MA-60s recommended)</li>
+                    <li>Perform linear regression: V(t) = β₀ + β₁·t</li>
+                    <li>Drift rate = β₁ (mV/day)</li>
+                    <li>Report R² to assess fit quality</li>
+                </ol>
+
+                <p><strong>Hourly Spread:</strong></p>
+                <ol>
+                    <li>Group data by hour</li>
+                    <li>Calculate max - min within each hour</li>
+                    <li>Plot over time to detect measurement regime changes</li>
+                </ol>
+
+                <p><strong>Temperature Correlation (if available):</strong></p>
+                <ol>
+                    <li>Calculate Pearson correlation between voltage and temperature</li>
+                    <li>Perform linear regression to get coefficient (mV/°F or mV/°C)</li>
+                </ol>
+
+                <div class="tip-box">
+                    Analysis scripts available in repository: <code>analysis/drift_analysis.py</code> and <code>analysis/spread_analysis.py</code>
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <span class="step-number">Step 15</span>
+            <div class="step-title">Compare Results</div>
+            <div class="step-content">
+                <p><strong>Expected results for replication:</strong></p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Metric</th>
+                            <th>Expected Range</th>
+                            <th>Your Result</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Drift rate (early)</td>
+                            <td>−0.5 to −1.0 mV/day</td>
+                            <td>_________</td>
+                        </tr>
+                        <tr>
+                            <td>Drift rate (late)</td>
+                            <td>−0.1 to −0.5 mV/day</td>
+                            <td>_________</td>
+                        </tr>
+                        <tr>
+                            <td>Hourly spread</td>
+                            <td><50 mV typical</td>
+                            <td>_________</td>
+                        </tr>
+                        <tr>
+                            <td>MA-60s noise reduction</td>
+                            <td>40-55%</td>
+                            <td>_________</td>
+                        </tr>
+                        <tr>
+                            <td>Temperature coefficient</td>
+                            <td>+0.5 to +1.5 mV/°F</td>
+                            <td>_________</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <p><strong>If your results differ significantly:</strong></p>
+                <ul>
+                    <li>Review methodology for differences</li>
+                    <li>Check cell quality (Grade B cells may show different behavior)</li>
+                    <li>Verify sensor calibration</li>
+                    <li>Consider environmental factors (temperature swings, etc.)</li>
+                    <li>Document findings and consider sharing in GitHub discussions</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- TROUBLESHOOTING -->
+    <div class="section">
+        <h2>Troubleshooting Common Issues</h2>
+
+        <h3>SmartShunt Not Appearing in Bluetooth</h3>
+        <ul>
+            <li>Verify power is connected to shunt</li>
+            <li>Check battery voltage is >11V (shunt requires power to operate)</li>
+            <li>Move closer to device (Bluetooth range ~10m)</li>
+            <li>Reset shunt by disconnecting power for 30 seconds</li>
+        </ul>
+
+        <h3>Voltage Readings Seem Too High/Low</h3>
+        <ul>
+            <li>Verify voltage sense wire is connected to correct terminal</li>
+            <li>Check for voltage drops across fuses or connections</li>
+            <li>Compare to known-good multimeter reading</li>
+            <li>Re-zero the shunt with no current flowing</li>
+        </ul>
+
+        <h3>Large Data Gaps in Logs</h3>
+        <ul>
+            <li>Check Bluetooth connection stability (move logger closer if needed)</li>
+            <li>Verify logger system uptime (check for crashes/reboots)</li>
+            <li>Increase polling interval if connection is unreliable</li>
+            <li>Consider switching to wired connection (RS485, CAN) for critical applications</li>
+        </ul>
+
+        <h3>Drift Rate Much Higher Than Expected</h3>
+        <ul>
+            <li>Check for parasitic loads (BMS draws 20-50 mA typically)</li>
+            <li>Verify no balance function is active (some BMS balance at rest)</li>
+            <li>Confirm temperature environment is stable</li>
+            <li>Consider cell quality (Grade B/C cells have higher self-discharge)</li>
+        </ul>
+
+        <h3>BMS Keeps Disconnecting</h3>
+        <ul>
+            <li>Verify protection settings aren't too aggressive</li>
+            <li>Check individual cell voltages aren't at limits</li>
+            <li>Confirm temperature sensors (if equipped) are reading correctly</li>
+            <li>Ensure current draw doesn't exceed BMS rating</li>
+        </ul>
+    </div>
+
+    <div style="margin-top: 40px; padding: 20px; background: white; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.12);">
+        <h3>Next Steps</h3>
+        <p>Once your monitoring system is operational:</p>
+        <ul>
+            <li>Share your setup and findings in <a href="https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/discussions">GitHub Discussions</a></li>
+            <li>Contribute data to community database (coming soon)</li>
+            <li>Review the <a href="evidence_map.html">Evidence Map</a> to see how your data supports architectural immunity</li>
+            <li>Consider expanding to cycling studies or temperature chamber testing</li>
+        </ul>
+
+        <h3>Related Resources</h3>
+        <ul>
+            <li><a href="methodology.html">Methodology</a> - Statistical analysis approaches</li>
+            <li><a href="glossary.html">Glossary</a> - Technical term definitions</li>
+            <li><a href="faq.html">FAQ</a> - Common questions and answers</li>
+            <li><a href="https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks">GitHub Repository</a> - Analysis scripts and sample data</li>
+        </ul>
+    </div>
+
+    <a href="index.html" class="back-link">← Back to Overview</a>
+</body>
+</html>
