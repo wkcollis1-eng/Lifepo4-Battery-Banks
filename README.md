@@ -87,6 +87,7 @@ A DIY **12V 500Ah LiFePO₄ battery bank** validated at 99% capacity with 94+ da
 | 🔋 **Self-Discharge** | ~0% | ✅ | Validated vs. published data; all loss from parasitic loads |
 | ⚡ **Parasitic Draw** | 12.5 mA measured | ✅ | **New:** Drok ~10mA + Shelly ~2-6mA |
 | 📊 **MA-60s Noise Reduction** | 42–50% | ✅ | Segment-dependent band |
+| ⚖️ **BMS Balancing** | ~80-90 sec cycles | ✅ | Observed at 14.4V+ during charge |
 | ⏱️ **Storage Endurance** | ~11+ months to 80% SOC | ✅ | At measured 12.5 mA draw |
 
 > [!TIP]

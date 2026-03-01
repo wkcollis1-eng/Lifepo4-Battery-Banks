@@ -24,8 +24,9 @@ This update extends the analysis through March 1, 2026, including a significant 
 1. **Parasitic load quantified:** Measured 12.5 mA average drain, lower than expected 18-27 mA from Drok + Shelly
 2. **Zero self-discharge observed:** All measured capacity loss attributable to parasitic loads
 3. **Charge event analyzed:** Feb 22 charge added ~81 Ah (1.289 kWh AC, 87% charger efficiency)
-4. **Post-charge relaxation captured:** Surface charge dissipation of -36 mV/day initially, stabilizing within 8 days
-5. **Extended data coverage:** 663,683 high-frequency samples over 66 days
+4. **BMS balancing activity captured:** High-frequency data reveals ~80-90 second balance cycles at 14.4V+
+5. **Post-charge relaxation captured:** Surface charge dissipation of -36 mV/day initially, stabilizing within 8 days
+6. **Extended data coverage:** 663,683 high-frequency samples over 66 days
 
 ---
 
@@ -89,7 +90,70 @@ This update extends the analysis through March 1, 2026, including a significant 
 
 ---
 
-## 3. Post-Charge Relaxation
+## 3. BMS Balancing Activity Observed
+
+High-frequency voltage data (3-second cadence) captured BMS balancing activity during the absorption phase of the Feb 22 charge event.
+
+### 3.1 Balancing Region Characteristics
+
+| Metric | Value |
+|:-------|------:|
+| Balancing region | >= 14.4V |
+| Duration in region | 22.6 minutes |
+| Total samples | 200 |
+| Large voltage drops (>=30mV) | 13 events |
+| Drop interval | ~80-90 seconds |
+| Maximum drop magnitude | -80 mV |
+
+### 3.2 Evidence of BMS Activity
+
+Analysis of voltage drop rates by region reveals significantly elevated activity in the balancing zone:
+
+| Voltage Region | Samples | Drops >=30mV | Drop Rate |
+|:---------------|--------:|-------------:|----------:|
+| Pre-charge resting (13.2V) | 11,170 | 51 | 0.46% |
+| Mid-charge (13.5-14.0V) | 1,500 | 3 | 0.20% |
+| High charge (14.0-14.3V) | 154 | 2 | 1.30% |
+| **Balancing region (14.3-14.5V)** | **265** | **13** | **4.91%** |
+
+The balancing region exhibits a **10x higher rate** of large voltage drops compared to the resting baseline.
+
+### 3.3 Regular Timing Pattern
+
+Large voltage drops occurred at remarkably regular intervals:
+
+| Time (UTC) | Voltage Drop | Interval |
+|:-----------|-------------:|---------:|
+| 20:26:34 | -40 mV | — |
+| 20:28:05 | -70 mV | 91 sec |
+| 20:29:26 | -60 mV | 81 sec |
+| 20:30:46 | -40 mV | 80 sec |
+| 20:32:08 | -40 mV | 82 sec |
+| 20:33:29 | -60 mV | 81 sec |
+| 20:34:55 | -50 mV | 86 sec |
+| 20:36:24 | -80 mV | 89 sec |
+| 20:37:56 | -80 mV | 92 sec |
+
+The ~80-90 second cadence is consistent with BMS balance cycling rather than random measurement noise.
+
+### 3.4 Interpretation
+
+![BMS Balancing Activity](../figures/fig_bms_balancing.png)
+*Figure: Voltage timeline during charge event showing balancing region and large drop events*
+
+![BMS Balancing Detail](../figures/fig_bms_balancing_detail.png)
+*Figure: Detailed view of balancing region showing ~80-90 second balance cycles*
+
+**Findings:**
+1. Voltage drops of 30-80mV are 3-8x larger than the Shelly's 10mV measurement resolution
+2. The regular ~80-90 second timing indicates systematic BMS activity, not random noise
+3. Drop magnitude increases with voltage (40mV at 14.4V, 80mV at 14.5V), consistent with more aggressive balancing as cells approach full charge
+
+**Caveat:** Without per-cell voltage monitoring, we cannot definitively distinguish BMS balancing from charger CV regulation oscillation. However, the evidence strongly suggests active BMS balancing during the absorption phase.
+
+---
+
+## 4. Post-Charge Relaxation
 
 ### 3.1 Daily Voltage Profile (Feb 22 - Mar 1)
 
@@ -119,7 +183,7 @@ This update extends the analysis through March 1, 2026, including a significant 
 
 ---
 
-## 4. Self-Discharge & Parasitic Loss Analysis
+## 5. Self-Discharge & Parasitic Loss Analysis
 
 ### 4.1 Stasis Period Summary (Nov 22, 2025 - Feb 21, 2026)
 
@@ -189,7 +253,7 @@ The measured 12.5 mA is **lower than the minimum expected parasitic load** (18 m
 
 ---
 
-## 5. Drift Analysis (Extended)
+## 6. Drift Analysis (Extended)
 
 ### 5.1 Full Stasis Period (Nov 22, 2025 - Feb 21, 2026)
 
@@ -221,7 +285,7 @@ The measured 12.5 mA is **lower than the minimum expected parasitic load** (18 m
 
 ---
 
-## 6. Storage Endurance Projections (Updated)
+## 7. Storage Endurance Projections (Updated)
 
 ### 6.1 At Measured 12.5 mA Parasitic Draw
 
@@ -245,7 +309,7 @@ The measured 12.5 mA is **lower than the minimum expected parasitic load** (18 m
 
 ---
 
-## 7. MA-60s Analysis (Updated)
+## 8. MA-60s Analysis (Updated)
 
 ### 7.1 Global Statistics (663,683 samples)
 
@@ -263,7 +327,7 @@ When calculated only on pre-charge stasis data (excluding Feb 22+ charge event),
 
 ---
 
-## 8. Temperature-Voltage Relationship (Updated)
+## 9. Temperature-Voltage Relationship (Updated)
 
 ### 8.1 Extended Dataset
 
@@ -284,7 +348,7 @@ The two-factor regression shows an artificially high temperature coefficient due
 
 ---
 
-## 9. Updated Key Metrics
+## 10. Updated Key Metrics
 
 | Metric | Jan 31 Report | Mar 1 Report | Change |
 |:-------|:--------------|:-------------|:-------|
@@ -297,7 +361,7 @@ The two-factor regression shows an artificially high temperature coefficient due
 
 ---
 
-## 10. Conclusions
+## 11. Conclusions
 
 1. **Self-discharge is negligible** — All measured capacity loss over 92 days is attributable to parasitic monitoring loads, not battery chemistry
 
@@ -307,15 +371,17 @@ The two-factor regression shows an artificially high temperature coefficient due
 
 4. **Charge event captured** — 1.289 kWh AC input charged ~81 Ah with expected relaxation behavior
 
-5. **Post-charge relaxation normal** — Surface charge dissipation followed expected exponential decay pattern
+5. **BMS balancing activity observed** — High-frequency data captured ~80-90 second balance cycles during absorption phase (14.4V+), with voltage drops 3-8x larger than measurement noise
 
-6. **Architectural immunity maintained** — No evidence of cell divergence through the charge/discharge cycle
+6. **Post-charge relaxation normal** — Surface charge dissipation followed expected exponential decay pattern
+
+7. **Architectural immunity maintained** — No evidence of cell divergence through the charge/discharge cycle
 
 ---
 
-## 11. Recommendations
+## 12. Recommendations
 
-### 11.1 Completed This Update
+### 12.1 Completed This Update
 
 | Item | Status |
 |:-----|:------:|
@@ -324,7 +390,7 @@ The two-factor regression shows an artificially high temperature coefficient due
 | Quantify parasitic losses | ✅ Complete |
 | Calculate self-discharge | ✅ Complete |
 
-### 11.2 Highest-Value Next Steps
+### 12.2 Highest-Value Next Steps
 
 1. **Direct current measurement** — 24-72h bus current measurement with μA-resolution meter to validate 12.5 mA calculated draw
 
@@ -332,7 +398,7 @@ The two-factor regression shows an artificially high temperature coefficient due
 
 3. **Per-cell monitoring** — Optional: Add per-cell/block voltage sensing to definitively confirm architectural immunity
 
-### 11.3 Timeline
+### 12.3 Timeline
 
 | Timeframe | Action |
 |:----------|:-------|

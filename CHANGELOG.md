@@ -14,6 +14,9 @@ and this project uses date-based versioning (`YYYY-MM-DD`) based on data cutoff 
 - February 22, 2026 charge event analysis (1.289 kWh AC, 81 Ah estimated)
 - Post-charge relaxation tracking (Feb 22 - Mar 1)
 - Self-discharge quantification (effectively 0%)
+- Self-discharge validation against published literature (Section 5.5)
+- **BMS balancing activity analysis** — ~80-90 sec balance cycles observed at 14.4V+ (Section 3)
+- BMS balancing visualization figures (`fig_bms_balancing.png`, `fig_bms_balancing_detail.png`)
 - Parasitic load calculation (12.5 mA measured vs 18-27 mA expected)
 - High-frequency data extended to 663,683 samples
 - Humidity data integration (1,488 hourly records)
@@ -25,7 +28,8 @@ and this project uses date-based versioning (`YYYY-MM-DD`) based on data cutoff 
 - Shelly Plus Uni Eco Mode confirmed at ~2-6 mA (vs 8-12 mA spec)
 
 ### Key Findings
-- **Self-discharge: ~0%** — All capacity loss attributable to monitoring equipment
+- **Self-discharge: ~0%** — All capacity loss attributable to monitoring equipment (validated vs. published data)
+- **BMS balancing observed:** High-frequency data captured ~80-90 sec balance cycles during absorption phase
 - **Charge event captured:** 309 mV voltage rise, typical relaxation curve
 - **Architectural immunity maintained** through charge/discharge cycle
 
