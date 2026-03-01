@@ -7,6 +7,30 @@ and this project uses date-based versioning (`YYYY-MM-DD`) based on data cutoff 
 
 ---
 
+## [2026-03-01] — 2026-03-01
+
+### Added
+- Extended monitoring data through March 1, 2026 (125+ days total)
+- February 22, 2026 charge event analysis (1.289 kWh AC, 81 Ah estimated)
+- Post-charge relaxation tracking (Feb 22 - Mar 1)
+- Self-discharge quantification (effectively 0%)
+- Parasitic load calculation (12.5 mA measured vs 18-27 mA expected)
+- High-frequency data extended to 663,683 samples
+- Humidity data integration (1,488 hourly records)
+- New report: `LiFePO4_Report_2026-03-01.md`
+
+### Changed
+- Updated storage endurance projection: 11+ months to 80% SOC (was 7-10 months)
+- Revised parasitic load estimates based on measured data
+- Shelly Plus Uni Eco Mode confirmed at ~2-6 mA (vs 8-12 mA spec)
+
+### Key Findings
+- **Self-discharge: ~0%** — All capacity loss attributable to monitoring equipment
+- **Charge event captured:** 309 mV voltage rise, typical relaxation curve
+- **Architectural immunity maintained** through charge/discharge cycle
+
+---
+
 ## [2026-01-31] — 2026-02-01
 
 ### Added
@@ -100,6 +124,7 @@ Earlier versions used sequential notation (v1.0, v2.1, v8.4, etc.) which has bee
 
 | Version | Data Coverage | High-Freq Data |
 |:--------|:--------------|:---------------|
+| 2026-03-01 | Oct 29, 2025 – Mar 1, 2026 | Dec 26, 2025 – Mar 1, 2026 (663,683 samples) |
 | 2026-01-31 | Oct 29, 2025 – Jan 31, 2026 | Dec 26, 2025 – Feb 1, 2026 |
 | 2025-12-26 | Oct 29, 2025 – Dec 26, 2025 | Initial collection |
 | 2025-11-22 | Oct 29, 2025 – Nov 22, 2025 | Not available |

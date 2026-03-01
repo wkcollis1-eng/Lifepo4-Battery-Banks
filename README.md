@@ -8,7 +8,7 @@
 [![License: CC BY 4.0](https://img.shields.io/badge/Data-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
 [![License: MIT](https://img.shields.io/badge/Code-MIT-blue.svg)](LICENSE-CODE)
 [![Data: Open](https://img.shields.io/badge/Data-Open%20Access-green.svg)](data/)
-[![Last Updated](https://img.shields.io/badge/Data%20Through-Jan%2031%2C%202026-blue.svg)](reports/)
+[![Last Updated](https://img.shields.io/badge/Data%20Through-Mar%201%2C%202026-blue.svg)](reports/)
 [![Made with Python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)](https://www.python.org/)
 
 *A DIY 12V 500Ah LiFePO₄ battery bank validated at 99% capacity with 94+ days of continuous voltage monitoring*
@@ -29,7 +29,7 @@ Raw datasets & dictionary
 </td>
 <td width="25%" align="center">
 
-**📄 [Full Report](reports/LiFePO4_Report_2026-01-31.md)**<br>
+**📄 [Full Report](reports/LiFePO4_Report_2026-03-01.md)**<br>
 Complete technical analysis
 
 </td>
@@ -57,7 +57,7 @@ A DIY **12V 500Ah LiFePO₄ battery bank** validated at 99% capacity with 94+ da
 > [!NOTE]
 > **Architectural immunity** means the parallel bus connection forces all cells to the same voltage, eliminating the need for matched cells. This study provides empirical evidence supporting this principle.
 
-**[📄 Read the Full Technical Report →](reports/LiFePO4_Report_2026-01-31.md)**
+**[📄 Read the Full Technical Report →](reports/LiFePO4_Report_2026-03-01.md)**
 
 ---
 
@@ -66,10 +66,12 @@ A DIY **12V 500Ah LiFePO₄ battery bank** validated at 99% capacity with 94+ da
 | Phase | Status | Duration | Notes |
 |:------|:------:|:--------:|:------|
 | Discharge Testing | ✅ Complete | Oct 2025 | 397 Ah validated (99.3%) |
-| Long-term Monitoring | ✅ Complete | 94+ days | Nov 2025 – Jan 2026 |
-| Temperature Analysis | ✅ Complete | 34 days | +1.0 mV/°F coefficient |
-| MA-60s Validation | ✅ Complete | 328k samples | 42–50% noise reduction |
-| Direct Current Measurement | 🔲 Planned | — | Highest-value next step |
+| Long-term Monitoring | ✅ Complete | 125+ days | Nov 2025 – Mar 2026 |
+| Temperature Analysis | ✅ Complete | 62 days | +1.0 mV/°F coefficient |
+| MA-60s Validation | ✅ Complete | 664k samples | 42–50% noise reduction |
+| Charge Event Analysis | ✅ Complete | Feb 22, 2026 | 1.289 kWh, 81 Ah charged |
+| Self-Discharge Analysis | ✅ Complete | 92 days | **~0% self-discharge confirmed** |
+| Direct Current Measurement | 🔲 Planned | — | Validate 12.5 mA calculated |
 
 ---
 
@@ -81,10 +83,11 @@ A DIY **12V 500Ah LiFePO₄ battery bank** validated at 99% capacity with 94+ da
 | ⚡ **Inverter Efficiency** | 90.3% @ 440W avg | ✅ | Peak 1880W |
 | 🔌 **Internal Resistance** | 4.9 mΩ total | ✅ | System baseline |
 | 📐 **Peukert Exponent** | k = 1.003 | ✅ | Near-ideal linearity |
-| 📉 **Stasis Drift** | −0.67 mV/day | ✅ | Nov 22 – Jan 31, OLS on daily means |
-| 📈 **Late-Jan Drift** | 0.16–0.30 mV/day | ✅ | Window-dependent; see [methodology](docs/methodology.md) |
+| 📉 **Stasis Drift** | −0.575 mV/day | ✅ | Nov 22 – Feb 21, OLS on daily means |
+| 🔋 **Self-Discharge** | ~0% | ✅ | **New:** All loss from parasitic loads |
+| ⚡ **Parasitic Draw** | 12.5 mA measured | ✅ | **New:** Drok ~10mA + Shelly ~2-6mA |
 | 📊 **MA-60s Noise Reduction** | 42–50% | ✅ | Segment-dependent band |
-| ⏱️ **Storage Endurance** | ~7–10 months to 80% SOC | 📊 | At ~13–20 mA effective draw |
+| ⏱️ **Storage Endurance** | ~11+ months to 80% SOC | ✅ | At measured 12.5 mA draw |
 
 > [!TIP]
 > Drift rates are window- and estimator-dependent on a non-linear relaxation curve. We report both long-window (stasis-scale) and short-window (equilibrium-scale) slopes to quantify flattening. See [methodology](docs/methodology.md) for details.
@@ -127,7 +130,7 @@ Lifepo4-Battery-Banks/
 │   └── history.csv                   ← High-frequency samples (~3s cadence)
 │
 ├── 📄 reports/
-│   └── LiFePO4_Report_2026-01-31.md  ← Full technical report
+│   └── LiFePO4_Report_2026-03-01.md  ← Full technical report
 │
 ├── 📈 figures/
 │   ├── fig1_voltage_timeline.png     ← Primary visualization
@@ -210,7 +213,7 @@ For complete terminology, see the [Glossary](docs/glossary.md).
 
 | Document | Description |
 |:---------|:------------|
-| [📄 Technical Report](reports/LiFePO4_Report_2026-01-31.md) | Complete analysis with all results |
+| [📄 Technical Report](reports/LiFePO4_Report_2026-03-01.md) | Complete analysis with all results |
 | [🔬 Methodology](docs/methodology.md) | Statistical methods and definitions |
 | [🔁 Replication Guide](docs/replication.md) | Hardware setup and calibration |
 | [🗺️ Evidence Map](docs/evidence_map.md) | Claim → data → code → figure traceability |
