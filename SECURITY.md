@@ -81,8 +81,8 @@ safety check -r requirements.txt
 
 | Version | Supported |
 |:--------|:----------|
-| 2026-01-31 (current) | ✅ Yes |
-| 2025-12-XX | ⚠️ Limited (data updates only) |
+| 2026-03-01 (current) | ✅ Yes |
+| 2026-01-31 | ⚠️ Limited (data updates only) |
 | Earlier | ❌ No |
 
 ## Responsible Disclosure

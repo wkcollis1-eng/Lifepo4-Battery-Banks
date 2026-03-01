@@ -126,9 +126,11 @@ Lifepo4-Battery-Banks/
 │
 ├── 📊 data/
 │   ├── README.md                     ← Data dictionary
-│   ├── combined_output.csv           ← Hourly voltage (Oct 29, 2025 – Jan 31, 2026)
-│   ├── combined_temperature.csv      ← Hourly temperature (Dec 29, 2025 – Jan 31, 2026)
-│   └── history.csv                   ← High-frequency samples (~3s cadence)
+│   ├── combined_output.csv           ← Hourly voltage (Oct 29, 2025 – Feb 28, 2026)
+│   ├── combined_temperature.csv      ← Hourly temperature (Dec 29, 2025 – Feb 28, 2026)
+│   ├── combined_humidity.csv         ← Hourly humidity (Dec 29, 2025 – Feb 28, 2026)
+│   └── high_freq_voltage/            ← High-frequency samples (~3s cadence)
+│       └── voltage_data_YYYY-MM-DD_to_YYYY-MM-DD.csv  ← Weekly consolidated files
 │
 ├── 📄 reports/
 │   └── LiFePO4_Report_2026-03-01.md  ← Full technical report

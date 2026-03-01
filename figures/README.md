@@ -22,7 +22,7 @@ The three most important visualizations for understanding this study:
 
 ![Voltage Timeline](fig1_voltage_timeline.png)
 
-**What it shows:** Complete 94+ day voltage monitoring record from Oct 2025 through Jan 2026, with OLS drift regression overlay.
+**What it shows:** Complete 125+ day voltage monitoring record from Oct 2025 through Mar 2026, with OLS drift regression overlay.
 
 **Key insight:** Monotonic decline approaching equilibrium; no divergence signatures.
 
@@ -214,5 +214,5 @@ sns.set_palette('colorblind')
 ## See Also
 
 - [Evidence Map](../docs/evidence_map.md) — Links figures to claims
-- [Technical Report](../reports/LiFePO4_Report_2026-01-31.md) — Figures in context
+- [Technical Report](../reports/LiFePO4_Report_2026-03-01.md) — Figures in context
 - [Methodology](../docs/methodology.md) — How data was analyzed

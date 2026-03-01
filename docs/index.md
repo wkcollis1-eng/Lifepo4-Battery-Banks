@@ -10,13 +10,13 @@ description: Architectural Immunity & Long-Term Storage Analysis
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18452542.svg)](https://doi.org/10.5281/zenodo.18452542)
 [![Data: Open](https://img.shields.io/badge/Data-Open%20Access-green.svg)](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/tree/main/data)
-[![Last Updated](https://img.shields.io/badge/Data%20Through-Jan%2031%2C%202026-blue.svg)](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/releases)
+[![Last Updated](https://img.shields.io/badge/Data%20Through-Mar%201%2C%202026-blue.svg)](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/releases)
 
 ---
 
 ## Overview
 
-A DIY **12V 500Ah LiFePO₄ battery bank** validated at **99% capacity** with **94+ days** of continuous voltage monitoring (Oct 29, 2025 – Jan 31, 2026).
+A DIY **12V 500Ah LiFePO₄ battery bank** validated at **99% capacity** with **125+ days** of continuous voltage monitoring (Oct 29, 2025 – Mar 1, 2026).
 
 This project demonstrates **architectural immunity**—the principle that parallel-connected mixed-brand cells achieve monolithic behavior through topology rather than cell matching.
 
@@ -29,11 +29,12 @@ This project demonstrates **architectural immunity**—the principle that parall
 | Metric | Value | Notes |
 |:-------|------:|:------|
 | 🔋 **Usable Capacity** | 397 Ah (99.3%) | Discharge test validated |
-| 📉 **Stasis Drift** | −0.67 mV/day | Full 70-day stasis period |
-| 📈 **Late Drift** | −0.17 mV/day | Last 30 days (75% reduction) |
+| 📉 **Stasis Drift** | −0.575 mV/day | Full 92-day stasis period |
+| 🔋 **Self-Discharge** | ~0% | All loss from parasitic loads |
+| ⚡ **Parasitic Draw** | 12.5 mA | Drok ~10mA + Shelly ~2-6mA |
 | 📊 **MA-60s Noise Reduction** | 42–50% | Segment-dependent |
 | 🌡️ **Temperature Coefficient** | +1.0 mV/°F | System-level |
-| ⏱️ **Storage Endurance** | 7–10 months | To 80% SOC at ~13–20 mA |
+| ⏱️ **Storage Endurance** | 11+ months | To 80% SOC at 12.5 mA |
 
 ---
 
@@ -42,9 +43,11 @@ This project demonstrates **architectural immunity**—the principle that parall
 | Phase | Status | Duration |
 |:------|:------:|:---------|
 | Discharge Testing | ✅ Complete | Oct 2025 |
-| Long-term Monitoring | ✅ Complete | 94+ days (Nov 2025 – Jan 2026) |
-| Temperature Analysis | ✅ Complete | 34 days |
-| MA-60s Validation | ✅ Complete | 328k samples |
+| Long-term Monitoring | ✅ Complete | 125+ days (Nov 2025 – Mar 2026) |
+| Temperature Analysis | ✅ Complete | 62 days |
+| MA-60s Validation | ✅ Complete | 664k samples |
+| Charge Event Analysis | ✅ Complete | Feb 22, 2026 |
+| Self-Discharge Analysis | ✅ Complete | ~0% confirmed |
 | Direct Current Measurement | 🔲 Planned | Next step |
 
 ---
@@ -53,7 +56,7 @@ This project demonstrates **architectural immunity**—the principle that parall
 
 | Resource | Description |
 |:---------|:------------|
-| [📄 Full Technical Report](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/blob/main/reports/LiFePO4_Report_2026-01-31.md) | Complete analysis with all results |
+| [📄 Full Technical Report](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/blob/main/reports/LiFePO4_Report_2026-03-01.md) | Complete analysis with all results |
 | [🔬 Methodology](methodology.md) | Statistical methods and definitions |
 | [🔁 Replication Guide](replication.md) | Hardware setup and calibration |
 | [🗺️ Evidence Map](evidence_map.md) | Claim → data → code traceability |
@@ -82,11 +85,11 @@ If you replicate this study, you should observe:
 
 ### 1. Architectural Immunity
 
-No evidence of divergence at the common bus potential over 94+ days. Spread inflation post-Eco Mode correlates with measurement-regime change, not electrochemical imbalance.
+No evidence of divergence at the common bus potential over 125+ days. Spread inflation post-Eco Mode correlates with measurement-regime change, not electrochemical imbalance.
 
 ### 2. Storage Viability
 
-Drift is approaching equilibrium (75% rate reduction from full-period to last-30-day window). Projected **7–10 months to 80% SOC** at an effective draw of ~13–20 mA.
+Drift is approaching equilibrium (21% rate reduction in final 30 days). Projected **11+ months to 80% SOC** at measured parasitic draw of 12.5 mA. **Self-discharge confirmed at ~0%**—all capacity loss attributable to monitoring equipment.
 
 ### 3. Temperature Sensitivity
 

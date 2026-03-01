@@ -305,4 +305,4 @@ Claim → Data File → Code Section → Figure → Report Section
 
 - [Methodology](methodology.md) — Detailed analytical methods
 - [Data Dictionary](../data/README.md) — Dataset documentation
-- [Technical Report](../reports/LiFePO4_Report_2026-01-31.md) — Full analysis
+- [Technical Report](../reports/LiFePO4_Report_2026-03-01.md) — Full analysis
