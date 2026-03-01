@@ -9,6 +9,7 @@ This folder contains the raw and processed datasets for the LiFePO₄ battery mo
 - [Files Overview](#files-overview)
 - [Hourly Voltage Data](#hourly-voltage-data)
 - [Hourly Temperature Data](#hourly-temperature-data)
+- [Hourly Humidity Data](#hourly-humidity-data)
 - [High-Frequency Voltage Data](#high-frequency-voltage-data)
 - [Units & Conventions](#units--conventions)
 - [How to Load](#how-to-load)
@@ -21,13 +22,13 @@ This folder contains the raw and processed datasets for the LiFePO₄ battery mo
 
 | File | Description | Records | Coverage |
 |:-----|:------------|--------:|:---------|
-| `combined_output.csv` | Hourly voltage (min/max) | 2,222 | Oct 29, 2025 – Jan 31, 2026 |
-| `combined_temperature.csv` | Hourly temperature (min/max) | 816 | Dec 29, 2025 – Jan 31, 2026 |
-| `history.csv` | High-frequency voltage samples | ~67,000 | Partial (see releases) |
-| `High Freq Voltage Data *.csv` | Extended high-freq datasets | ~328,000 | Dec 26, 2025 – Feb 1, 2026 |
+| `combined_output.csv` | Hourly voltage (min/max) | 2,894 | Oct 29, 2025 – Feb 28, 2026 |
+| `combined_temperature.csv` | Hourly temperature (min/max) | 1,488 | Dec 29, 2025 – Feb 28, 2026 |
+| `combined_humidity.csv` | Hourly humidity | 1,488 | Dec 29, 2025 – Feb 28, 2026 |
+| `high_freq_voltage/*.csv` | Weekly high-freq voltage files | 663,683 | Dec 26, 2025 – Mar 1, 2026 |
 
 > [!NOTE]
-> For the complete high-frequency dataset (~328,000 samples), see [GitHub Releases](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/releases).
+> High-frequency data is now organized in weekly consolidated files within the `high_freq_voltage/` subdirectory.
 
 ---
 
@@ -46,8 +47,8 @@ This folder contains the raw and processed datasets for the LiFePO₄ battery mo
 
 | Property | Value |
 |:---------|:------|
-| Coverage | Oct 29, 2025 → Jan 31, 2026 |
-| Records | 2,222 |
+| Coverage | Oct 29, 2025 → Feb 28, 2026 |
+| Records | 2,894 |
 | Cadence | Hourly aggregates |
 | Source | Shelly Plus Uni voltmeter via Home Assistant |
 | Quantization | ~10 mV (sensor resolution) |
@@ -78,21 +79,45 @@ This folder contains the raw and processed datasets for the LiFePO₄ battery mo
 
 | Property | Value |
 |:---------|:------|
-| Coverage | Dec 29, 2025 → Jan 31, 2026 |
-| Records | 816 |
+| Coverage | Dec 29, 2025 → Feb 28, 2026 |
+| Records | 1,488 |
 | Cadence | Hourly aggregates |
 | Source | Co-located basement temperature sensor |
 | Location | Same room as battery bank (~3 ft distance) |
-| Temperature Range | 51.5°F – 55.95°F |
+| Temperature Range | 51.2°F – 56.0°F |
 
 > [!IMPORTANT]
 > Temperature sensor was added mid-study. No temperature data is available before Dec 29, 2025.
 
 ---
 
+## Hourly Humidity Data
+
+### `combined_humidity.csv`
+
+| Column | Type | Unit | Description |
+|:-------|:-----|:-----|:------------|
+| `Date` | string | DD/MM/YYYY | Date of measurement |
+| `Time` | string | HH:MM | Hour of measurement (local time, EST/EDT) |
+| `Humidity` | float | % | Relative humidity reading |
+
+**Metadata:**
+
+| Property | Value |
+|:---------|:------|
+| Coverage | Dec 29, 2025 → Feb 28, 2026 |
+| Records | 1,488 |
+| Cadence | Hourly aggregates |
+| Source | Co-located basement humidity sensor |
+| Location | Same room as battery bank |
+
+---
+
 ## High-Frequency Voltage Data
 
-### `history.csv` (Partial)
+### `high_freq_voltage/` Directory
+
+Contains weekly consolidated CSV files with ~3-second cadence voltage readings.
 
 | Column | Type | Unit | Description |
 |:-------|:-----|:-----|:------------|
@@ -100,25 +125,31 @@ This folder contains the raw and processed datasets for the LiFePO₄ battery mo
 | `state` | float | V | Instantaneous voltage reading |
 | `last_changed` | datetime | ISO 8601 UTC | Timestamp of measurement |
 
+### Weekly Files
+
+| File | Samples | Coverage |
+|:-----|--------:|:---------|
+| `voltage_data_2025-12-26_to_2025-12-28.csv` | 54 | Dec 26-28, 2025 |
+| `voltage_data_2025-12-29_to_2026-01-04.csv` | 168 | Dec 29 - Jan 4 |
+| `voltage_data_2026-01-05_to_2026-01-11.csv` | 70,627 | Jan 5-11 |
+| `voltage_data_2026-01-12_to_2026-01-18.csv` | 82,939 | Jan 12-18 |
+| `voltage_data_2026-01-19_to_2026-01-25.csv` | 89,669 | Jan 19-25 |
+| `voltage_data_2026-01-26_to_2026-02-01.csv` | 94,416 | Jan 26 - Feb 1 |
+| `voltage_data_2026-02-02_to_2026-02-08.csv` | 87,824 | Feb 2-8 |
+| `voltage_data_2026-02-09_to_2026-02-15.csv` | 95,804 | Feb 9-15 |
+| `voltage_data_2026-02-16_to_2026-02-22.csv` | 98,324 | Feb 16-22 |
+| `voltage_data_2026-02-23_to_2026-03-01.csv` | 43,870 | Feb 23 - Mar 1 |
+| **Total** | **663,683** | **Dec 26, 2025 – Mar 1, 2026** |
+
 **Metadata:**
 
 | Property | Value |
 |:---------|:------|
-| Coverage | Jan 27, 2026 → Feb 1, 2026 (partial) |
-| Records | ~67,000 in this file |
+| Coverage | Dec 26, 2025 → Mar 1, 2026 |
+| Total Records | 663,683 |
 | Cadence | ~3 seconds median (variable) |
-| Mean Interval | ~10 seconds (gaps inflate average) |
 | Source | Shelly Plus Uni, state-change logging |
-
-### Full High-Frequency Datasets
-
-Available in [GitHub Releases](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/releases):
-
-| File | Samples | Coverage |
-|:-----|--------:|:---------|
-| `High Freq Voltage Data 1-18-2026.csv` | ~115,000 | Dec 26, 2025 – Jan 18, 2026 |
-| `High Freq Voltage Data 1-27-2026.csv` | ~142,000 | Jan 19, 2026 – Jan 27, 2026 |
-| Combined total | ~328,000 | Dec 26, 2025 – Feb 1, 2026 |
+| Organization | Weekly consolidated files, deduplicated |
 
 ---
 
@@ -190,12 +221,32 @@ print(f"Temperature: {len(temp)} records, "
       f"{temp['datetime'].min()} to {temp['datetime'].max()}")
 
 # ============================================================
-# High-frequency data
+# Hourly humidity data
 # ============================================================
-hf = pd.read_csv('data/history.csv')
-hf.columns = ['entity_id', 'voltage', 'timestamp']
-hf['timestamp'] = pd.to_datetime(hf['timestamp'])
-hf['voltage'] = pd.to_numeric(hf['voltage'], errors='coerce')
+humidity = pd.read_csv('data/combined_humidity.csv')
+humidity['datetime'] = pd.to_datetime(
+    humidity['Date'] + ' ' + humidity['Time'],
+    format='%d/%m/%Y %H:%M'
+)
+
+print(f"Humidity: {len(humidity)} records, "
+      f"{humidity['datetime'].min()} to {humidity['datetime'].max()}")
+
+# ============================================================
+# High-frequency data (load all weekly files)
+# ============================================================
+import glob
+
+hf_files = glob.glob('data/high_freq_voltage/*.csv')
+hf_list = []
+for f in hf_files:
+    df = pd.read_csv(f)
+    df.columns = ['entity_id', 'voltage', 'timestamp']
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df['voltage'] = pd.to_numeric(df['voltage'], errors='coerce')
+    hf_list.append(df)
+
+hf = pd.concat(hf_list, ignore_index=True).sort_values('timestamp')
 
 print(f"High-freq: {len(hf)} records, "
       f"{hf['timestamp'].min()} to {hf['timestamp'].max()}")
@@ -217,6 +268,16 @@ voltage <- read_csv("data/combined_output.csv") %>%
 temp <- read_csv("data/combined_temperature.csv") %>%
   mutate(datetime = dmy_hm(paste(Date, Time)),
          Mid = (Min + Max) / 2)
+
+# Hourly humidity
+humidity <- read_csv("data/combined_humidity.csv") %>%
+  mutate(datetime = dmy_hm(paste(Date, Time)))
+
+# High-frequency (all weekly files)
+hf_files <- list.files("data/high_freq_voltage", pattern = "*.csv", full.names = TRUE)
+hf <- map_dfr(hf_files, read_csv) %>%
+  rename(voltage = state, timestamp = last_changed) %>%
+  mutate(timestamp = ymd_hms(timestamp))
 ```
 
 ---
@@ -239,6 +300,7 @@ temp <- read_csv("data/combined_temperature.csv") %>%
 | Jan 14, 2026 | 02:13 UTC | EMI spike | Single outlier (>60 mV spread) | Exclude from MA-60s |
 | Jan 20, 2026 | 18:35 UTC | EMI spike | Single outlier | Exclude from MA-60s |
 | Jan 23, 2026 | 08:37 UTC | EMI spike | Single outlier | Exclude from MA-60s |
+| Feb 22, 2026 | 10:00-12:00 | Charge event | Voltage rise to 14.51V | Analyze separately; marks end of stasis period |
 
 ### Data Quality Flags
 
@@ -261,31 +323,31 @@ The 10 mV quantization in hourly data is a **sensor limitation**, not rounding. 
 ## Schema Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        DATA RELATIONSHIPS                        │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│   combined_output.csv          combined_temperature.csv          │
-│   ┌──────────────────┐         ┌──────────────────┐             │
-│   │ Date    (PK)     │         │ Date    (PK)     │             │
-│   │ Time    (PK)     │◄───────►│ Time    (PK)     │             │
-│   │ Min     (V)      │  JOIN   │ Min     (°F)     │             │
-│   │ Max     (V)      │   ON    │ Max     (°F)     │             │
-│   └──────────────────┘ Date+   └──────────────────┘             │
-│          │              Time                                     │
-│          │                                                       │
-│          │ Derived from                                          │
-│          ▼                                                       │
-│   ┌──────────────────┐                                          │
-│   │ history.csv      │                                          │
-│   │ (high-frequency) │                                          │
-│   ├──────────────────┤                                          │
-│   │ entity_id        │                                          │
-│   │ state     (V)    │                                          │
-│   │ last_changed(UTC)│                                          │
-│   └──────────────────┘                                          │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                         DATA RELATIONSHIPS                            │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                       │
+│   combined_output.csv     combined_temperature.csv  combined_humidity │
+│   ┌──────────────────┐    ┌──────────────────┐     ┌───────────────┐ │
+│   │ Date    (PK)     │    │ Date    (PK)     │     │ Date   (PK)   │ │
+│   │ Time    (PK)     │◄──►│ Time    (PK)     │◄───►│ Time   (PK)   │ │
+│   │ Min     (V)      │    │ Min     (°F)     │     │ Humidity (%)  │ │
+│   │ Max     (V)      │    │ Max     (°F)     │     └───────────────┘ │
+│   └──────────────────┘    └──────────────────┘                       │
+│          │                      JOIN ON Date+Time                     │
+│          │                                                            │
+│          │ Derived from                                               │
+│          ▼                                                            │
+│   ┌────────────────────────────────────────┐                         │
+│   │ high_freq_voltage/                     │                         │
+│   │   voltage_data_YYYY-MM-DD_*.csv        │                         │
+│   ├────────────────────────────────────────┤                         │
+│   │ entity_id                              │                         │
+│   │ state          (V)                     │                         │
+│   │ last_changed   (UTC, ISO 8601)         │                         │
+│   └────────────────────────────────────────┘                         │
+│                                                                       │
+└──────────────────────────────────────────────────────────────────────┘
 
 Legend:
   (PK) = Part of composite primary key

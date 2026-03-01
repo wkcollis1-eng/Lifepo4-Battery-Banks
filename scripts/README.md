@@ -97,14 +97,14 @@ Key parameters are defined at the top of `lifepo4_analysis.py`:
 # File paths
 VOLTAGE_FILE = 'data/combined_output.csv'
 TEMP_FILE = 'data/combined_temperature.csv'
-HF_FILE = 'data/history.csv'
+HF_FILE = 'data/high_freq_voltage/'  # Weekly consolidated files
 
 # Date parsing
 DATE_FORMAT = '%d/%m/%Y %H:%M'
 
 # Stasis period definition
 STASIS_START = '2025-11-22'
-STASIS_END = '2026-01-31'
+STASIS_END = '2026-02-21'
 
 # Eco Mode transition
 ECO_MODE_DATETIME = '2025-12-23 15:40:00'
@@ -126,20 +126,20 @@ The script prints analysis results to stdout:
 ================================================================================
 DRIFT ANALYSIS
 ================================================================================
-Full stasis period: 2025-11-22 to 2026-01-31 (70 days)
-  OLS slope: -0.665 mV/day
+Full stasis period: 2025-11-22 to 2026-02-21 (92 days)
+  OLS slope: -0.575 mV/day
   R²: 0.876
-  Total change: -46.6 mV
+  Total change: -46.0 mV
 
-Last 30 days: 2026-01-02 to 2026-01-31
-  OLS slope: -0.165 mV/day
+Last 30 days: 2026-01-23 to 2026-02-21
+  OLS slope: -0.454 mV/day
   R²: 0.132
-  Rate reduction: 75.1%
+  Rate reduction: 21.0%
 
 ================================================================================
 MA-60 SECONDS ANALYSIS
 ================================================================================
-Global statistics (328,556 samples):
+Global statistics (663,683 samples):
   Raw σ: 10.38 mV
   MA-60s σ: 5.98 mV
   Noise reduction: 42.5%
@@ -200,7 +200,7 @@ DATE_FORMAT = '%Y-%m-%dT%H:%M:%SZ' # ISO 8601 with timezone
 ```python
 # Adjust to your monitoring period
 STASIS_START = '2025-11-22'  # When monitoring began
-STASIS_END = '2026-01-31'    # Data cutoff
+STASIS_END = '2026-02-21'    # Data cutoff (before Feb 22 charge event)
 
 # If you have an Eco Mode or similar transition
 ECO_MODE_DATETIME = '2025-12-23 15:40:00'

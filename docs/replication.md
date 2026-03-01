@@ -243,7 +243,7 @@ TIMEZONE = 'America/New_York'  # or 'UTC', 'Europe/London', etc.
 
 # Stasis period (adjust to your monitoring timeline)
 STASIS_START = '2025-11-22'
-STASIS_END = '2026-01-31'
+STASIS_END = '2026-02-21'
 ```
 
 ### 7.4 Sharing Your Results
