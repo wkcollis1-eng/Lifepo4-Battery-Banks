@@ -155,7 +155,7 @@ The ~80-90 second cadence is consistent with BMS balance cycling rather than ran
 
 ## 4. Post-Charge Relaxation
 
-### 3.1 Daily Voltage Profile (Feb 22 - Mar 1)
+### 4.1 Daily Voltage Profile (Feb 22 - Mar 1)
 
 | Date | Mean Voltage | Std Dev | Min | Max |
 |:-----|-------------:|--------:|----:|----:|
@@ -168,7 +168,7 @@ The ~80-90 second cadence is consistent with BMS balance cycling rather than ran
 | Feb 28 | 13.270 V | 8.2 mV | 13.240 | 13.280 |
 | Mar 1 | 13.267 V | 8.7 mV | 13.240 | 13.280 |
 
-### 3.2 Relaxation Analysis
+### 4.2 Relaxation Analysis
 
 | Metric | Value |
 |:-------|------:|
@@ -181,11 +181,41 @@ The ~80-90 second cadence is consistent with BMS balance cycling rather than ran
 
 **Interpretation:** This is classic surface-charge dissipation behavior. The rapid initial drop reflects redistribution of charge throughout the cell mass. The settling voltage of 13.267V (vs 13.225V pre-charge) indicates a net SOC increase of approximately 8-10% retained after relaxation.
 
+### 4.3 Comparison: Nov 4, 2025 vs Feb 22, 2026 Charge Events
+
+The study captured two charge events, allowing comparison of relaxation profiles under different conditions.
+
+| Metric | Nov 4, 2025 | Feb 22, 2026 | Difference |
+|:-------|------------:|-------------:|-----------:|
+| Peak voltage | 14.55 V | 14.51 V | -40 mV |
+| Post-charge start | 13.89 V | 13.47 V | -420 mV |
+| Day 7 settled | 13.29 V | 13.27 V | -20 mV |
+| **Total 7-day drop** | **421 mV** | **174 mV** | **-247 mV** |
+| **First 24h drop** | **198 mV** | **73 mV** | **-125 mV** |
+| Avg relaxation rate | 60 mV/day | 25 mV/day | -35 mV/day |
+
+![Relaxation Comparison](../figures/fig_relaxation_comparison.png)
+*Figure: Post-charge relaxation comparison showing Nov 4 (blue) with faster/larger drop vs Feb 22 (red)*
+
+**Key Observations:**
+
+1. **Both charges reached similar peaks** (~14.5V) but had very different relaxation profiles
+
+2. **Nov 4 had 2.4x faster relaxation** (60 vs 25 mV/day average rate)
+
+3. **The difference is starting SOC:**
+   - Nov 4: Started from lower SOC → more energy added → larger surface charge buildup
+   - Feb 22: Started from ~85% SOC (after 92 days stasis) → only ~16% SOC added → less surface charge
+
+4. **Both settled to the same equilibrium** (~13.27V) — confirming consistent battery chemistry
+
+**Implication:** Relaxation rate is proportional to surface charge buildup, which depends on charge energy input. Both events demonstrate normal, healthy LiFePO₄ behavior with consistent equilibrium voltage.
+
 ---
 
 ## 5. Self-Discharge & Parasitic Loss Analysis
 
-### 4.1 Stasis Period Summary (Nov 22, 2025 - Feb 21, 2026)
+### 5.1 Stasis Period Summary (Nov 22, 2025 - Feb 21, 2026)
 
 | Metric | Value |
 |:-------|------:|
@@ -195,7 +225,7 @@ The ~80-90 second cadence is consistent with BMS balance cycling rather than ran
 | Total voltage drop | 46.0 mV |
 | OLS drift rate | -0.575 mV/day |
 
-### 4.2 Known Parasitic Loads
+### 5.2 Known Parasitic Loads
 
 | Device | Specification | Notes |
 |:-------|:--------------|:------|
@@ -203,7 +233,7 @@ The ~80-90 second cadence is consistent with BMS balance cycling rather than ran
 | Shelly Plus Uni (Eco Mode) | 8-12 mA (spec) | Wi-Fi telemetry |
 | **Total Expected** | **18-27 mA** | |
 
-### 4.3 Calculated vs Expected Drain
+### 5.3 Calculated vs Expected Drain
 
 | Parameter | Value |
 |:----------|------:|
@@ -214,7 +244,7 @@ The ~80-90 second cadence is consistent with BMS balance cycling rather than ran
 | Expected current (18-27 mA) | — |
 | Expected Ah loss (18-27 mA) | 39.7-59.6 Ah |
 
-### 4.4 Key Finding: Negligible Self-Discharge
+### 5.4 Key Finding: Negligible Self-Discharge
 
 The measured 12.5 mA is **lower than the minimum expected parasitic load** (18 mA). This implies:
 
@@ -231,7 +261,7 @@ The measured 12.5 mA is **lower than the minimum expected parasitic load** (18 m
 
 **Implication:** The LiFePO₄ chemistry exhibits effectively zero self-discharge over the 92-day observation period. All capacity loss is attributable to the monitoring equipment parasitic load, with the Shelly Plus Uni in Eco Mode drawing considerably less than its rated specification.
 
-### 4.5 Validation Against Published Data
+### 5.5 Validation Against Published Data
 
 | Source | Reported Self-Discharge | Conditions |
 |:-------|:-----------------------:|:-----------|
@@ -255,7 +285,7 @@ The measured 12.5 mA is **lower than the minimum expected parasitic load** (18 m
 
 ## 6. Drift Analysis (Extended)
 
-### 5.1 Full Stasis Period (Nov 22, 2025 - Feb 21, 2026)
+### 6.1 Full Stasis Period (Nov 22, 2025 - Feb 21, 2026)
 
 | Metric | Value |
 |:-------|------:|
@@ -265,7 +295,7 @@ The measured 12.5 mA is **lower than the minimum expected parasitic load** (18 m
 | End voltage | 13.225 V |
 | Total drift | -46.0 mV |
 
-### 5.2 Last 30 Days Before Charge (Jan 23 - Feb 21)
+### 6.2 Last 30 Days Before Charge (Jan 23 - Feb 21)
 
 | Metric | Value |
 |:-------|------:|
@@ -273,7 +303,7 @@ The measured 12.5 mA is **lower than the minimum expected parasitic load** (18 m
 | OLS drift rate | -0.454 mV/day |
 | Rate reduction | 21.0% |
 
-### 5.3 Drift Flattening Trend
+### 6.3 Drift Flattening Trend
 
 | Window | Drift Rate | Change |
 |:-------|:----------:|:------:|
