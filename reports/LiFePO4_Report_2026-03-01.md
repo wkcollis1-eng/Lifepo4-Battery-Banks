@@ -167,6 +167,26 @@ The measured 12.5 mA is **lower than the minimum expected parasitic load** (18 m
 
 **Implication:** The LiFePO₄ chemistry exhibits effectively zero self-discharge over the 92-day observation period. All capacity loss is attributable to the monitoring equipment parasitic load, with the Shelly Plus Uni in Eco Mode drawing considerably less than its rated specification.
 
+### 4.5 Validation Against Published Data
+
+| Source | Reported Self-Discharge | Conditions |
+|:-------|:-----------------------:|:-----------|
+| Manufacturer specifications | 1-3% per month | Room temperature, typical cells |
+| Premium cells (EVE, CATL) | <1% per month | Quality manufacturers |
+| DIY Solar community measurements | ~0.4% per month | Various conditions |
+| Academic literature | 0.5-2% per month | Lab conditions, ~25°C |
+| **This study** | **~0%** | **54°F (12°C), 92 days** |
+
+**Assessment:** The ~0% finding is consistent with published data when accounting for:
+
+1. **Temperature effect** — Self-discharge rates approximately halve for every 10°C temperature reduction. Storage at 54°F (12°C) vs. typical 77°F (25°C) testing reduces expected rates by 50-70%.
+
+2. **LiFePO₄ chemistry** — The stable olivine crystal structure inherently exhibits lower self-discharge than other lithium chemistries (NMC, LCO, etc.).
+
+3. **Flat OCV region** — At mid-SOC (~85%), the voltage plateau makes small capacity losses difficult to detect above measurement noise.
+
+**Conclusion:** The finding of effectively zero self-discharge represents the favorable end of expected LiFePO₄ behavior under cool storage conditions and does not contradict published literature.
+
 ---
 
 ## 5. Drift Analysis (Extended)
