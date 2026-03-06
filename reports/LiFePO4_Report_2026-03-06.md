@@ -115,6 +115,9 @@ This update extends the analysis through March 6, 2026:
 
 **Interpretation:** The Feb 22 charge started from a higher SOC (~85% vs ~70% for Nov 4), resulting in less energy added and faster post-charge relaxation. Both charges are converging to the same equilibrium voltage (~13.27V), confirming consistent battery behavior.
 
+![Post-Charge Relaxation Comparison](../figures/fig_relaxation_comparison_mar6.png)
+*Figure: Nov 4, 2025 vs Feb 22, 2026 post-charge voltage relaxation profiles. Both charges converge toward ~13.27V equilibrium, with Feb 22 settling faster due to partial top-up charge.*
+
 ---
 
 ## 4. MA-60 Analysis (High-Frequency Data)
