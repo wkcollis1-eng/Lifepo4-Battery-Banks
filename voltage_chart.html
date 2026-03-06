@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voltage Trend - LiFePO₄ Battery Study</title>
+    <title>Voltage Trend - LiFePO4 Battery Study</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <style>
@@ -14,9 +14,7 @@
             padding: 20px;
             background-color: #f6f8fa;
         }
-        h1, h2 {
-            color: #24292e;
-        }
+        h1, h2 { color: #24292e; }
         .chart-container {
             background: white;
             padding: 20px;
@@ -36,88 +34,52 @@
             border-radius: 6px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.12);
         }
-        .stat-label {
-            font-size: 0.85em;
-            color: #586069;
-            margin-bottom: 5px;
-        }
-        .stat-value {
-            font-size: 1.5em;
-            font-weight: 600;
-            color: #24292e;
-        }
-        .stat-unit {
-            font-size: 0.9em;
-            color: #586069;
-        }
-        .back-link {
-            display: inline-block;
-            margin-bottom: 20px;
-            color: #0366d6;
-            text-decoration: none;
-        }
-        .back-link:hover {
-            text-decoration: underline;
-        }
-        .phase-label {
-            padding: 4px 8px;
-            border-radius: 3px;
-            font-size: 0.85em;
-            font-weight: 500;
-            display: inline-block;
-            margin: 0 5px;
-        }
-        .phase-stasis {
-            background-color: #dbedff;
-            color: #0366d6;
-        }
-        .phase-eco {
-            background-color: #dcffe4;
-            color: #28a745;
-        }
-        .annotations {
-            background: #fffbdd;
-            border-left: 4px solid #ffd33d;
-            padding: 15px;
-            margin: 20px 0;
-            border-radius: 3px;
-        }
-        canvas {
-            max-height: 500px;
-        }
+        .stat-label { font-size: 0.85em; color: #586069; margin-bottom: 5px; }
+        .stat-value { font-size: 1.5em; font-weight: 600; color: #24292e; }
+        .stat-unit { font-size: 0.9em; color: #586069; }
+        .back-link { display: inline-block; margin-bottom: 20px; color: #0366d6; text-decoration: none; }
+        .back-link:hover { text-decoration: underline; }
+        .phase-label { padding: 4px 8px; border-radius: 3px; font-size: 0.85em; font-weight: 500; display: inline-block; margin: 0 5px; }
+        .phase-stasis { background-color: #dbedff; color: #0366d6; }
+        .phase-charge { background-color: #fff3cd; color: #856404; }
+        .phase-current { background-color: #dcffe4; color: #28a745; }
+        .annotations { background: #fffbdd; border-left: 4px solid #ffd33d; padding: 15px; margin: 20px 0; border-radius: 3px; }
+        canvas { max-height: 500px; }
     </style>
 </head>
 <body>
-    <a href="index.html" class="back-link">← Back to Overview</a>
-    
-    <h1>⚡ 94-Day Voltage Trend Analysis</h1>
-    <p>Interactive visualization of continuous bus voltage monitoring (Oct 29, 2025 – Jan 31, 2026)</p>
+    <a href="https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks" class="back-link">Back to Repository</a>
+
+    <h1>130-Day Voltage Trend Analysis</h1>
+    <p>Interactive visualization of continuous bus voltage monitoring (Oct 29, 2025 - Mar 5, 2026)</p>
 
     <div class="stats-grid">
         <div class="stat-card">
             <div class="stat-label">Total Duration</div>
-            <div class="stat-value">94<span class="stat-unit"> days</span></div>
+            <div class="stat-value">130<span class="stat-unit"> days</span></div>
         </div>
         <div class="stat-card">
-            <div class="stat-label">Full Stasis Drift</div>
-            <div class="stat-value">−0.67<span class="stat-unit"> mV/day</span></div>
+            <div class="stat-label">Stasis Drift (92d)</div>
+            <div class="stat-value">-0.58<span class="stat-unit"> mV/day</span></div>
         </div>
         <div class="stat-card">
-            <div class="stat-label">Late Drift (Last 30d)</div>
-            <div class="stat-value">−0.17<span class="stat-unit"> mV/day</span></div>
+            <div class="stat-label">Current Drift</div>
+            <div class="stat-value">-4.75<span class="stat-unit"> mV/day</span></div>
         </div>
         <div class="stat-card">
-            <div class="stat-label">Temperature Coefficient</div>
-            <div class="stat-value">+1.0<span class="stat-unit"> mV/°F</span></div>
+            <div class="stat-label">Parasitic Draw</div>
+            <div class="stat-value">12.5<span class="stat-unit"> mA</span></div>
         </div>
     </div>
 
     <div class="annotations">
         <strong>Study Phases:</strong>
-        <span class="phase-label phase-stasis">Stasis (70 days)</span>
-        <span class="phase-label phase-eco">Eco Mode (24 days)</span>
+        <span class="phase-label phase-stasis">Pre-charge Stasis (Nov 22 - Feb 21)</span>
+        <span class="phase-label phase-charge">Charge Event (Feb 22)</span>
+        <span class="phase-label phase-current">Post-charge Settling (Feb 22 - present)</span>
         <br><br>
-        <strong>Note:</strong> Voltage measurements represent bus-level potential (single sensor). Spread reflects hourly max−min from one measurement point, not cell-to-cell variation.
+        <strong>Note:</strong> Voltage measurements represent bus-level potential (single Shelly Plus Uni sensor).
+        High spikes indicate charge events (Nov 1, Nov 4, Feb 22).
     </div>
 
     <div class="chart-container">
@@ -126,79 +88,13 @@
     </div>
 
     <div class="chart-container">
-        <h2>Temperature Correlation (34-day subset)</h2>
+        <h2>Temperature-Voltage Correlation (67 days)</h2>
         <canvas id="tempChart"></canvas>
     </div>
 
-    <div class="chart-container">
-        <h2>Drift Rate Analysis</h2>
-        <canvas id="driftChart"></canvas>
-    </div>
-
     <script>
-        // Sample data structure - REPLACE WITH YOUR ACTUAL DATA
-        // This creates a representative dataset based on your study parameters
-        
-        function generateVoltageData() {
-            const startDate = new Date('2025-10-29');
-            const data = [];
-            let voltage = 13450; // Starting voltage in mV
-            
-            for (let day = 0; day < 94; day++) {
-                const date = new Date(startDate);
-                date.setDate(date.getDate() + day);
-                
-                // Simulate drift: faster early, slower late
-                let drift;
-                if (day < 70) {
-                    drift = -0.67; // Full stasis rate
-                } else {
-                    drift = -0.17; // Eco mode rate (reduced)
-                }
-                
-                // Add some temperature-correlated noise
-                const noise = (Math.random() - 0.5) * 20;
-                
-                voltage += drift + noise;
-                
-                // Add hourly max/min spread data for this day
-                const spread = 15 + Math.random() * 35; // 15-50 mV typical spread
-                
-                data.push({
-                    date: date.toISOString().split('T')[0],
-                    voltage: voltage,
-                    vmax: voltage + spread/2,
-                    vmin: voltage - spread/2
-                });
-            }
-            return data;
-        }
-
-        function generateTemperatureData() {
-            const startDate = new Date('2025-12-28');
-            const data = [];
-            let baseTemp = 65; // °F
-            
-            for (let day = 0; day < 34; day++) {
-                const date = new Date(startDate);
-                date.setDate(date.getDate() + day);
-                
-                // Simulate seasonal temperature variation
-                const temp = baseTemp + Math.sin(day / 7) * 5 + (Math.random() - 0.5) * 2;
-                const baseVoltage = 13400;
-                const voltage = baseVoltage + (temp - 65) * 1.0; // +1.0 mV/°F coefficient
-                
-                data.push({
-                    date: date.toISOString().split('T')[0],
-                    temp: temp,
-                    voltage: voltage
-                });
-            }
-            return data;
-        }
-
-        const voltageData = generateVoltageData();
-        const tempData = generateTemperatureData();
+        const voltageData = [{"date": "2025-10-29", "voltage": 13476.2, "vmax": 14560.0, "vmin": 13270.0}, {"date": "2025-10-30", "voltage": 13562.1, "vmax": 13680.0, "vmin": 13490.0}, {"date": "2025-10-31", "voltage": 13461.7, "vmax": 13490.0, "vmin": 13390.0}, {"date": "2025-11-01", "voltage": 13751.2, "vmax": 14570.0, "vmin": 12990.0}, {"date": "2025-11-02", "voltage": 13263.7, "vmax": 13760.0, "vmin": 12610.0}, {"date": "2025-11-03", "voltage": 13235.2, "vmax": 13540.0, "vmin": 12980.0}, {"date": "2025-11-04", "voltage": 13469.8, "vmax": 14550.0, "vmin": 13300.0}, {"date": "2025-11-05", "voltage": 13660.4, "vmax": 13810.0, "vmin": 13540.0}, {"date": "2025-11-06", "voltage": 13486.7, "vmax": 13570.0, "vmin": 13420.0}, {"date": "2025-11-07", "voltage": 13379.8, "vmax": 13450.0, "vmin": 13330.0}, {"date": "2025-11-08", "voltage": 13323.7, "vmax": 13360.0, "vmin": 13300.0}, {"date": "2025-11-09", "voltage": 13301.3, "vmax": 13320.0, "vmin": 13280.0}, {"date": "2025-11-10", "voltage": 13289.8, "vmax": 13310.0, "vmin": 13270.0}, {"date": "2025-11-11", "voltage": 13282.7, "vmax": 13300.0, "vmin": 13260.0}, {"date": "2025-11-12", "voltage": 13276.7, "vmax": 13290.0, "vmin": 13250.0}, {"date": "2025-11-13", "voltage": 13278.6, "vmax": 13290.0, "vmin": 13250.0}, {"date": "2025-11-14", "voltage": 13277.9, "vmax": 13290.0, "vmin": 13250.0}, {"date": "2025-11-15", "voltage": 13277.1, "vmax": 13290.0, "vmin": 13240.0}, {"date": "2025-11-16", "voltage": 13270.8, "vmax": 13290.0, "vmin": 13250.0}, {"date": "2025-11-17", "voltage": 13270.0, "vmax": 13280.0, "vmin": 13250.0}, {"date": "2025-11-18", "voltage": 13271.2, "vmax": 13280.0, "vmin": 13260.0}, {"date": "2025-11-19", "voltage": 13272.7, "vmax": 13290.0, "vmin": 13250.0}, {"date": "2025-11-20", "voltage": 13270.8, "vmax": 13280.0, "vmin": 13250.0}, {"date": "2025-11-21", "voltage": 13267.9, "vmax": 13280.0, "vmin": 13240.0}, {"date": "2025-11-22", "voltage": 13271.5, "vmax": 13280.0, "vmin": 13260.0}, {"date": "2025-11-23", "voltage": 13274.6, "vmax": 13280.0, "vmin": 13240.0}, {"date": "2025-11-24", "voltage": 13266.0, "vmax": 13280.0, "vmin": 13240.0}, {"date": "2025-11-25", "voltage": 13267.9, "vmax": 13280.0, "vmin": 13240.0}, {"date": "2025-11-26", "voltage": 13268.5, "vmax": 13280.0, "vmin": 13240.0}, {"date": "2025-11-27", "voltage": 13279.6, "vmax": 13300.0, "vmin": 13270.0}, {"date": "2025-11-28", "voltage": 13279.2, "vmax": 13280.0, "vmin": 13270.0}, {"date": "2025-11-29", "voltage": 13277.7, "vmax": 13290.0, "vmin": 13260.0}, {"date": "2025-11-30", "voltage": 13273.1, "vmax": 13280.0, "vmin": 13250.0}, {"date": "2025-12-01", "voltage": 13267.9, "vmax": 13280.0, "vmin": 13240.0}, {"date": "2025-12-02", "voltage": 13267.9, "vmax": 13280.0, "vmin": 13250.0}, {"date": "2025-12-03", "voltage": 13265.8, "vmax": 13280.0, "vmin": 13230.0}, {"date": "2025-12-04", "voltage": 13266.0, "vmax": 13280.0, "vmin": 13230.0}, {"date": "2025-12-05", "voltage": 13267.7, "vmax": 13280.0, "vmin": 13240.0}, {"date": "2025-12-06", "voltage": 13268.1, "vmax": 13280.0, "vmin": 13240.0}, {"date": "2025-12-07", "voltage": 13267.5, "vmax": 13280.0, "vmin": 13250.0}, {"date": "2025-12-08", "voltage": 13265.4, "vmax": 13280.0, "vmin": 13240.0}, {"date": "2025-12-09", "voltage": 13259.4, "vmax": 13280.0, "vmin": 13230.0}, {"date": "2025-12-10", "voltage": 13263.8, "vmax": 13280.0, "vmin": 13250.0}, {"date": "2025-12-11", "voltage": 13264.8, "vmax": 13280.0, "vmin": 13240.0}, {"date": "2025-12-12", "voltage": 13258.5, "vmax": 13280.0, "vmin": 13240.0}, {"date": "2025-12-13", "voltage": 13257.3, "vmax": 13280.0, "vmin": 13230.0}, {"date": "2025-12-14", "voltage": 13260.4, "vmax": 13280.0, "vmin": 13240.0}, {"date": "2025-12-15", "voltage": 13260.2, "vmax": 13280.0, "vmin": 13240.0}, {"date": "2025-12-16", "voltage": 13259.6, "vmax": 13280.0, "vmin": 13230.0}, {"date": "2025-12-17", "voltage": 13255.0, "vmax": 13280.0, "vmin": 13220.0}, {"date": "2025-12-18", "voltage": 13255.8, "vmax": 13270.0, "vmin": 13230.0}, {"date": "2025-12-19", "voltage": 13254.2, "vmax": 13280.0, "vmin": 13210.0}, {"date": "2025-12-20", "voltage": 13250.4, "vmax": 13270.0, "vmin": 13220.0}, {"date": "2025-12-21", "voltage": 13256.9, "vmax": 13280.0, "vmin": 13230.0}, {"date": "2025-12-22", "voltage": 13256.7, "vmax": 13280.0, "vmin": 13230.0}, {"date": "2025-12-23", "voltage": 13253.7, "vmax": 13300.0, "vmin": 13220.0}, {"date": "2025-12-24", "voltage": 13252.7, "vmax": 13280.0, "vmin": 13230.0}, {"date": "2025-12-25", "voltage": 13252.5, "vmax": 13280.0, "vmin": 13230.0}, {"date": "2025-12-26", "voltage": 13243.8, "vmax": 13270.0, "vmin": 13210.0}, {"date": "2025-12-27", "voltage": 13241.7, "vmax": 13270.0, "vmin": 13200.0}, {"date": "2025-12-28", "voltage": 13244.6, "vmax": 13290.0, "vmin": 13210.0}, {"date": "2025-12-29", "voltage": 13241.2, "vmax": 13270.0, "vmin": 13200.0}, {"date": "2025-12-30", "voltage": 13242.3, "vmax": 13270.0, "vmin": 13210.0}, {"date": "2025-12-31", "voltage": 13237.3, "vmax": 13270.0, "vmin": 13210.0}, {"date": "2026-01-01", "voltage": 13238.1, "vmax": 13270.0, "vmin": 13200.0}, {"date": "2026-01-02", "voltage": 13238.3, "vmax": 13270.0, "vmin": 13200.0}, {"date": "2026-01-03", "voltage": 13237.5, "vmax": 13270.0, "vmin": 13200.0}, {"date": "2026-01-04", "voltage": 13235.6, "vmax": 13270.0, "vmin": 13200.0}, {"date": "2026-01-05", "voltage": 13237.1, "vmax": 13270.0, "vmin": 13200.0}, {"date": "2026-01-06", "voltage": 13234.4, "vmax": 13260.0, "vmin": 13200.0}, {"date": "2026-01-07", "voltage": 13231.5, "vmax": 13270.0, "vmin": 13200.0}, {"date": "2026-01-08", "voltage": 13233.1, "vmax": 13260.0, "vmin": 13200.0}, {"date": "2026-01-09", "voltage": 13242.1, "vmax": 13270.0, "vmin": 13210.0}, {"date": "2026-01-10", "voltage": 13240.4, "vmax": 13270.0, "vmin": 13210.0}, {"date": "2026-01-11", "voltage": 13244.4, "vmax": 13270.0, "vmin": 13210.0}, {"date": "2026-01-12", "voltage": 13243.5, "vmax": 13280.0, "vmin": 13210.0}, {"date": "2026-01-13", "voltage": 13239.0, "vmax": 13270.0, "vmin": 13190.0}, {"date": "2026-01-14", "voltage": 13236.2, "vmax": 13270.0, "vmin": 13200.0}, {"date": "2026-01-15", "voltage": 13240.2, "vmax": 13270.0, "vmin": 13210.0}, {"date": "2026-01-16", "voltage": 13240.0, "vmax": 13270.0, "vmin": 13200.0}, {"date": "2026-01-17", "voltage": 13234.6, "vmax": 13270.0, "vmin": 13200.0}, {"date": "2026-01-18", "voltage": 13236.2, "vmax": 13260.0, "vmin": 13210.0}, {"date": "2026-01-19", "voltage": 13233.1, "vmax": 13270.0, "vmin": 13200.0}, {"date": "2026-01-20", "voltage": 13238.8, "vmax": 13270.0, "vmin": 13200.0}, {"date": "2026-01-21", "voltage": 13232.3, "vmax": 13260.0, "vmin": 13200.0}, {"date": "2026-01-22", "voltage": 13231.0, "vmax": 13270.0, "vmin": 13200.0}, {"date": "2026-01-23", "voltage": 13233.1, "vmax": 13260.0, "vmin": 13200.0}, {"date": "2026-01-24", "voltage": 13238.8, "vmax": 13270.0, "vmin": 13200.0}, {"date": "2026-01-25", "voltage": 13237.3, "vmax": 13270.0, "vmin": 13210.0}, {"date": "2026-01-26", "voltage": 13238.5, "vmax": 13270.0, "vmin": 13210.0}, {"date": "2026-01-27", "voltage": 13237.7, "vmax": 13260.0, "vmin": 13210.0}, {"date": "2026-01-28", "voltage": 13234.2, "vmax": 13260.0, "vmin": 13200.0}, {"date": "2026-01-29", "voltage": 13235.8, "vmax": 13270.0, "vmin": 13210.0}, {"date": "2026-01-30", "voltage": 13227.5, "vmax": 13260.0, "vmin": 13200.0}, {"date": "2026-01-31", "voltage": 13229.4, "vmax": 13260.0, "vmin": 13200.0}, {"date": "2026-02-01", "voltage": 13231.7, "vmax": 13260.0, "vmin": 13200.0}, {"date": "2026-02-02", "voltage": 13231.7, "vmax": 13260.0, "vmin": 13180.0}, {"date": "2026-02-03", "voltage": 13230.2, "vmax": 13260.0, "vmin": 13200.0}, {"date": "2026-02-04", "voltage": 13229.6, "vmax": 13260.0, "vmin": 13200.0}, {"date": "2026-02-05", "voltage": 13227.5, "vmax": 13250.0, "vmin": 13190.0}, {"date": "2026-02-06", "voltage": 13229.4, "vmax": 13260.0, "vmin": 13190.0}, {"date": "2026-02-07", "voltage": 13228.8, "vmax": 13260.0, "vmin": 13190.0}, {"date": "2026-02-08", "voltage": 13227.1, "vmax": 13260.0, "vmin": 13190.0}, {"date": "2026-02-09", "voltage": 13225.4, "vmax": 13260.0, "vmin": 13180.0}, {"date": "2026-02-10", "voltage": 13226.7, "vmax": 13260.0, "vmin": 13190.0}, {"date": "2026-02-11", "voltage": 13226.5, "vmax": 13260.0, "vmin": 13190.0}, {"date": "2026-02-12", "voltage": 13223.8, "vmax": 13260.0, "vmin": 13190.0}, {"date": "2026-02-13", "voltage": 13222.9, "vmax": 13260.0, "vmin": 13190.0}, {"date": "2026-02-14", "voltage": 13222.1, "vmax": 13250.0, "vmin": 13190.0}, {"date": "2026-02-15", "voltage": 13222.9, "vmax": 13250.0, "vmin": 13190.0}, {"date": "2026-02-16", "voltage": 13225.4, "vmax": 13250.0, "vmin": 13190.0}, {"date": "2026-02-17", "voltage": 13225.0, "vmax": 13260.0, "vmin": 13180.0}, {"date": "2026-02-18", "voltage": 13227.1, "vmax": 13260.0, "vmin": 13190.0}, {"date": "2026-02-19", "voltage": 13227.1, "vmax": 13260.0, "vmin": 13190.0}, {"date": "2026-02-20", "voltage": 13227.7, "vmax": 13260.0, "vmin": 13190.0}, {"date": "2026-02-21", "voltage": 13225.4, "vmax": 13260.0, "vmin": 13190.0}, {"date": "2026-02-22", "voltage": 13385.4, "vmax": 14510.0, "vmin": 13180.0}, {"date": "2026-02-23", "voltage": 13423.8, "vmax": 13490.0, "vmin": 13360.0}, {"date": "2026-02-24", "voltage": 13359.0, "vmax": 13400.0, "vmin": 13310.0}, {"date": "2026-02-25", "voltage": 13317.5, "vmax": 13350.0, "vmin": 13290.0}, {"date": "2026-02-26", "voltage": 13292.9, "vmax": 13320.0, "vmin": 13270.0}, {"date": "2026-02-27", "voltage": 13274.8, "vmax": 13300.0, "vmin": 13250.0}, {"date": "2026-02-28", "voltage": 13265.8, "vmax": 13280.0, "vmin": 13240.0}, {"date": "2026-03-01", "voltage": 13261.2, "vmax": 13280.0, "vmin": 13220.0}, {"date": "2026-03-02", "voltage": 13260.2, "vmax": 13280.0, "vmin": 13230.0}, {"date": "2026-03-03", "voltage": 13261.0, "vmax": 13280.0, "vmin": 13230.0}, {"date": "2026-03-04", "voltage": 13262.7, "vmax": 13280.0, "vmin": 13230.0}, {"date": "2026-03-05", "voltage": 13253.7, "vmax": 13280.0, "vmin": 13220.0}];
+        const tempVoltageData = [{"temp": 55.0, "voltage": 13241.2}, {"temp": 54.8, "voltage": 13242.3}, {"temp": 54.5, "voltage": 13237.3}, {"temp": 54.3, "voltage": 13238.1}, {"temp": 54.1, "voltage": 13238.3}, {"temp": 54.0, "voltage": 13237.5}, {"temp": 54.1, "voltage": 13235.6}, {"temp": 54.2, "voltage": 13237.1}, {"temp": 54.5, "voltage": 13234.4}, {"temp": 54.9, "voltage": 13231.5}, {"temp": 55.0, "voltage": 13233.1}, {"temp": 55.1, "voltage": 13242.1}, {"temp": 55.0, "voltage": 13240.4}, {"temp": 55.1, "voltage": 13244.4}, {"temp": 54.9, "voltage": 13243.5}, {"temp": 54.8, "voltage": 13239.0}, {"temp": 54.9, "voltage": 13236.2}, {"temp": 55.2, "voltage": 13240.2}, {"temp": 54.8, "voltage": 13240.0}, {"temp": 54.6, "voltage": 13234.6}, {"temp": 54.4, "voltage": 13236.2}, {"temp": 54.5, "voltage": 13233.1}, {"temp": 54.0, "voltage": 13238.8}, {"temp": 53.3, "voltage": 13232.3}, {"temp": 53.6, "voltage": 13231.0}, {"temp": 53.7, "voltage": 13233.1}, {"temp": 52.8, "voltage": 13238.8}, {"temp": 52.1, "voltage": 13237.3}, {"temp": 52.7, "voltage": 13238.5}, {"temp": 53.0, "voltage": 13237.7}, {"temp": 53.1, "voltage": 13234.2}, {"temp": 53.2, "voltage": 13235.8}, {"temp": 52.9, "voltage": 13227.5}, {"temp": 52.8, "voltage": 13229.4}, {"temp": 52.8, "voltage": 13231.7}, {"temp": 52.7, "voltage": 13231.7}, {"temp": 52.7, "voltage": 13230.2}, {"temp": 52.8, "voltage": 13229.6}, {"temp": 52.8, "voltage": 13227.5}, {"temp": 52.8, "voltage": 13229.4}, {"temp": 52.7, "voltage": 13228.8}, {"temp": 52.2, "voltage": 13227.1}, {"temp": 51.9, "voltage": 13225.4}, {"temp": 52.2, "voltage": 13226.7}, {"temp": 52.6, "voltage": 13226.5}, {"temp": 52.6, "voltage": 13223.8}, {"temp": 52.4, "voltage": 13222.9}, {"temp": 52.5, "voltage": 13222.1}, {"temp": 52.6, "voltage": 13222.9}, {"temp": 52.7, "voltage": 13225.4}, {"temp": 52.9, "voltage": 13225.0}, {"temp": 53.0, "voltage": 13227.1}, {"temp": 53.0, "voltage": 13227.1}, {"temp": 53.1, "voltage": 13227.7}, {"temp": 52.9, "voltage": 13225.4}, {"temp": 53.2, "voltage": 13385.4}, {"temp": 52.9, "voltage": 13423.8}, {"temp": 52.5, "voltage": 13359.0}, {"temp": 52.4, "voltage": 13317.5}, {"temp": 52.4, "voltage": 13292.9}, {"temp": 52.3, "voltage": 13274.8}, {"temp": 52.3, "voltage": 13265.8}, {"temp": 52.6, "voltage": 13261.2}, {"temp": 52.4, "voltage": 13260.2}, {"temp": 52.3, "voltage": 13261.0}, {"temp": 51.9, "voltage": 13262.7}, {"temp": 52.4, "voltage": 13253.7}];
 
         // Chart 1: Main voltage trend
         const ctx1 = document.getElementById('voltageChart').getContext('2d');
@@ -208,18 +104,19 @@
                 labels: voltageData.map(d => d.date),
                 datasets: [
                     {
-                        label: 'Bus Voltage (mV)',
+                        label: 'Daily Mean (mV)',
                         data: voltageData.map(d => d.voltage),
                         borderColor: '#0366d6',
                         backgroundColor: 'rgba(3, 102, 214, 0.1)',
                         tension: 0.1,
                         pointRadius: 1,
-                        borderWidth: 2
+                        borderWidth: 2,
+                        fill: false
                     },
                     {
                         label: 'Daily Max',
                         data: voltageData.map(d => d.vmax),
-                        borderColor: 'rgba(203, 36, 49, 0.3)',
+                        borderColor: 'rgba(203, 36, 49, 0.4)',
                         backgroundColor: 'transparent',
                         tension: 0.1,
                         pointRadius: 0,
@@ -229,7 +126,7 @@
                     {
                         label: 'Daily Min',
                         data: voltageData.map(d => d.vmin),
-                        borderColor: 'rgba(203, 36, 49, 0.3)',
+                        borderColor: 'rgba(40, 167, 69, 0.4)',
                         backgroundColor: 'transparent',
                         tension: 0.1,
                         pointRadius: 0,
@@ -241,36 +138,13 @@
             options: {
                 responsive: true,
                 maintainAspectRatio: true,
-                interaction: {
-                    mode: 'index',
-                    intersect: false,
-                },
+                interaction: { mode: 'index', intersect: false },
                 plugins: {
-                    legend: {
-                        display: true,
-                        position: 'top',
-                    },
+                    legend: { display: true, position: 'top' },
                     tooltip: {
                         callbacks: {
                             label: function(context) {
-                                return context.dataset.label + ': ' + context.parsed.y.toFixed(1) + ' mV';
-                            }
-                        }
-                    },
-                    annotation: {
-                        annotations: {
-                            stasisEnd: {
-                                type: 'line',
-                                xMin: '2026-01-06',
-                                xMax: '2026-01-06',
-                                borderColor: 'rgba(40, 167, 69, 0.5)',
-                                borderWidth: 2,
-                                borderDash: [10, 5],
-                                label: {
-                                    content: 'Eco Mode Start',
-                                    enabled: true,
-                                    position: 'start'
-                                }
+                                return context.dataset.label + ': ' + (context.parsed.y / 1000).toFixed(3) + ' V';
                             }
                         }
                     }
@@ -278,27 +152,14 @@
                 scales: {
                     x: {
                         type: 'time',
-                        time: {
-                            unit: 'week',
-                            displayFormats: {
-                                week: 'MMM d'
-                            }
-                        },
-                        title: {
-                            display: true,
-                            text: 'Date (2025-2026)'
-                        }
+                        time: { unit: 'week', displayFormats: { week: 'MMM d' } },
+                        title: { display: true, text: 'Date (2025-2026)' }
                     },
                     y: {
-                        title: {
-                            display: true,
-                            text: 'Voltage (mV)'
-                        },
-                        ticks: {
-                            callback: function(value) {
-                                return value.toFixed(0);
-                            }
-                        }
+                        title: { display: true, text: 'Voltage (mV)' },
+                        min: 12500,
+                        max: 15000,
+                        ticks: { callback: function(value) { return value.toFixed(0); } }
                     }
                 }
             }
@@ -311,97 +172,29 @@
             data: {
                 datasets: [{
                     label: 'Voltage vs Temperature',
-                    data: tempData.map(d => ({x: d.temp, y: d.voltage})),
-                    backgroundColor: '#28a745',
+                    data: tempVoltageData.map(d => ({x: d.temp, y: d.voltage})),
+                    backgroundColor: 'rgba(40, 167, 69, 0.6)',
                     borderColor: '#28a745',
-                    pointRadius: 4,
-                    pointHoverRadius: 6
+                    pointRadius: 5,
+                    pointHoverRadius: 7
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: true,
                 plugins: {
-                    legend: {
-                        display: true,
-                        position: 'top',
-                    },
+                    legend: { display: true, position: 'top' },
                     tooltip: {
                         callbacks: {
                             label: function(context) {
-                                return `${context.parsed.x.toFixed(1)}°F → ${context.parsed.y.toFixed(1)} mV`;
+                                return context.parsed.x.toFixed(1) + ' F -> ' + (context.parsed.y / 1000).toFixed(3) + ' V';
                             }
                         }
                     }
                 },
                 scales: {
-                    x: {
-                        title: {
-                            display: true,
-                            text: 'Temperature (°F)'
-                        }
-                    },
-                    y: {
-                        title: {
-                            display: true,
-                            text: 'Voltage (mV)'
-                        }
-                    }
-                }
-            }
-        });
-
-        // Chart 3: Drift rate over time
-        const ctx3 = document.getElementById('driftChart').getContext('2d');
-        const driftData = [
-            {period: 'Days 1-70\n(Stasis)', rate: -0.67},
-            {period: 'Days 71-94\n(Eco Mode)', rate: -0.17},
-            {period: 'Last 30 Days', rate: -0.17}
-        ];
-        
-        new Chart(ctx3, {
-            type: 'bar',
-            data: {
-                labels: driftData.map(d => d.period),
-                datasets: [{
-                    label: 'Drift Rate (mV/day)',
-                    data: driftData.map(d => d.rate),
-                    backgroundColor: [
-                        'rgba(3, 102, 214, 0.7)',
-                        'rgba(40, 167, 69, 0.7)',
-                        'rgba(88, 96, 105, 0.7)'
-                    ],
-                    borderColor: [
-                        '#0366d6',
-                        '#28a745',
-                        '#586069'
-                    ],
-                    borderWidth: 2
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: true,
-                plugins: {
-                    legend: {
-                        display: false
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                return 'Drift: ' + context.parsed.y.toFixed(2) + ' mV/day';
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    y: {
-                        title: {
-                            display: true,
-                            text: 'Drift Rate (mV/day)'
-                        },
-                        beginAtZero: false
-                    }
+                    x: { title: { display: true, text: 'Temperature (F)' }, min: 50, max: 60 },
+                    y: { title: { display: true, text: 'Voltage (mV)' }, min: 13200, max: 13500 }
                 }
             }
         });
@@ -410,14 +203,14 @@
     <div style="margin-top: 40px; padding: 20px; background: #f6f8fa; border-radius: 6px;">
         <h3>Data Notes</h3>
         <ul>
-            <li><strong>Voltage values</strong> are bus-level measurements from a single Victron SmartShunt sensor</li>
-            <li><strong>Spread (max-min)</strong> represents hourly variation at the measurement point, not cell-to-cell differences</li>
-            <li><strong>Temperature data</strong> subset covers 34 days (Dec 28, 2025 – Jan 30, 2026)</li>
-            <li><strong>MA-60s filtering</strong> achieved 42-50% noise reduction (not shown in raw plots above)</li>
+            <li><strong>Voltage values</strong> are bus-level measurements from a Shelly Plus Uni voltmeter</li>
+            <li><strong>Charge events</strong> visible as voltage spikes: Nov 1, Nov 4, 2025 and Feb 22, 2026</li>
+            <li><strong>Temperature data</strong> covers 67 days (Jan 1 - Mar 6, 2026)</li>
+            <li><strong>Current status:</strong> Approaching stasis after Feb 22 charge (-4.75 mV/day drift)</li>
         </ul>
-        <p><strong>To update with your actual data:</strong> Replace the <code>generateVoltageData()</code> and <code>generateTemperatureData()</code> functions with your CSV data or inline arrays.</p>
+        <p><em>Last updated: March 6, 2026</em></p>
     </div>
 
-    <a href="index.html" class="back-link">← Back to Overview</a>
+    <a href="https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks" class="back-link">Back to Repository</a>
 </body>
 </html>
