@@ -252,6 +252,14 @@ See [CITATION.cff](CITATION.cff) for machine-readable metadata.
 
 ---
 
+## 🔗 Related Projects
+
+- **[DIY LiFePO₄ UPS](https://github.com/wkcollis1-eng/DIY-LiFePO4-UPS)** — 12V UPS for Home Assistant and network equipment using similar monitoring approach
+- **[Home Assistant Config](https://github.com/wkcollis1-eng/home-assistant-config)** — Production HA configuration with statistical process control for HVAC monitoring
+- **[HVAC Performance Baseline](https://github.com/wkcollis1-eng/Residential-HVAC-Performance-Baseline-)** — 50-month residential energy study with similar data-driven methodology
+
+---
+
 ## 🤝 Contributing & Feedback
 
 Peer review welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
