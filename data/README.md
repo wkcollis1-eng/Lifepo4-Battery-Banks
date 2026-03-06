@@ -22,10 +22,10 @@ This folder contains the raw and processed datasets for the LiFePO₄ battery mo
 
 | File | Description | Records | Coverage |
 |:-----|:------------|--------:|:---------|
-| `combined_output.csv` | Hourly voltage (min/max) | 2,894 | Oct 29, 2025 – Feb 28, 2026 |
-| `combined_temperature.csv` | Hourly temperature (min/max) | 1,488 | Dec 29, 2025 – Feb 28, 2026 |
-| `combined_humidity.csv` | Hourly humidity | 1,488 | Dec 29, 2025 – Feb 28, 2026 |
-| `high_freq_voltage/*.csv` | Weekly high-freq voltage files | 663,683 | Dec 26, 2025 – Mar 1, 2026 |
+| `combined_output.csv` | Hourly voltage (min/max) | 3,095 | Oct 29, 2025 – Mar 5, 2026 |
+| `combined_temperature.csv` | Hourly temperature (min/max) | 1,560 | Jan 1, 2026 – Mar 6, 2026 |
+| `combined_humidity.csv` | Hourly humidity | 1,560 | Jan 1, 2026 – Mar 6, 2026 |
+| `high_freq_voltage/*.csv` | Weekly high-freq voltage files | 712,197 | Dec 26, 2025 – Mar 6, 2026 |
 
 > [!NOTE]
 > High-frequency data is now organized in weekly consolidated files within the `high_freq_voltage/` subdirectory.
@@ -47,8 +47,8 @@ This folder contains the raw and processed datasets for the LiFePO₄ battery mo
 
 | Property | Value |
 |:---------|:------|
-| Coverage | Oct 29, 2025 → Feb 28, 2026 |
-| Records | 2,894 |
+| Coverage | Oct 29, 2025 → Mar 5, 2026 |
+| Records | 3,095 |
 | Cadence | Hourly aggregates |
 | Source | Shelly Plus Uni voltmeter via Home Assistant |
 | Quantization | ~10 mV (sensor resolution) |
@@ -79,8 +79,8 @@ This folder contains the raw and processed datasets for the LiFePO₄ battery mo
 
 | Property | Value |
 |:---------|:------|
-| Coverage | Dec 29, 2025 → Feb 28, 2026 |
-| Records | 1,488 |
+| Coverage | Jan 1, 2026 → Mar 6, 2026 |
+| Records | 1,560 |
 | Cadence | Hourly aggregates |
 | Source | Co-located basement temperature sensor |
 | Location | Same room as battery bank (~3 ft distance) |
@@ -105,8 +105,8 @@ This folder contains the raw and processed datasets for the LiFePO₄ battery mo
 
 | Property | Value |
 |:---------|:------|
-| Coverage | Dec 29, 2025 → Feb 28, 2026 |
-| Records | 1,488 |
+| Coverage | Jan 1, 2026 → Mar 6, 2026 |
+| Records | 1,560 |
 | Cadence | Hourly aggregates |
 | Source | Co-located basement humidity sensor |
 | Location | Same room as battery bank |
@@ -139,14 +139,15 @@ Contains weekly consolidated CSV files with ~3-second cadence voltage readings.
 | `voltage_data_2026-02-09_to_2026-02-15.csv` | 95,804 | Feb 9-15 |
 | `voltage_data_2026-02-16_to_2026-02-22.csv` | 98,324 | Feb 16-22 |
 | `voltage_data_2026-02-23_to_2026-03-01.csv` | 43,870 | Feb 23 - Mar 1 |
-| **Total** | **663,683** | **Dec 26, 2025 – Mar 1, 2026** |
+| `voltage_data_2026-03-02_to_2026-03-06.csv` | 48,514 | Mar 2-6 |
+| **Total** | **712,197** | **Dec 26, 2025 – Mar 6, 2026** |
 
 **Metadata:**
 
 | Property | Value |
 |:---------|:------|
-| Coverage | Dec 26, 2025 → Mar 1, 2026 |
-| Total Records | 663,683 |
+| Coverage | Dec 26, 2025 → Mar 6, 2026 |
+| Total Records | 712,197 |
 | Cadence | ~3 seconds median (variable) |
 | Source | Shelly Plus Uni, state-change logging |
 | Organization | Weekly consolidated files, deduplicated |
