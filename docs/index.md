@@ -10,13 +10,13 @@ description: Architectural Immunity & Long-Term Storage Analysis
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18452542.svg)](https://doi.org/10.5281/zenodo.18452542)
 [![Data: Open](https://img.shields.io/badge/Data-Open%20Access-green.svg)](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/tree/main/data)
-[![Last Updated](https://img.shields.io/badge/Data%20Through-Mar%201%2C%202026-blue.svg)](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/releases)
+[![Last Updated](https://img.shields.io/badge/Data%20Through-Mar%206%2C%202026-blue.svg)](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/releases)
 
 ---
 
 ## Overview
 
-A DIY **12V 500Ah LiFePO₄ battery bank** validated at **99% capacity** with **125+ days** of continuous voltage monitoring (Oct 29, 2025 – Mar 1, 2026).
+A DIY **12V 500Ah LiFePO₄ battery bank** validated at **99% capacity** with **130+ days** of continuous voltage monitoring (Oct 29, 2025 – Mar 6, 2026).
 
 This project demonstrates **architectural immunity**—the principle that parallel-connected mixed-brand cells achieve monolithic behavior through topology rather than cell matching.
 
@@ -43,9 +43,9 @@ This project demonstrates **architectural immunity**—the principle that parall
 | Phase | Status | Duration |
 |:------|:------:|:---------|
 | Discharge Testing | ✅ Complete | Oct 2025 |
-| Long-term Monitoring | ✅ Complete | 125+ days (Nov 2025 – Mar 2026) |
+| Long-term Monitoring | ✅ Complete | 130+ days (Nov 2025 – Mar 2026) |
 | Temperature Analysis | ✅ Complete | 62 days |
-| MA-60s Validation | ✅ Complete | 664k samples |
+| MA-60s Validation | ✅ Complete | 712k samples |
 | Charge Event Analysis | ✅ Complete | Feb 22, 2026 |
 | Self-Discharge Analysis | ✅ Complete | ~0% confirmed |
 | Direct Current Measurement | 🔲 Planned | Next step |
@@ -56,7 +56,7 @@ This project demonstrates **architectural immunity**—the principle that parall
 
 | Resource | Description |
 |:---------|:------------|
-| [📄 Full Technical Report](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/blob/main/reports/LiFePO4_Report_2026-03-01.md) | Complete analysis with all results |
+| [📄 Full Technical Report](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/blob/main/reports/LiFePO4_Report_2026-03-06.md) | Complete analysis with all results |
 | [🔬 Methodology](methodology.md) | Statistical methods and definitions |
 | [🔁 Replication Guide](replication.md) | Hardware setup and calibration |
 | [🗺️ Evidence Map](evidence_map.md) | Claim → data → code traceability |
@@ -85,7 +85,7 @@ If you replicate this study, you should observe:
 
 ### 1. Architectural Immunity
 
-No evidence of divergence at the common bus potential over 125+ days. Spread inflation post-Eco Mode correlates with measurement-regime change, not electrochemical imbalance.
+No evidence of divergence at the common bus potential over 130+ days. Spread inflation post-Eco Mode correlates with measurement-regime change, not electrochemical imbalance.
 
 ### 2. Storage Viability
 
@@ -129,6 +129,6 @@ System-level coefficient of **+1.0 ± 0.3 mV/°F** (pack + measurement chain com
 
 ---
 
-*Last updated: February 4, 2026 • Data through January 31, 2026*
+*Last updated: March 6, 2026 • Data through March 6, 2026*
 
 *Made with ⚡ in Connecticut*

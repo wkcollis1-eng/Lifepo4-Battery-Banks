@@ -133,7 +133,7 @@ Lifepo4-Battery-Banks/
 │       └── voltage_data_YYYY-MM-DD_to_YYYY-MM-DD.csv  ← Weekly consolidated files
 │
 ├── 📄 reports/
-│   └── LiFePO4_Report_2026-03-01.md  ← Full technical report
+│   └── LiFePO4_Report_2026-03-06.md  ← Full technical report
 │
 ├── 📈 figures/
 │   ├── fig1_voltage_timeline.png     ← Primary visualization
@@ -216,7 +216,7 @@ For complete terminology, see the [Glossary](docs/glossary.md).
 
 | Document | Description |
 |:---------|:------------|
-| [📄 Technical Report](reports/LiFePO4_Report_2026-03-01.md) | Complete analysis with all results |
+| [📄 Technical Report](reports/LiFePO4_Report_2026-03-06.md) | Complete analysis with all results |
 | [🔬 Methodology](docs/methodology.md) | Statistical methods and definitions |
 | [🔁 Replication Guide](docs/replication.md) | Hardware setup and calibration |
 | [🗺️ Evidence Map](docs/evidence_map.md) | Claim → data → code → figure traceability |
