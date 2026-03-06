@@ -8,7 +8,7 @@
 [![License: CC BY 4.0](https://img.shields.io/badge/Data-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
 [![License: MIT](https://img.shields.io/badge/Code-MIT-blue.svg)](LICENSE-CODE)
 [![Data: Open](https://img.shields.io/badge/Data-Open%20Access-green.svg)](data/)
-[![Last Updated](https://img.shields.io/badge/Data%20Through-Mar%201%2C%202026-blue.svg)](reports/)
+[![Last Updated](https://img.shields.io/badge/Data%20Through-Mar%206%2C%202026-blue.svg)](reports/)
 [![Made with Python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)](https://www.python.org/)
 
 *A DIY 12V 500Ah LiFePO₄ battery bank validated at 99% capacity with 94+ days of continuous voltage monitoring*
@@ -29,7 +29,7 @@ Raw datasets & dictionary
 </td>
 <td width="25%" align="center">
 
-**📄 [Full Report](reports/LiFePO4_Report_2026-03-01.md)**<br>
+**📄 [Full Report](reports/LiFePO4_Report_2026-03-06.md)**<br>
 Complete technical analysis
 
 </td>
@@ -57,7 +57,7 @@ A DIY **12V 500Ah LiFePO₄ battery bank** validated at 99% capacity with 94+ da
 > [!NOTE]
 > **Architectural immunity** means the parallel bus connection forces all cells to the same voltage, eliminating the need for matched cells. This study provides empirical evidence supporting this principle.
 
-**[📄 Read the Full Technical Report →](reports/LiFePO4_Report_2026-03-01.md)**
+**[📄 Read the Full Technical Report →](reports/LiFePO4_Report_2026-03-06.md)**
 
 ---
 
@@ -66,9 +66,9 @@ A DIY **12V 500Ah LiFePO₄ battery bank** validated at 99% capacity with 94+ da
 | Phase | Status | Duration | Notes |
 |:------|:------:|:--------:|:------|
 | Discharge Testing | ✅ Complete | Oct 2025 | 397 Ah validated (99.3%) |
-| Long-term Monitoring | ✅ Complete | 125+ days | Nov 2025 – Mar 2026 |
+| Long-term Monitoring | ✅ Complete | 130+ days | Nov 2025 – Mar 2026 |
 | Temperature Analysis | ✅ Complete | 62 days | +1.0 mV/°F coefficient |
-| MA-60s Validation | ✅ Complete | 664k samples | 42–50% noise reduction |
+| MA-60s Validation | ✅ Complete | 712k samples | 42–50% noise reduction |
 | Charge Event Analysis | ✅ Complete | Feb 22, 2026 | 1.289 kWh, 81 Ah charged |
 | Self-Discharge Analysis | ✅ Complete | 92 days | **~0% self-discharge confirmed** |
 | Direct Current Measurement | 🔲 Planned | — | Validate 12.5 mA calculated |
