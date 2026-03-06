@@ -7,6 +7,26 @@ and this project uses date-based versioning (`YYYY-MM-DD`) based on data cutoff 
 
 ---
 
+## [2026-03-06] — 2026-03-06
+
+### Added
+- Extended monitoring data through March 6, 2026 (130+ days total)
+- High-frequency voltage data: Mar 2-6 (48,514 samples, 712k total)
+- New report: `LiFePO4_Report_2026-03-06.md` with stasis assessment
+- MA-60 trend analysis comparing current state to Nov 4 post-charge baseline
+
+### Changed
+- Updated data coverage in README and data/README.md
+- Report links now point to latest March 6 report
+
+### Key Findings
+- **Approaching stasis:** MA-60 drift rate of -4.75 mV/day (below 5 mV/day threshold)
+- **Voltage stabilizing:** Current 13.25V within 19 mV of Nov stasis baseline (13.27V)
+- **Lower noise:** High-frequency std 5.6% lower than pre-charge stasis period
+- **Faster settling:** Day 12 post-charge vs day 16 for Nov charge (partial top-up effect)
+
+---
+
 ## [2026-03-01] — 2026-03-01
 
 ### Added
@@ -128,6 +148,7 @@ Earlier versions used sequential notation (v1.0, v2.1, v8.4, etc.) which has bee
 
 | Version | Data Coverage | High-Freq Data |
 |:--------|:--------------|:---------------|
+| 2026-03-06 | Oct 29, 2025 – Mar 6, 2026 | Dec 26, 2025 – Mar 6, 2026 (712,197 samples) |
 | 2026-03-01 | Oct 29, 2025 – Mar 1, 2026 | Dec 26, 2025 – Mar 1, 2026 (663,683 samples) |
 | 2026-01-31 | Oct 29, 2025 – Jan 31, 2026 | Dec 26, 2025 – Feb 1, 2026 |
 | 2025-12-26 | Oct 29, 2025 – Dec 26, 2025 | Initial collection |
