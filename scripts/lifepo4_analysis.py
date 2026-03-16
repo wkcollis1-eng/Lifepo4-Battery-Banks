@@ -1,32 +1,62 @@
 #!/usr/bin/env python3
 """
-LiFePO4 Battery Bank Analysis - Extended Dataset Through Jan 31, 2026
+LiFePO4 Battery Bank Analysis
 Comprehensive analysis including:
 - Drift analysis (full stasis, last 30 days)
 - MA-60 seconds noise reduction on high-frequency data
 - Temperature-voltage regression
 - Spread and stability metrics
+
+Usage (from repo root):
+    python scripts/lifepo4_analysis.py
 """
 
 import pandas as pd
 import numpy as np
 from scipy import stats
 from datetime import datetime, timedelta
+import glob
+import os
 import warnings
 warnings.filterwarnings('ignore')
+
+# ============================================================================
+# CONFIGURATION — update these when data coverage extends
+# ============================================================================
+
+# Resolve paths relative to repo root
+REPO_ROOT    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+VOLTAGE_FILE = os.path.join(REPO_ROOT, "data", "combined_output.csv")
+TEMP_FILE    = os.path.join(REPO_ROOT, "data", "combined_temperature.csv")
+HF_DIR       = os.path.join(REPO_ROOT, "data", "high_freq_voltage")
+FIGURE_DIR   = os.path.join(REPO_ROOT, "figures")
+DATE_FORMAT  = '%d/%m/%Y %H:%M'   # DD/MM/YYYY — do not change
+FIGURE_DPI   = 150
+
+# CLAUDE: Update STASIS_END when new data extends past this date.
+# Set to the day before the next charge event, or latest data date if no charge event.
+STASIS_START      = '2025-11-22'
+STASIS_END        = '2026-02-21'   # <- CLAUDE: update when data extends
+
+# CLAUDE: Update after any new charge event is identified.
+CHARGE_EVENT_DATE = '2026-02-22'   # <- CLAUDE: update if new charge event occurs
+
+# CLAUDE: Do not change ECO_MODE_DATETIME — it is a fixed hardware event.
+ECO_MODE_DATETIME = '2025-12-23 15:40:00'
 
 # ============================================================================
 # 1. LOAD AND PREPARE DATA
 # ============================================================================
 
+DATA_END = pd.read_csv(VOLTAGE_FILE, usecols=['Date']).iloc[-1]['Date']
 print("=" * 80)
-print("LiFePO4 Battery Bank Analysis - Extended Dataset Through Jan 31, 2026")
+print(f"LiFePO4 Battery Bank Analysis — Data through {DATA_END}")
 print("=" * 80)
 print()
 
 # Load hourly voltage data
 print("Loading hourly voltage data...")
-hourly_df = pd.read_csv('/mnt/user-data/uploads/combined_output.csv')
+hourly_df = pd.read_csv(VOLTAGE_FILE)
 hourly_df['datetime'] = pd.to_datetime(hourly_df['Date'] + ' ' + hourly_df['Time'], format='%d/%m/%Y %H:%M')
 hourly_df['Mid'] = (hourly_df['Min'] + hourly_df['Max']) / 2
 hourly_df['Spread'] = hourly_df['Max'] - hourly_df['Min']
@@ -36,36 +66,37 @@ print(f"  Range: {hourly_df['datetime'].min()} → {hourly_df['datetime'].max()}
 
 # Load temperature data
 print("\nLoading temperature data...")
-temp_df = pd.read_csv('/mnt/user-data/uploads/Combined_Temperature_Data.csv')
-temp_df['datetime'] = pd.to_datetime(temp_df['Date'] + ' ' + temp_df['Time'], format='%d/%m/%Y %H:%M')
+temp_df = pd.read_csv(TEMP_FILE)
+temp_df['datetime'] = pd.to_datetime(temp_df['Date'] + ' ' + temp_df['Time'], format=DATE_FORMAT)
 temp_df['TempMid'] = (temp_df['Min'] + temp_df['Max']) / 2
 temp_df = temp_df.sort_values('datetime').reset_index(drop=True)
 print(f"  Temperature: {len(temp_df)} records")
 print(f"  Range: {temp_df['datetime'].min()} → {temp_df['datetime'].max()}")
 
-# Load and combine high-frequency data
+# Load and combine high-frequency data — auto-discovers all weekly files in HF_DIR
 print("\nLoading high-frequency voltage data...")
 
 def load_hf_data(filepath):
-    """Load high-frequency data file."""
+    """Load a weekly high-frequency voltage file from data/high_freq_voltage/."""
     df = pd.read_csv(filepath)
     df.columns = ['entity_id', 'voltage', 'timestamp']
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df['timestamp'] = pd.to_datetime(df['timestamp'], format='mixed', utc=True)
     df['voltage'] = pd.to_numeric(df['voltage'], errors='coerce')
     df = df.dropna(subset=['voltage'])
     return df[['timestamp', 'voltage']].sort_values('timestamp')
 
-hf1 = load_hf_data('/mnt/user-data/uploads/High_Freq_Voltage_Data_1-18-2026.csv')
-print(f"  HF file 1-18: {len(hf1)} records ({hf1['timestamp'].min()} → {hf1['timestamp'].max()})")
+hf_files = sorted(glob.glob(os.path.join(HF_DIR, '*.csv')))
+if not hf_files:
+    raise FileNotFoundError(f"No HF files found in {HF_DIR}")
 
-hf2 = load_hf_data('/mnt/user-data/uploads/High_Freq_Voltage_Data_1-27-2026.csv')
-print(f"  HF file 1-27: {len(hf2)} records ({hf2['timestamp'].min()} → {hf2['timestamp'].max()})")
-
-hf3 = load_hf_data('/mnt/user-data/uploads/history.csv')
-print(f"  History file: {len(hf3)} records ({hf3['timestamp'].min()} → {hf3['timestamp'].max()})")
+hf_parts = []
+for f in hf_files:
+    part = load_hf_data(f)
+    print(f"  {os.path.basename(f)}: {len(part)} records ({part['timestamp'].min()} → {part['timestamp'].max()})")
+    hf_parts.append(part)
 
 # Combine and deduplicate
-hf_combined = pd.concat([hf1, hf2, hf3], ignore_index=True)
+hf_combined = pd.concat(hf_parts, ignore_index=True)
 hf_combined = hf_combined.drop_duplicates(subset=['timestamp']).sort_values('timestamp').reset_index(drop=True)
 print(f"\n  Combined HF: {len(hf_combined)} unique records")
 print(f"  Range: {hf_combined['timestamp'].min()} → {hf_combined['timestamp'].max()}")
@@ -91,9 +122,9 @@ daily_mid = hourly_df.groupby('date')['Mid'].mean().reset_index()
 daily_mid['date'] = pd.to_datetime(daily_mid['date'])
 daily_mid = daily_mid.sort_values('date')
 
-# Full stasis period (Nov 22 → Jan 31)
-stasis_start = pd.Timestamp('2025-11-22')
-stasis_end = pd.Timestamp('2026-01-31')
+# Full stasis period — dates from STASIS_START / STASIS_END config above
+stasis_start = pd.Timestamp(STASIS_START)
+stasis_end   = pd.Timestamp(STASIS_END)
 stasis_df = daily_mid[(daily_mid['date'] >= stasis_start) & (daily_mid['date'] <= stasis_end)].copy()
 
 if len(stasis_df) > 1:
@@ -111,9 +142,9 @@ if len(stasis_df) > 1:
     print(f"  R²: {r_full**2:.3f}")
     print(f"  Detrended residual σ: {residual_std_full:.2f} mV")
 
-# Last 30 days (Jan 2 → Jan 31)
-last30_start = pd.Timestamp('2026-01-02')
-last30_end = pd.Timestamp('2026-01-31')
+# Last 30 days — window derived from STASIS_END
+last30_start = pd.Timestamp(STASIS_END) - pd.Timedelta(days=29)
+last30_end = pd.Timestamp(STASIS_END)
 last30_df = daily_mid[(daily_mid['date'] >= last30_start) & (daily_mid['date'] <= last30_end)].copy()
 
 if len(last30_df) > 1:
@@ -191,18 +222,26 @@ print(f"\nExtreme Minutes (>60 mV spread): {len(extreme_minutes)}")
 for _, row in extreme_minutes.iterrows():
     print(f"  {row['minute']} - Range: {row['v_range']:.1f} mV")
 
-# Segment analysis
+# Segment analysis — auto-generates 4 equal segments across the stasis HF window
+# CLAUDE: segments are computed automatically; no hardcoded dates needed here.
 print(f"\nSegment Analysis:")
-segments = [
-    ('Dec 26 - Jan 08', '2025-12-26', '2026-01-08'),
-    ('Jan 09 - Jan 18', '2026-01-09', '2026-01-18'),
-    ('Jan 19 - Jan 27', '2026-01-19', '2026-01-27'),
-    ('Jan 28 - Jan 31', '2026-01-28', '2026-01-31'),
+hf_stasis = hf_analysis[
+    (hf_analysis['timestamp'] >= pd.Timestamp(STASIS_START, tz='UTC')) &
+    (hf_analysis['timestamp'] <= pd.Timestamp(STASIS_END, tz='UTC') + pd.Timedelta(hours=23, minutes=59))
 ]
+seg_start = hf_stasis['timestamp'].min()
+seg_end   = hf_stasis['timestamp'].max()
+seg_len   = (seg_end - seg_start) / 4
+segments = []
+for i in range(4):
+    s = seg_start + i * seg_len
+    e = seg_start + (i + 1) * seg_len
+    label = f"{s.strftime('%b %d')} - {e.strftime('%b %d')}"
+    segments.append((label, s, e))
 
 segment_results = []
 for name, start, end in segments:
-    mask = (hf_analysis['timestamp'] >= start) & (hf_analysis['timestamp'] <= end + ' 23:59:59')
+    mask = (hf_analysis['timestamp'] >= start) & (hf_analysis['timestamp'] <= end)
     seg = hf_analysis[mask]
     if len(seg) > 0:
         raw_s = seg['voltage'].std() * 1000
@@ -286,7 +325,7 @@ print("ECO MODE STEP AND LATE-JANUARY STABILITY")
 print("=" * 80)
 
 # Eco Mode window (±48h around Dec 23 15:40 local)
-eco_center = pd.Timestamp('2025-12-23 15:40:00')
+eco_center = pd.Timestamp(ECO_MODE_DATETIME)
 eco_before_start = eco_center - timedelta(hours=48)
 eco_before_end = eco_center
 eco_after_start = eco_center
@@ -308,7 +347,7 @@ if len(before_eco) > 0 and len(after_eco) > 0:
 
 # Late-January stability (last 7 days ending Jan 31)
 last7_start = pd.Timestamp('2026-01-25')
-last7_end = pd.Timestamp('2026-01-31 23:59:59')
+last7_end = pd.Timestamp(STASIS_END) + pd.Timedelta(hours=23, minutes=59, seconds=59)
 last7 = hourly_df[(hourly_df['datetime'] >= last7_start) & (hourly_df['datetime'] <= last7_end)]
 
 if len(last7) > 0:
@@ -325,12 +364,12 @@ print("\n" + "=" * 80)
 print("SOC & STORAGE ENDURANCE (PARASITIC CURRENT MODEL)")
 print("=" * 80)
 
-# Time from Nov 4 00:00 → Jan 31 23:00
-start_time = pd.Timestamp('2025-11-04 00:00:00')
-end_time = pd.Timestamp('2026-01-31 23:00:00')
+# Time from STASIS_START to STASIS_END for SOC projection
+start_time = pd.Timestamp(STASIS_START)
+end_time = pd.Timestamp(STASIS_END) + pd.Timedelta(hours=23)
 hours_elapsed = (end_time - start_time).total_seconds() / 3600
 
-print(f"\nTime elapsed (Nov 4 00:00 → Jan 31 23:00): {hours_elapsed:.0f} hours")
+print(f"\nTime elapsed ({STASIS_START} 00:00 → {STASIS_END} 23:00): {hours_elapsed:.0f} hours")
 
 # Calculate Ah lost for different parasitic currents
 parasitic_currents = [13.3, 17, 20]  # mA
@@ -363,8 +402,8 @@ DATASET COVERAGE:
   High-frequency: {hf_combined['timestamp'].min().strftime('%Y-%m-%d')} → {hf_combined['timestamp'].max().strftime('%Y-%m-%d')} ({len(hf_combined):,} records)
 
 DRIFT ANALYSIS:
-  Full stasis (Nov 22 → Jan 31): {slope_full * 1000:.3f} mV/day, total {total_change_full * 1000:.2f} mV
-  Last 30 days (Jan 2 → Jan 31): {slope_30 * 1000:.3f} mV/day, total {total_change_30 * 1000:.2f} mV
+  Full stasis ({STASIS_START} → {STASIS_END}): {slope_full * 1000:.3f} mV/day, total {total_change_full * 1000:.2f} mV
+  Last 30 days (-29d → {STASIS_END}): {slope_30 * 1000:.3f} mV/day, total {total_change_30 * 1000:.2f} mV
   Drift flattening: {(1 - abs(slope_30/slope_full)) * 100:.1f}% rate reduction
 
 MA-60 SECONDS (GLOBAL):

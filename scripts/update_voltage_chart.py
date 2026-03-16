@@ -1,8 +1,32 @@
+#!/usr/bin/env python3
+"""
+update_voltage_chart.py — Regenerates voltage_chart.html from repo data.
+
+Usage (from repo root):
+    python scripts/update_voltage_chart.py
+
+Outputs: voltage_chart.html (repo root)
+
+# CLAUDE: When data coverage extends, update the HTML header strings below:
+#   - Page title "130-Day Voltage Trend Analysis"     → update day count
+#   - Page subtitle date range                        → update end date
+#   - "Total Duration" stat card value                → update day count
+#   - "Last updated" footer line                      → update date
+#   - stats grid values (drift rate, parasitic draw)  → update from latest report
+"""
+
 import pandas as pd
 import json
+import os
+
+# Resolve paths relative to repo root (works from any working directory)
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+VOLTAGE_FILE = os.path.join(REPO_ROOT, "data", "combined_output.csv")
+TEMP_FILE    = os.path.join(REPO_ROOT, "data", "combined_temperature.csv")
+OUTPUT_FILE  = os.path.join(REPO_ROOT, "voltage_chart.html")
 
 # Load actual voltage data
-df = pd.read_csv("C:/Users/wkcol/OneDrive/Documents/Lifepo4 Battery Banks/data/combined_output.csv")
+df = pd.read_csv(VOLTAGE_FILE)
 df['datetime'] = pd.to_datetime(df['Date'] + ' ' + df['Time'], format='%d/%m/%Y %H:%M')
 df['avg'] = (df['Min'] + df['Max']) / 2
 
@@ -25,7 +49,7 @@ for _, row in daily.iterrows():
     })
 
 # Load temperature data
-temp_df = pd.read_csv("C:/Users/wkcol/OneDrive/Documents/Lifepo4 Battery Banks/data/combined_temperature.csv")
+temp_df = pd.read_csv(TEMP_FILE)
 temp_df['datetime'] = pd.to_datetime(temp_df['Date'] + ' ' + temp_df['Time'], format='%d/%m/%Y %H:%M')
 temp_df['date'] = temp_df['datetime'].dt.date
 temp_df['temp_avg'] = (temp_df['Min'] + temp_df['Max']) / 2
@@ -265,7 +289,7 @@ html_content = html_content.replace('TEMP_DATA_PLACEHOLDER', json.dumps(temp_vol
 html_content = html_content.replace('TEMP_DAYS', str(len(temp_voltage_data)))
 
 # Write the file
-with open("C:/Users/wkcol/OneDrive/Documents/Lifepo4 Battery Banks/voltage_chart.html", 'w', encoding='utf-8') as f:
+with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
     f.write(html_content)
 
 print(f"Updated voltage_chart.html with actual data")
