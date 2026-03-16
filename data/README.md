@@ -26,6 +26,7 @@ This folder contains the raw and processed datasets for the LiFePO₄ battery mo
 | `combined_temperature.csv` | Hourly temperature (min/max) | 1,560 | Jan 1, 2026 – Mar 6, 2026 |
 | `combined_humidity.csv` | Hourly humidity | 1,560 | Jan 1, 2026 – Mar 6, 2026 |
 | `high_freq_voltage/*.csv` | Weekly high-freq voltage files | 712,197 | Dec 26, 2025 – Mar 6, 2026 |
+| `monthly_metrics.csv` | Monthly summary metrics (one row/month) | 6 | Oct 2025 – Mar 2026 |
 
 > [!NOTE]
 > High-frequency data is now organized in weekly consolidated files within the `high_freq_voltage/` subdirectory.
@@ -318,6 +319,36 @@ When processing data, consider flagging:
 ### Quantization Note
 
 The 10 mV quantization in hourly data is a **sensor limitation**, not rounding. Values like 13.27V and 13.28V are actual distinct readings; values like 13.271V or 13.279V are not possible with this sensor.
+
+---
+
+## Monthly Metrics
+
+### `monthly_metrics.csv`
+
+One row per calendar month. Primary source for Claude Code monthly validation (V-BATT-1 through V-BATT-5 range checks). Updated at end of each monthly data session.
+
+| Column | Type | Unit | Description |
+|:-------|:-----|:-----|:------------|
+| `month` | string | YYYY-MM | Calendar month |
+| `study_day_end` | int | days | Study day count at end of month (day 1 = Oct 29, 2025) |
+| `mean_voltage_v` | float | V | Monthly mean of hourly mid-voltage |
+| `min_voltage_v` | float | V | Monthly minimum voltage |
+| `max_voltage_v` | float | V | Monthly maximum voltage (includes charge events) |
+| `mean_spread_mv` | float | mV | Monthly mean hourly spread (Max−Min) |
+| `drift_rate_mv_day` | float | mV/day | OLS drift rate computed on daily means for the month |
+| `drift_r2` | float | — | R² for monthly drift OLS (low = noisy/transitional period) |
+| `hf_samples` | int | count | High-frequency samples in month (0 before Dec 2025) |
+| `hourly_records` | int | count | Hourly voltage records in month |
+| `charge_events` | int | count | Confirmed charge events in month |
+| `regime` | string | — | Data regime tags: PRE_ECO, POST_ECO, CHARGE, POST_CHARGE |
+| `notes` | string | — | Context for anomalies, milestones, or regime transitions |
+
+**Update procedure (monthly):**
+1. Append one new row for the completed month
+2. Compute `mean_voltage_v`, `drift_rate_mv_day`, `hf_samples` from raw data
+3. Set `regime` tags based on ECO_MODE_DATETIME (Dec 23, 2025) and charge event dates
+4. Run V-BATT range checks against prior 3-month trailing average before committing
 
 ---
 
