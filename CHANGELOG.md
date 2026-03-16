@@ -7,6 +7,29 @@ and this project uses date-based versioning (`YYYY-MM-DD`) based on data cutoff 
 
 ---
 
+## [2026-03-16] — 2026-03-16
+
+### Added
+- `CLAUDE.md` — machine-optimized Claude Code instruction file for all sessions; covers task-type routing, data format rules, validated baselines, known artifacts, halt conditions, monthly update procedure, report/README triggers, and current study state
+- `data/monthly_metrics.csv` — new monthly summary dataset (one row per month, Oct 2025–Mar 2026); enables V-BATT range checks against trailing 3-month averages without re-parsing raw CSVs each session
+
+### Changed
+- `scripts/lifepo4_analysis.py` — refactored for maintainability:
+  - Added `CONFIGURATION` block with named constants (`STASIS_START`, `STASIS_END`, `CHARGE_EVENT_DATE`, `ECO_MODE_DATETIME`, file paths) at top of script; CLAUDE comments mark which values to update each month
+  - Replaced hardcoded `/mnt/user-data/uploads/` file paths with repo-relative `os.path` references
+  - HF data loading now uses `glob.glob(HF_DIR + '/*.csv')` to auto-discover all weekly files; no manual file list needed when new weekly files are added
+  - All hardcoded `pd.Timestamp('YYYY-MM-DD')` dates in script body replaced with config constant references
+  - MA-60 segment boundaries auto-computed from stasis window; no hardcoded date list to maintain
+  - Script title line now prints actual data end date dynamically from CSV
+- `scripts/update_voltage_chart.py` — replaced three hardcoded Windows paths (`C:/Users/wkcol/...`) with repo-relative `os.path` references; script now runs correctly from any machine via `python scripts/update_voltage_chart.py` from repo root; added CLAUDE comment block listing HTML strings to update each month
+- `data/README.md` — added `monthly_metrics.csv` to files overview table; added full schema section with column definitions and monthly update procedure
+
+### Notes
+- No data added in this release; all changes are infrastructure/tooling
+- `monthly_metrics.csv` values computed from existing raw data — no new measurements
+
+---
+
 ## [2026-03-06] — 2026-03-06
 
 ### Added
