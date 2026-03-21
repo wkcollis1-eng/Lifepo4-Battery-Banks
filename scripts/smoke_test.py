@@ -28,16 +28,25 @@ voltage_df = pd.DataFrame({
 })
 voltage_df.to_csv(os.path.join(DATA_DIR, "combined_output.csv"), index=False)
 
-# Temperature CSV
+# Temperature CSV – add random variation to avoid constant values
+np.random.seed(42)  # for reproducibility
+temp_min_base = 55.0
+temp_max_base = 58.0
+temp_min = temp_min_base + np.random.normal(0, 0.2, len(dates))
+temp_max = temp_max_base + np.random.normal(0, 0.2, len(dates))
+# ensure min < max
+temp_min = np.minimum(temp_min, temp_max - 0.1)
+temp_max = np.maximum(temp_max, temp_min + 0.1)
+
 temp_df = pd.DataFrame({
     "Date": dates.strftime("%d/%m/%Y"),
     "Time": "12:00",
-    "Min": 55.0,
-    "Max": 58.0,
+    "Min": np.round(temp_min, 1),
+    "Max": np.round(temp_max, 1),
 })
 temp_df.to_csv(os.path.join(DATA_DIR, "combined_temperature.csv"), index=False)
 
-# One HF file
+# One HF file (500 samples in stasis window)
 hf_dates = pd.date_range("2025-11-22", "2026-02-21", freq="5min", tz="UTC")[:500]
 hf_df = pd.DataFrame({
     "entity_id": "shelly",
@@ -48,7 +57,26 @@ hf_df.to_csv(os.path.join(HF_DIR, "dummy_hf.csv"), index=False)
 
 print(f"✅ Dummy data ready: {len(dates)} days voltage/temp + {len(hf_dates)} HF samples")
 
-# Test 1: parse_shelly_export.py (located in the same folder)
+def run_script(script_name, args=None, capture_output=True):
+    """Run a Python script and print full output on failure."""
+    script_path = os.path.join(SCRIPT_DIR, script_name)
+    cmd = [sys.executable, script_path] + (args or [])
+    print(f"\n--- Running {script_name} ---")
+    try:
+        result = subprocess.run(cmd, check=True, capture_output=capture_output, text=True, cwd=REPO_ROOT)
+        if capture_output:
+            print(result.stdout)
+        return result
+    except subprocess.CalledProcessError as e:
+        print(f"ERROR: {script_name} failed with exit code {e.returncode}")
+        if capture_output:
+            print("STDOUT:")
+            print(e.stdout)
+            print("STDERR:")
+            print(e.stderr)
+        raise
+
+# Test 1: parse_shelly_export.py
 print("\n=== Testing parse_shelly_export.py ===")
 with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, encoding="utf-8") as f:
     f.write("""Min. voltage
@@ -59,35 +87,16 @@ Max. voltage
     test_file = f.name
 
 try:
-    subprocess.run(
-        [sys.executable, os.path.join(SCRIPT_DIR, "parse_shelly_export.py"), test_file, "--dry-run"],
-        check=True,
-        cwd=REPO_ROOT
-    )
+    run_script("parse_shelly_export.py", [test_file, "--dry-run"], capture_output=False)
 finally:
     os.unlink(test_file)
 
-print("✅ parse_shelly_export.py passed")
-
-# Test 2: lifepo4_analysis.py (same folder)
+# Test 2: lifepo4_analysis.py
 print("\n=== Testing lifepo4_analysis.py ===")
-result = subprocess.run(
-    [sys.executable, os.path.join(SCRIPT_DIR, "lifepo4_analysis.py")],
-    check=True,
-    capture_output=True,
-    text=True,
-    cwd=REPO_ROOT
-)
-print(result.stdout.split("Analysis complete!")[0][-300:])
-print("✅ lifepo4_analysis.py passed")
+run_script("lifepo4_analysis.py")
 
-# Test 3: update_voltage_chart.py (same folder)
+# Test 3: update_voltage_chart.py
 print("\n=== Testing update_voltage_chart.py ===")
-subprocess.run(
-    [sys.executable, os.path.join(SCRIPT_DIR, "update_voltage_chart.py")],
-    check=True,
-    cwd=REPO_ROOT
-)
-print("✅ update_voltage_chart.py passed")
+run_script("update_voltage_chart.py")
 
 print("\n🎉 ALL SCRIPTS PASSED SMOKE TEST!")
