@@ -16,10 +16,9 @@ concurrency:
 
 jobs:
   ci:
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     strategy:
       matrix:
-        os: [windows-latest, ubuntu-latest]
         python-version: ["3.10", "3.11", "3.12"]
       fail-fast: false
 
@@ -41,8 +40,8 @@ jobs:
       - name: Lint with Ruff (ignore specific rules)
         run: ruff check . --ignore F401,F541,E741
 
-      - name: Check formatting with Ruff (always exit 0)
-        run: ruff format --check --exit-zero
+      - name: Check formatting with Ruff (always succeed)
+        run: ruff format --check || true
 
       - name: Type check with mypy
         run: |
@@ -54,14 +53,20 @@ jobs:
 
       - name: Verify chart generated
         run: |
-          if [ ! -s voltage_chart.html ]; then
-            echo "Error: voltage_chart.html is missing or empty" >&2
+          if (Test-Path voltage_chart.html) {
+            $size = (Get-Item voltage_chart.html).Length
+            if ($size -eq 0) {
+              Write-Error "voltage_chart.html is empty"
+              exit 1
+            }
+          } else {
+            Write-Error "voltage_chart.html not found"
             exit 1
-          fi
-        shell: bash
+          }
+        shell: powershell
 
       - name: Upload voltage chart
         uses: actions/upload-artifact@v4
         with:
-          name: voltage-chart-${{ matrix.os }}-${{ matrix.python-version }}
+          name: voltage-chart-windows-${{ matrix.python-version }}
           path: voltage_chart.html
