@@ -10,6 +10,7 @@
 [![Data: Open](https://img.shields.io/badge/Data-Open%20Access-green.svg)](data/)
 [![Last Updated](https://img.shields.io/badge/Data%20Through-Mar%206%2C%202026-blue.svg)](reports/)
 [![Made with Python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)](https://www.python.org/)
+[![CI - LiFePO4 Battery Bank](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/actions/workflows/ci.yml/badge.svg)](https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/actions/workflows/ci.yml)
 
 *A DIY 12V 500Ah LiFePO₄ battery bank validated at 99% capacity with 94+ days of continuous voltage monitoring*
 
