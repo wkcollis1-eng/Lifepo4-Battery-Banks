@@ -6,8 +6,10 @@ import subprocess
 import pandas as pd
 import numpy as np
 
-# Get repository root (one level above the 'scripts' folder)
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Get the directory where this script lives (the 'scripts' folder)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(SCRIPT_DIR)
+
 DATA_DIR = os.path.join(REPO_ROOT, "data")
 HF_DIR = os.path.join(DATA_DIR, "high_freq_voltage")
 os.makedirs(HF_DIR, exist_ok=True)
@@ -46,7 +48,7 @@ hf_df.to_csv(os.path.join(HF_DIR, "dummy_hf.csv"), index=False)
 
 print(f"✅ Dummy data ready: {len(dates)} days voltage/temp + {len(hf_dates)} HF samples")
 
-# Test 1: parse_shelly_export.py
+# Test 1: parse_shelly_export.py (located in the same folder)
 print("\n=== Testing parse_shelly_export.py ===")
 with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, encoding="utf-8") as f:
     f.write("""Min. voltage
@@ -58,7 +60,7 @@ Max. voltage
 
 try:
     subprocess.run(
-        [sys.executable, os.path.join(REPO_ROOT, "parse_shelly_export.py"), test_file, "--dry-run"],
+        [sys.executable, os.path.join(SCRIPT_DIR, "parse_shelly_export.py"), test_file, "--dry-run"],
         check=True,
         cwd=REPO_ROOT
     )
@@ -67,10 +69,10 @@ finally:
 
 print("✅ parse_shelly_export.py passed")
 
-# Test 2: lifepo4_analysis.py
+# Test 2: lifepo4_analysis.py (same folder)
 print("\n=== Testing lifepo4_analysis.py ===")
 result = subprocess.run(
-    [sys.executable, os.path.join(REPO_ROOT, "scripts", "lifepo4_analysis.py")],
+    [sys.executable, os.path.join(SCRIPT_DIR, "lifepo4_analysis.py")],
     check=True,
     capture_output=True,
     text=True,
@@ -79,10 +81,10 @@ result = subprocess.run(
 print(result.stdout.split("Analysis complete!")[0][-300:])
 print("✅ lifepo4_analysis.py passed")
 
-# Test 3: update_voltage_chart.py
+# Test 3: update_voltage_chart.py (same folder)
 print("\n=== Testing update_voltage_chart.py ===")
 subprocess.run(
-    [sys.executable, os.path.join(REPO_ROOT, "scripts", "update_voltage_chart.py")],
+    [sys.executable, os.path.join(SCRIPT_DIR, "update_voltage_chart.py")],
     check=True,
     cwd=REPO_ROOT
 )
