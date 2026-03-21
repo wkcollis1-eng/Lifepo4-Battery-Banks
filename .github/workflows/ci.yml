@@ -46,9 +46,8 @@ jobs:
           mypy --ignore-missing-imports scripts/lifepo4_analysis.py scripts/update_voltage_chart.py || echo "Mypy warnings on analysis scripts (expected - no type hints yet)"
 
       - name: Smoke test ALL scripts (parse + analysis + chart)
-        shell: bash
         run: |
-          cat > /tmp/smoke_test.py << 'EOF'
+          python - <<'EOF'
 import os
 import pandas as pd
 import numpy as np
@@ -118,6 +117,3 @@ print("✅ update_voltage_chart.py passed")
 
 print("\n🎉 ALL SCRIPTS PASSED SMOKE TEST!")
 EOF
-
-          python /tmp/smoke_test.py
-          rm -f /tmp/smoke_test.py
