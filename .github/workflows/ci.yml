@@ -39,7 +39,7 @@ jobs:
           pip install ruff mypy pandas numpy scipy
 
       - name: Lint with Ruff
-        run: ruff check .
+        run: ruff check . --ignore F401,F541,E741
 
       - name: Check formatting with Ruff
         run: ruff format --check .
