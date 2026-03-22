@@ -1,4 +1,4 @@
-name: CI - LiFePO4 Battery Bank (Windows-first)
+name: CI - LiFePO4 Battery Bank
 
 on:
   push:
