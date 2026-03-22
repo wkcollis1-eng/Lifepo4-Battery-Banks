@@ -4,25 +4,27 @@ parse_shelly_export.py
 ----------------------
 Parses CSV files exported from the Shelly app and appends to the three
 Lifepo4-Battery-Banks datasets, matching their exact column format.
+
 Target files and their exact column schemas:
-    data/combined_output.csv Date, Time, Min, Max (voltage)
-    data/combined_temperature.csv Date, Time, Min, Max (temp °F)
-    data/combined_humidity.csv Date, Time, Humidity (single value)
-DateTime is stored as two separate columns: Date=DD/MM/YYYY and Time=HH:MM
-This matches the existing CSV format exactly.
+    data/combined_output.csv       Date, Time, Min, Max (voltage)
+    data/combined_temperature.csv  Date, Time, Min, Max (temp °F)
+    data/combined_humidity.csv     Date, Time, Humidity (single value)
+
+DateTime is stored as two separate columns: Date=DD/MM/YYYY and Time=HH:MM.
 
 Shelly app export format (auto-detected):
-    - Voltage: "Min. voltage" / "Max. voltage" sections
+    - Voltage:     "Min. voltage" / "Max. voltage" sections
     - Temperature: "Min temperature" / "Max. temperature" sections
-    - Humidity: "Humidity" section (single value)
+    - Humidity:    "Humidity" section (single value)  ← CURRENT FORMAT
 
 TEMPERATURE NOTE:
     combined_temperature.csv stores values in °F as provided by the Shelly export.
     No unit conversion is performed (all current exports are in °F).
 
 HUMIDITY NOTE:
-    combined_humidity.csv stores a single value. The export provides a single
-    "Humidity" section – the value is used directly.
+    combined_humidity.csv stores a single value. The export now provides
+    a single "Humidity" section – the value is used directly.
+    (Legacy min/max humidity files are still supported for backward compatibility.)
 
 BACKFILL:
     On first run, use --status to see the last timestamp in each file and the
@@ -34,7 +36,7 @@ Usage:
     python parse_shelly_export.py "export.csv"
     python parse_shelly_export.py --dir path/to/exports/
 """
-__version__ = "1.3.0"
+__version__ = "1.3.1"
 
 import argparse
 import csv
@@ -73,13 +75,13 @@ def is_section_header(s: str) -> bool:
         "min voltage", "max voltage",
         "min temperature", "max temperature",
         "min humidity", "max humidity",
-        "humidity",                   # single‑value humidity section
+        "humidity",  # current single-value section
     }
 
 
 def parse_sections(lines: list[str]) -> dict[str, dict[str, float]]:
     """
-    Parse all Min/Max data sections from a Shelly export.
+    Parse all sections from a Shelly export.
     Returns: { "canonical section name": { "DD/MM/YYYY HH:MM": float } }
     """
     result: dict[str, dict] = {}
@@ -100,7 +102,7 @@ def parse_sections(lines: list[str]) -> dict[str, dict[str, float]]:
             continue
         raw_ts, raw_val = parts[0].strip(), parts[1].strip()
         try:
-            datetime.datetime.strptime(raw_ts, SHELLY_DATE_FMT)  # validate
+            datetime.datetime.strptime(raw_ts, SHELLY_DATE_FMT)
             value = float(raw_val)
         except ValueError:
             skipped += 1
@@ -112,18 +114,16 @@ def parse_sections(lines: list[str]) -> dict[str, dict[str, float]]:
 
 
 def dt_to_row_key(dt: datetime.datetime) -> str:
-    """Canonical dedup key matching what's stored in the CSV: 'DD/MM/YYYY|HH:MM'."""
+    """Canonical dedup key: 'DD/MM/YYYY|HH:MM'."""
     return f"{dt.strftime(OUTPUT_DATE_FMT)}|{dt.strftime(OUTPUT_TIME_FMT)}"
 
 
 def parse_dt_key(date_str: str, time_str: str) -> str:
-    """Build dedup key from existing CSV row."""
     return f"{date_str.strip()}|{time_str.strip()}"
 
 
 # ── Last-row reader ────────────────────────────────────────────────────────────
 def get_last_datetime(csv_path: pathlib.Path) -> datetime.datetime | None:
-    """Return the last datetime from a target CSV (reads Date + Time columns)."""
     if not csv_path.exists():
         return None
     last_row = None
@@ -141,7 +141,6 @@ def get_last_datetime(csv_path: pathlib.Path) -> datetime.datetime | None:
 
 
 def get_existing_keys(csv_path: pathlib.Path) -> set[str]:
-    """Return all Date|Time dedup keys already in the CSV."""
     if not csv_path.exists():
         return set()
     with open(csv_path, newline="", encoding="utf-8") as f:
@@ -152,30 +151,28 @@ def get_existing_keys(csv_path: pathlib.Path) -> set[str]:
 
 
 def show_status() -> None:
-    """Print last timestamp and recommended Shelly export range for each file."""
     print("\nCurrent dataset status:")
     print("─" * 65)
     for label, path in [
-        ("Voltage ", VOLTAGE_CSV),
-        ("Temperature ", TEMP_CSV),
-        ("Humidity ", HUMIDITY_CSV),
+        ("Voltage", VOLTAGE_CSV),
+        ("Temperature", TEMP_CSV),
+        ("Humidity", HUMIDITY_CSV),
     ]:
         last = get_last_datetime(path)
         if last:
             next_hour = last + datetime.timedelta(hours=1)
             now = datetime.datetime.now()
-            print(f" {label}last row : {last.strftime('%d/%m/%Y %H:%M')}")
+            print(f" {label} last row : {last.strftime('%d/%m/%Y %H:%M')}")
             print(f" export from Shelly app: "
                   f"{next_hour.strftime('%d/%m/%Y %H:%M')} → "
                   f"{now.strftime('%d/%m/%Y %H:%M')}")
         else:
-            print(f" {label}{'not found' if not path.exists() else 'empty or unreadable'}: {path.name}")
+            print(f" {label} {'not found' if not path.exists() else 'empty or unreadable'}: {path.name}")
     print()
 
 
 # ── Duplicate counter ─────────────────────────────────────────────────────────
 def count_skipped_duplicates(section_key: str, sections: dict, existing: set[str]) -> int:
-    """Count how many timestamps in a section are already present (for reporting)."""
     count = 0
     for dt_str in sections.get(section_key, {}):
         try:
@@ -188,17 +185,13 @@ def count_skipped_duplicates(section_key: str, sections: dict, existing: set[str
 
 
 # ── Row builders ──────────────────────────────────────────────────────────────
-def _filter(dt_str: str, existing: set[str],
-            last_dt: datetime.datetime | None) -> bool:
-    """Return True if this row should be included (not duplicate, not before cutoff)."""
+def _filter(dt_str: str, existing: set[str], last_dt: datetime.datetime | None) -> bool:
     try:
         row_dt = datetime.datetime.strptime(dt_str, SHELLY_DATE_FMT)
     except ValueError:
         return False
     key = dt_to_row_key(row_dt)
-    if key in existing:
-        return False
-    if last_dt and row_dt <= last_dt:
+    if key in existing or (last_dt and row_dt <= last_dt):
         return False
     return True
 
@@ -212,7 +205,7 @@ def build_voltage_rows(sections: dict, existing: set[str],
         if not _filter(dt_str, existing, last_dt):
             continue
         if dt_str not in min_s or dt_str not in max_s:
-            print(f" WARNING: {dt_str} missing {'Min' if dt_str not in min_s else 'Max'} — skipping")
+            print(f" WARNING: {dt_str} missing Min or Max — skipping")
             continue
         dt = datetime.datetime.strptime(dt_str, SHELLY_DATE_FMT)
         rows.append({
@@ -226,7 +219,6 @@ def build_voltage_rows(sections: dict, existing: set[str],
 
 def build_temp_rows(sections: dict, existing: set[str],
                     last_dt: datetime.datetime | None) -> list[dict]:
-    """Temperature is always in °F — no conversion needed."""
     min_s = sections.get("min temperature", {})
     max_s = sections.get("max temperature", {})
     rows = []
@@ -234,36 +226,50 @@ def build_temp_rows(sections: dict, existing: set[str],
         if not _filter(dt_str, existing, last_dt):
             continue
         if dt_str not in min_s or dt_str not in max_s:
-            print(f" WARNING: {dt_str} missing {'Min' if dt_str not in min_s else 'Max'} temp — skipping")
+            print(f" WARNING: {dt_str} missing Min or Max temp — skipping")
             continue
-        raw_min, raw_max = min_s[dt_str], max_s[dt_str]
         dt = datetime.datetime.strptime(dt_str, SHELLY_DATE_FMT)
         rows.append({
             "Date": dt.strftime(OUTPUT_DATE_FMT),
             "Time": dt.strftime(OUTPUT_TIME_FMT),
-            "Min": round(raw_min, 2),
-            "Max": round(raw_max, 2),
+            "Min": round(min_s[dt_str], 2),
+            "Max": round(max_s[dt_str], 2),
         })
     return rows
 
 
 def build_humidity_rows(sections: dict, existing: set[str],
                         last_dt: datetime.datetime | None) -> list[dict]:
-    """Humidity is a single value from the 'humidity' section."""
-    single_s = sections.get("humidity", {})
-    if not single_s:
-        return []
+    """Single 'humidity' section (current format) or legacy min/max."""
+    single = sections.get("humidity", {})
+    if single:
+        rows = []
+        for dt_str in sorted(single.keys()):
+            if not _filter(dt_str, existing, last_dt):
+                continue
+            dt = datetime.datetime.strptime(dt_str, SHELLY_DATE_FMT)
+            rows.append({
+                "Date": dt.strftime(OUTPUT_DATE_FMT),
+                "Time": dt.strftime(OUTPUT_TIME_FMT),
+                "Humidity": round(single[dt_str], 2),
+            })
+        return rows
+
+    # Legacy fallback (min + max averaged)
+    min_s = sections.get("min humidity", {})
+    max_s = sections.get("max humidity", {})
     rows = []
-    for dt_str in sorted(single_s.keys()):
+    for dt_str in sorted(set(min_s) | set(max_s)):
         if not _filter(dt_str, existing, last_dt):
             continue
-        humidity = round(single_s[dt_str], 2)
-        dt = datetime.datetime.strptime(dt_str, SHELLY_DATE_FMT)
-        rows.append({
-            "Date": dt.strftime(OUTPUT_DATE_FMT),
-            "Time": dt.strftime(OUTPUT_TIME_FMT),
-            "Humidity": humidity,
-        })
+        vals = [v for v in (min_s.get(dt_str), max_s.get(dt_str)) if v is not None]
+        if vals:
+            dt = datetime.datetime.strptime(dt_str, SHELLY_DATE_FMT)
+            rows.append({
+                "Date": dt.strftime(OUTPUT_DATE_FMT),
+                "Time": dt.strftime(OUTPUT_TIME_FMT),
+                "Humidity": round(sum(vals) / len(vals), 2),
+            })
     return rows
 
 
@@ -273,15 +279,12 @@ def append_rows(rows: list[dict], csv_path: pathlib.Path,
     if not rows:
         return 0
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-
     if dry_run:
         for row in rows:
-            vals = " ".join(f"{k}={row[k]}" for k in header
-                            if k not in ("Date", "Time"))
+            vals = " ".join(f"{k}={row[k]}" for k in header if k not in ("Date", "Time"))
             print(f" DRY RUN {row['Date']} {row['Time']} {vals}")
         return len(rows)
 
-    # Fixed: only write header if file is truly empty (prevents header-less files)
     file_exists = csv_path.exists() and csv_path.stat().st_size > 0
     with open(csv_path, "a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=header)
@@ -289,8 +292,7 @@ def append_rows(rows: list[dict], csv_path: pathlib.Path,
             writer.writeheader()
         for row in rows:
             writer.writerow(row)
-            vals = " ".join(f"{k}={row[k]}" for k in header
-                            if k not in ("Date", "Time"))
+            vals = " ".join(f"{k}={row[k]}" for k in header if k not in ("Date", "Time"))
             print(f" Appended {row['Date']} {row['Time']} {vals}")
     return len(rows)
 
@@ -303,13 +305,13 @@ def process_file(path: pathlib.Path, dry_run: bool) -> int:
 
     sections = parse_sections(lines)
     if not sections:
-        print(" ERROR: No Min/Max sections detected in file.", file=sys.stderr)
+        print(" ERROR: No sections detected.", file=sys.stderr)
         return 0
 
     total_written = 0
     new_counts = {"voltage": 0, "temp": 0, "hum": 0}
 
-    # ── Voltage (independent of other sections) ────────────────────────────────
+    # Voltage
     if sections.get("min voltage") or sections.get("max voltage"):
         last_dt = get_last_datetime(VOLTAGE_CSV)
         existing = get_existing_keys(VOLTAGE_CSV)
@@ -323,7 +325,7 @@ def process_file(path: pathlib.Path, dry_run: bool) -> int:
         total_written += written
         new_counts["voltage"] = written
 
-    # ── Temperature (always °F) ────────────────────────────────────────────────
+    # Temperature
     if sections.get("min temperature") or sections.get("max temperature"):
         last_dt = get_last_datetime(TEMP_CSV)
         existing = get_existing_keys(TEMP_CSV)
@@ -337,32 +339,27 @@ def process_file(path: pathlib.Path, dry_run: bool) -> int:
         total_written += written
         new_counts["temp"] = written
 
-    # ── Humidity (single value) ───────────────────────────────────────────────
-    if sections.get("humidity") or sections.get("min humidity") or sections.get("max humidity"):
+    # Humidity (single value)
+    if (sections.get("humidity") or
+        sections.get("min humidity") or
+        sections.get("max humidity")):
         last_dt = get_last_datetime(HUMIDITY_CSV)
         existing = get_existing_keys(HUMIDITY_CSV)
         if last_dt:
             print(f" Humidity appending after: {last_dt.strftime('%d/%m/%Y %H:%M')}")
-
-        # Count duplicates for whichever humidity section exists
-        dup = 0
-        if sections.get("humidity"):
-            dup = count_skipped_duplicates("humidity", sections, existing)
-        elif sections.get("min humidity"):
-            dup = count_skipped_duplicates("min humidity", sections, existing)
+        dup = count_skipped_duplicates(
+            "humidity" if sections.get("humidity") else "min humidity",
+            sections, existing)
         if dup:
             print(f" Skipped {dup} duplicate humidity row(s)")
-
         rows = build_humidity_rows(sections, existing, last_dt)
         written = append_rows(rows, HUMIDITY_CSV, HUMIDITY_HEADER, dry_run)
         total_written += written
         new_counts["hum"] = written
 
-    # ── Progress summary per file (as requested) ───────────────────────────────
-    print(f"  → Voltage: {new_counts['voltage']} new | "
+    print(f" → Voltage: {new_counts['voltage']} new | "
           f"Temp: {new_counts['temp']} new | "
           f"Hum: {new_counts['hum']} new")
-
     return total_written
 
 
@@ -372,12 +369,9 @@ def main() -> None:
         description="Parse Shelly app CSV exports → append to Lifepo4-Battery-Banks datasets"
     )
     parser.add_argument("files", nargs="*", metavar="FILE")
-    parser.add_argument("--dir", metavar="DIR",
-                        help="Parse all *.csv files in a folder")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Preview output without writing anything")
-    parser.add_argument("--status", action="store_true",
-                        help="Show last timestamp in each dataset")
+    parser.add_argument("--dir", metavar="DIR", help="Parse all *.csv files in a folder")
+    parser.add_argument("--dry-run", action="store_true", help="Preview output without writing")
+    parser.add_argument("--status", action="store_true", help="Show last timestamp in each dataset")
     args = parser.parse_args()
 
     if args.status:
@@ -403,7 +397,7 @@ def main() -> None:
     if not input_files:
         print("No files specified. Showing dataset status:\n")
         show_status()
-        print("Export the indicated date ranges from the Shelly app, then run:")
+        print('Export the indicated date ranges from the Shelly app, then run:')
         print(' python parse_shelly_export.py "your_export.csv"')
         sys.exit(0)
 
