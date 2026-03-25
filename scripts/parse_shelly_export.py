@@ -2,69 +2,266 @@
 """
 parse_shelly_export.py
 ----------------------
-Parses CSV files exported from the Shelly app and appends to the three
-Lifepo4-Battery-Banks datasets, matching their exact column format.
+Two operating modes:
+
+  1. CSV-import mode  (original behaviour)
+     Parses CSV files exported from the Shelly app and appends to the three
+     Lifepo4-Battery-Banks datasets.
+
+  2. Live-fetch mode  (--fetch, new in v1.6.0)
+     Queries the Shelly devices directly over the LAN via their HTTP RPC API,
+     reads the current instantaneous values, and appends one row per dataset.
+     Min and Max are both set to the current reading (instantaneous snapshot).
+     The timestamp is truncated to the current hour (HH:00) to match the
+     hourly-resolution format used by the existing datasets.
 
 Target files and their exact column schemas:
-    data/combined_output.csv       Date, Time, Min, Max (voltage)
-    data/combined_temperature.csv  Date, Time, Min, Max (temp °F)
-    data/combined_humidity.csv     Date, Time, Humidity (single value)
+    data/combined_output.csv       Date, Time, Min, Max (voltage, V)
+    data/combined_temperature.csv  Date, Time, Min, Max (temp, °F)
+    data/combined_humidity.csv     Date, Time, Humidity (%RH)
 
-DateTime is stored as two separate columns: Date=DD/MM/YYYY and Time=HH:MM.
+DateTime stored as two columns: Date=DD/MM/YYYY and Time=HH:MM.
+
+Shelly device addresses (live-fetch mode):
+    Voltage     10.0.0.142   (Shelly Plus Uni / voltmeter component)
+    Temp + Hum  10.0.0.213   (Shelly Plus H&T or similar)
 
 Shelly app export format (one metric per file, auto-detected):
     - Voltage:     file contains "Min. voltage" / "Max. voltage" sections
     - Temperature: file contains "Min temperature" / "Max. temperature" sections
     - Humidity:    file contains "Humidity" section (single value)
 
+Changes in v1.6.0:
+    - ADDED: --fetch mode — live Shelly HTTP RPC API pull (urllib, no extra deps)
+    - ADDED: VOLTAGE_IP / TEMP_HUM_IP constants for device addresses
+    - FIXED: DATA_DIR corrected to Documents/Lifepo4 Battery Banks/data
+             (was incorrectly pointing at Desktop/data)
+    - ADDED: --timeout flag to control network timeout in fetch mode
+
 Changes in v1.5.0:
-    - FIXED: normalise_section_header() now removes dots before collapsing
-      whitespace, so "Max. voltage" and "Max. temperature" are correctly
-      detected (previously produced double-spaces that missed the lookup set)
-    - FIXED: dead `if not validate_header(...): pass` blocks replaced with
-      explicit else branches that log the skip reason
-    - FIXED: DATA_DIR.mkdir() moved inside the non-dry-run branch so --dry-run
-      no longer creates directories as a side effect
-    - FIXED: get_file_info() now strips whitespace from Date/Time fields
-      before parsing, matching the behaviour of get_last_datetime()
-    - FIXED: show_status() next-export range now substitutes the real current
-      datetime instead of printing the literal string "now"
-    - FIXED: --force + --dry-run no longer prints the misleading
-      "ALL rows will be appended" warning (nothing is written in dry-run)
-    - IMPROVED: duplicate detection relies solely on get_existing_keys();
-      get_last_datetime() is retained only for the informational "appending
-      after" log line, not as a filter gate — this correctly handles gaps
-      and out-of-order rows in the target CSVs
+    - FIXED: normalise_section_header() removes dots before collapsing whitespace
+    - FIXED: dead validate_header if-not blocks replaced with explicit else branches
+    - FIXED: DATA_DIR.mkdir() moved inside non-dry-run branch
+    - FIXED: get_file_info() strips whitespace from Date/Time before parsing
+    - FIXED: show_status() next-export range uses real current datetime
+    - FIXED: --force + --dry-run no longer prints misleading warning
+    - IMPROVED: duplicate detection uses get_existing_keys() only; gap-safe
 
 Usage:
+    # Live fetch from Shelly devices right now:
+    python parse_shelly_export.py --fetch
+    python parse_shelly_export.py --fetch --dry-run
+    python parse_shelly_export.py --fetch --force
+
+    # Dataset status:
     python parse_shelly_export.py --status
+
+    # CSV-import (original):
     python parse_shelly_export.py "export.csv" --dry-run
     python parse_shelly_export.py "export.csv" --force
     python parse_shelly_export.py --dir path/to/exports/
+
+Scheduling (Task Scheduler, hourly):
+    Program : pythonw.exe
+    Arguments: "C:/Users/wkcol/OneDrive/Documents/Lifepo4 Battery Banks/scripts/parse_shelly_export.py" --fetch
 """
-__version__ = "1.5.0"
+__version__ = "1.6.0"
 
 import argparse
 import csv
 import datetime
+import json
 import pathlib
 import re
 import sys
+import urllib.error
+import urllib.request
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 SCRIPT_DIR = pathlib.Path(__file__).parent
-DATA_DIR = pathlib.Path(r"C:\Users\wkcol\OneDrive\Desktop\data")
-VOLTAGE_CSV = DATA_DIR / "combined_output.csv"
-TEMP_CSV = DATA_DIR / "combined_temperature.csv"
+DATA_DIR   = pathlib.Path(r"C:\Users\wkcol\OneDrive\Documents\Lifepo4 Battery Banks\data")
+
+VOLTAGE_CSV  = DATA_DIR / "combined_output.csv"
+TEMP_CSV     = DATA_DIR / "combined_temperature.csv"
 HUMIDITY_CSV = DATA_DIR / "combined_humidity.csv"
+
+# Live-fetch device addresses
+VOLTAGE_IP  = "10.0.0.142"   # voltage measurement (Shelly Plus Uni or similar)
+TEMP_HUM_IP = "10.0.0.213"   # temperature + humidity sensor
 
 SHELLY_DATE_FMT = "%d/%m/%Y %H:%M"
 OUTPUT_DATE_FMT = "%d/%m/%Y"
 OUTPUT_TIME_FMT = "%H:%M"
 
-VOLTAGE_HEADER = ["Date", "Time", "Min", "Max"]
-TEMP_HEADER = ["Date", "Time", "Min", "Max"]
+VOLTAGE_HEADER  = ["Date", "Time", "Min", "Max"]
+TEMP_HEADER     = ["Date", "Time", "Min", "Max"]
 HUMIDITY_HEADER = ["Date", "Time", "Humidity"]
+
+
+# ── Shelly HTTP RPC helpers ────────────────────────────────────────────────────
+def fetch_shelly_json(ip: str, rpc_method: str, timeout: int = 5) -> dict:
+    """
+    Call a single Shelly Gen2 RPC method and return the parsed JSON response.
+
+    URL form:  http://<ip>/rpc/<Method>
+    Raises urllib.error.URLError on network failure, ValueError on bad JSON.
+    """
+    url = f"http://{ip}/rpc/{rpc_method}"
+    with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310
+        raw = resp.read().decode("utf-8")
+    return json.loads(raw)
+
+
+def get_shelly_voltage(ip: str, timeout: int = 5) -> float:
+    """
+    Return the current voltage reading from a Shelly voltmeter device.
+
+    Tries Shelly.GetStatus first (works for Plus Uni and most Gen2 devices),
+    then falls back to a direct Voltmeter.GetStatus call.
+
+    Shelly.GetStatus places voltmeter data under the key "voltmeter:0".
+    Voltmeter.GetStatus?id=0 places it directly at the top level.
+    """
+    try:
+        data = fetch_shelly_json(ip, "Shelly.GetStatus", timeout)
+        # Gen2 unified status: voltmeter component lives at "voltmeter:0"
+        if "voltmeter:0" in data:
+            return float(data["voltmeter:0"]["voltage"])
+        # Some firmware versions use "voltmeter:100" for the external input
+        for key in data:
+            if key.startswith("voltmeter:"):
+                return float(data[key]["voltage"])
+    except Exception:
+        pass  # fall through to direct call
+
+    # Direct component call
+    data = fetch_shelly_json(ip, "Voltmeter.GetStatus?id=0", timeout)
+    return float(data["voltage"])
+
+
+def get_shelly_temp_hum(ip: str, timeout: int = 5) -> tuple[float, float]:
+    """
+    Return (temp_fahrenheit, humidity_pct) from a Shelly temperature/humidity device.
+
+    Tries Shelly.GetStatus first.  Falls back to individual component calls.
+    Temperature is read as °F (tF field).  Humidity is read as %RH (rh field).
+    """
+    temp_f: float | None = None
+    humidity: float | None = None
+
+    try:
+        data = fetch_shelly_json(ip, "Shelly.GetStatus", timeout)
+
+        # Temperature component (key pattern "temperature:N")
+        for key in data:
+            if key.startswith("temperature:") and temp_f is None:
+                component = data[key]
+                if "tF" in component:
+                    temp_f = float(component["tF"])
+                elif "tC" in component:
+                    # Convert if tF absent (older firmware)
+                    temp_f = round(float(component["tC"]) * 9 / 5 + 32, 2)
+
+        # Humidity component (key pattern "humidity:N")
+        for key in data:
+            if key.startswith("humidity:") and humidity is None:
+                humidity = float(data[key]["rh"])
+
+    except Exception:
+        pass  # fall through to individual calls
+
+    # Individual component fallbacks
+    if temp_f is None:
+        t_data = fetch_shelly_json(ip, "Temperature.GetStatus?id=0", timeout)
+        if "tF" in t_data:
+            temp_f = float(t_data["tF"])
+        else:
+            temp_f = round(float(t_data["tC"]) * 9 / 5 + 32, 2)
+
+    if humidity is None:
+        h_data = fetch_shelly_json(ip, "Humidity.GetStatus?id=0", timeout)
+        humidity = float(h_data["rh"])
+
+    return temp_f, humidity
+
+
+def fetch_and_append(dry_run: bool, force: bool, timeout: int = 5) -> int:
+    """
+    Pull live readings from both Shelly devices and append one row to each CSV.
+
+    Timestamp: current wall-clock time truncated to HH:00 (hourly resolution).
+    Min = Max = the instantaneous reading (snapshot, not a true min/max interval).
+    Returns the total number of rows written (0–3).
+    """
+    # Timestamp truncated to the current hour
+    now = datetime.datetime.now().replace(minute=0, second=0, microsecond=0)
+    date_str = now.strftime(OUTPUT_DATE_FMT)
+    time_str = now.strftime(OUTPUT_TIME_FMT)
+    row_key  = f"{date_str}|{time_str}"
+
+    print(f"\nLive fetch — timestamp: {date_str} {time_str}")
+
+    total_written = 0
+
+    # ── Voltage ───────────────────────────────────────────────────────────────
+    print(f" Querying voltage  → http://{VOLTAGE_IP}/rpc/Shelly.GetStatus")
+    try:
+        voltage = get_shelly_voltage(VOLTAGE_IP, timeout)
+        voltage = round(voltage, 4)
+        print(f"   Voltage = {voltage} V")
+
+        if not validate_header(VOLTAGE_CSV, VOLTAGE_HEADER):
+            print(f" SKIPPED voltage — header mismatch in {VOLTAGE_CSV.name}")
+        else:
+            existing = set() if force else get_existing_keys(VOLTAGE_CSV)
+            if not force and row_key in existing:
+                print(f" SKIPPED voltage — {date_str} {time_str} already recorded")
+            else:
+                rows = [{"Date": date_str, "Time": time_str,
+                         "Min": voltage, "Max": voltage}]
+                written = append_rows(rows, VOLTAGE_CSV, VOLTAGE_HEADER, dry_run)
+                total_written += written
+
+    except (urllib.error.URLError, OSError, KeyError, ValueError) as exc:
+        print(f" ERROR: Could not read voltage from {VOLTAGE_IP} — {exc}")
+
+    # ── Temperature + Humidity ─────────────────────────────────────────────────
+    print(f" Querying temp/hum → http://{TEMP_HUM_IP}/rpc/Shelly.GetStatus")
+    try:
+        temp_f, humidity = get_shelly_temp_hum(TEMP_HUM_IP, timeout)
+        temp_f   = round(temp_f, 2)
+        humidity = round(humidity, 2)
+        print(f"   Temperature = {temp_f} °F  |  Humidity = {humidity} %RH")
+
+        # Temperature
+        if not validate_header(TEMP_CSV, TEMP_HEADER):
+            print(f" SKIPPED temperature — header mismatch in {TEMP_CSV.name}")
+        else:
+            existing = set() if force else get_existing_keys(TEMP_CSV)
+            if not force and row_key in existing:
+                print(f" SKIPPED temperature — {date_str} {time_str} already recorded")
+            else:
+                rows = [{"Date": date_str, "Time": time_str,
+                         "Min": temp_f, "Max": temp_f}]
+                written = append_rows(rows, TEMP_CSV, TEMP_HEADER, dry_run)
+                total_written += written
+
+        # Humidity
+        if not validate_header(HUMIDITY_CSV, HUMIDITY_HEADER):
+            print(f" SKIPPED humidity — header mismatch in {HUMIDITY_CSV.name}")
+        else:
+            existing = set() if force else get_existing_keys(HUMIDITY_CSV)
+            if not force and row_key in existing:
+                print(f" SKIPPED humidity — {date_str} {time_str} already recorded")
+            else:
+                rows = [{"Date": date_str, "Time": time_str, "Humidity": humidity}]
+                written = append_rows(rows, HUMIDITY_CSV, HUMIDITY_HEADER, dry_run)
+                total_written += written
+
+    except (urllib.error.URLError, OSError, KeyError, ValueError) as exc:
+        print(f" ERROR: Could not read temp/hum from {TEMP_HUM_IP} — {exc}")
+
+    return total_written
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -129,10 +326,8 @@ def get_file_info(csv_path: pathlib.Path) -> dict:
             info["count"] = len(rows)
             if rows:
                 first_row = rows[0]
-                last_row = rows[-1]
+                last_row  = rows[-1]
                 try:
-                    # Strip whitespace before parsing — guards against trailing
-                    # spaces that silently return None in the original version.
                     info["first"] = datetime.datetime.strptime(
                         f"{first_row['Date'].strip()} {first_row['Time'].strip()}",
                         SHELLY_DATE_FMT,
@@ -153,9 +348,9 @@ def show_status() -> None:
     print("\nCurrent dataset status:")
     print("─" * 80)
     for label, path, _header in [
-        ("Voltage", VOLTAGE_CSV, VOLTAGE_HEADER),
-        ("Temperature", TEMP_CSV, TEMP_HEADER),
-        ("Humidity", HUMIDITY_CSV, HUMIDITY_HEADER),
+        ("Voltage",     VOLTAGE_CSV,  VOLTAGE_HEADER),
+        ("Temperature", TEMP_CSV,     TEMP_HEADER),
+        ("Humidity",    HUMIDITY_CSV, HUMIDITY_HEADER),
     ]:
         info = get_file_info(path)
         if info["last"]:
@@ -253,10 +448,6 @@ def _filter(dt_str: str, existing: set[str], force: bool) -> bool:
 
     In normal mode: include only rows whose key is not already in existing.
     In force mode: include everything unconditionally.
-
-    Note: the last_dt cutoff from v1.4.0 has been removed. The existing-keys
-    set is the correct and complete duplicate check — a cutoff based solely on
-    the last row fails silently when the target CSV has gaps.
     """
     if force:
         return True
@@ -284,8 +475,8 @@ def build_voltage_rows(
         rows.append({
             "Date": dt.strftime(OUTPUT_DATE_FMT),
             "Time": dt.strftime(OUTPUT_TIME_FMT),
-            "Min": round(min_s[dt_str], 4),
-            "Max": round(max_s[dt_str], 4),
+            "Min":  round(min_s[dt_str], 4),
+            "Max":  round(max_s[dt_str], 4),
         })
     return rows
 
@@ -306,8 +497,8 @@ def build_temp_rows(
         rows.append({
             "Date": dt.strftime(OUTPUT_DATE_FMT),
             "Time": dt.strftime(OUTPUT_TIME_FMT),
-            "Min": round(min_s[dt_str], 2),
-            "Max": round(max_s[dt_str], 2),
+            "Min":  round(min_s[dt_str], 2),
+            "Max":  round(max_s[dt_str], 2),
         })
     return rows
 
@@ -323,8 +514,8 @@ def build_humidity_rows(
                 continue
             dt = datetime.datetime.strptime(dt_str, SHELLY_DATE_FMT)
             rows.append({
-                "Date": dt.strftime(OUTPUT_DATE_FMT),
-                "Time": dt.strftime(OUTPUT_TIME_FMT),
+                "Date":     dt.strftime(OUTPUT_DATE_FMT),
+                "Time":     dt.strftime(OUTPUT_TIME_FMT),
                 "Humidity": round(single[dt_str], 2),
             })
         return rows
@@ -342,8 +533,8 @@ def build_humidity_rows(
         if vals:
             dt = datetime.datetime.strptime(dt_str, SHELLY_DATE_FMT)
             rows.append({
-                "Date": dt.strftime(OUTPUT_DATE_FMT),
-                "Time": dt.strftime(OUTPUT_TIME_FMT),
+                "Date":     dt.strftime(OUTPUT_DATE_FMT),
+                "Time":     dt.strftime(OUTPUT_TIME_FMT),
                 "Humidity": round(sum(vals) / len(vals), 2),
             })
     return rows
@@ -483,7 +674,7 @@ def parse_sections(lines: list[str]) -> dict[str, dict[str, float]]:
     current = None
     skipped = 0
     for line in lines:
-        s = line.strip()
+        s   = line.strip()
         low = s.lower()
 
         if is_section_header(low):
@@ -519,17 +710,23 @@ def parse_sections(lines: list[str]) -> dict[str, dict[str, float]]:
 # ── Main ───────────────────────────────────────────────────────────────────────
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Parse Shelly app CSV exports → append to Lifepo4-Battery-Banks datasets"
+        description="Append Shelly data to Lifepo4-Battery-Banks datasets "
+                    "(live fetch or CSV import)"
     )
-    parser.add_argument("files", nargs="*", metavar="FILE")
-    parser.add_argument("--dir", metavar="DIR", help="Parse all *.csv files in a folder")
-    parser.add_argument("--dry-run", action="store_true", help="Preview output without writing")
-    parser.add_argument("--status", action="store_true", help="Show dataset status and next export range")
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Ignore duplicates — append all rows (use with caution)",
-    )
+    parser.add_argument("files", nargs="*", metavar="FILE",
+                        help="Shelly app CSV export file(s) to import")
+    parser.add_argument("--fetch", action="store_true",
+                        help="Query Shelly devices live over the LAN and append current readings")
+    parser.add_argument("--dir", metavar="DIR",
+                        help="Parse all *.csv files in a folder (CSV-import mode)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Preview output without writing")
+    parser.add_argument("--status", action="store_true",
+                        help="Show dataset status and next export range")
+    parser.add_argument("--force", action="store_true",
+                        help="Ignore duplicates — append all rows (use with caution)")
+    parser.add_argument("--timeout", type=int, default=5, metavar="SEC",
+                        help="Network timeout in seconds for --fetch (default: 5)")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     args = parser.parse_args()
 
@@ -537,6 +734,21 @@ def main() -> None:
         show_status()
         return
 
+    # ── Live-fetch mode ────────────────────────────────────────────────────────
+    if args.fetch:
+        if args.dry_run:
+            print("DRY RUN — nothing will be written\n")
+        if args.force and not args.dry_run:
+            print("⚠️  FORCE MODE: duplicate check skipped")
+
+        total = fetch_and_append(args.dry_run, args.force, args.timeout)
+        print(
+            f"\n{'DRY RUN — ' if args.dry_run else ''}Done: "
+            f"{total} row(s) {'would be ' if args.dry_run else ''}appended"
+        )
+        return
+
+    # ── CSV-import mode ────────────────────────────────────────────────────────
     input_files: list[pathlib.Path] = []
 
     if args.dir:
@@ -557,9 +769,11 @@ def main() -> None:
     if not input_files:
         print("No files specified. Showing dataset status:\n")
         show_status()
-        print("Export the indicated date ranges from the Shelly app, then run:")
+        print("To fetch live readings from the Shelly devices:")
+        print("  python parse_shelly_export.py --fetch")
+        print("\nTo import a Shelly app CSV export:")
         print('  python parse_shelly_export.py "your_export.csv"')
-        print("Or for a folder of exports:")
+        print("\nFor a folder of exports:")
         print('  python parse_shelly_export.py --dir path/to/exports/')
         sys.exit(0)
 
