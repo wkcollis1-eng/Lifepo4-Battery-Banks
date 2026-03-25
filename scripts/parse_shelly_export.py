@@ -53,7 +53,7 @@ import sys
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 SCRIPT_DIR = pathlib.Path(__file__).parent
-DATA_DIR = SCRIPT_DIR.parent / "data"
+DATA_DIR = pathlib.Path(r"C:\Users\wkcol\OneDrive\Desktop\data")
 VOLTAGE_CSV = DATA_DIR / "combined_output.csv"
 TEMP_CSV = DATA_DIR / "combined_temperature.csv"
 HUMIDITY_CSV = DATA_DIR / "combined_humidity.csv"
