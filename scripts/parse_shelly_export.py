@@ -79,7 +79,7 @@ import urllib.request
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 SCRIPT_DIR = pathlib.Path(__file__).parent
-DATA_DIR   = pathlib.Path(r"C:\Users\wkcol\OneDrive\Documents\Lifepo4 Battery Banks\data")
+DATA_DIR   = pathlib.Path(r"C:\Users\wkcol\OneDrive\Documents\Repos\Lifepo4-Battery-Banks\data")
 
 VOLTAGE_CSV  = DATA_DIR / "combined_output.csv"
 TEMP_CSV     = DATA_DIR / "combined_temperature.csv"
