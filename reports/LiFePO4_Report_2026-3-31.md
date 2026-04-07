@@ -1,8 +1,8 @@
 # LiFePO4 Battery Bank: Technical Report
 
-**Data through:** April 2, 2026 (HF); March 31, 2026 (hourly)  
-**Published:** April 5, 2026  
-**Version:** 2026-04-05  
+**Data through:** April 2, 2026 (HF); March 31, 2026 (hourly)
+**Published:** April 5, 2026
+**Version:** 2026-04-05
 **DOI:** [10.5281/zenodo.14538065](https://doi.org/10.5281/zenodo.14538065)
 
 ---
@@ -83,7 +83,7 @@ MA-60 = 60-sample centered moving average of raw high-frequency voltage readings
 
 ### 3.1 Stability Comparison
 
-**Pre-charge stasis window:** February 15–21, 2026 (7 days immediately before the February 22, 2026 charge event; 99,261 records at ~6 s interval)  
+**Pre-charge stasis window:** February 15–21, 2026 (7 days immediately before the February 22, 2026 charge event; 99,261 records at ~6 s interval)
 **Current window:** March 30 – April 1, 2026 (last 3 complete days of HF data; 1,452 records at ~2–3 min interval)
 
 | Metric | Pre-Charge Stasis (Feb 15–21) | Current (Mar 30–Apr 1) | Change |
@@ -116,11 +116,11 @@ MA-60 = 60-sample centered moving average of raw high-frequency voltage readings
 | MA-60 noise (residual std, 3-day regression) | 0.36 mV |
 | Time span analyzed | 2 days (3 daily MA-60 means) |
 
-> **Regression detail (3-day):** x = [0, 1, 2] days; y = [13244.74, 13247.14, 13250.78] mV.  
-> slope = (3 × 39748.70 − 3 × 39742.66) / (3 × 5 − 9) = 18.12 / 6 = **+3.02 mV/day**  
+> **Regression detail (3-day):** x = [0, 1, 2] days; y = [13244.74, 13247.14, 13250.78] mV.
+> slope = (3 × 39748.70 − 3 × 39742.66) / (3 × 5 − 9) = 18.12 / 6 = **+3.02 mV/day**
 > The 5-day slope (Mar 28–Apr 1) of **−0.19 mV/day** is analytically indistinguishable from zero, confirming stable stasis over the longer window.
 
-![Daily MA-60 trend, Mar 30 – Apr 1](../figures/fig_ma60_trend_apr05.png)  
+![Daily MA-60 trend, Mar 30 – Apr 1](../figures/fig_ma60_trend_apr05.png)
 *Figure: MA-60 daily means for Mar 30–Apr 1, 2026. Near-horizontal trend confirms stasis. Blue band = ±1σ window std.*
 
 ---
@@ -153,7 +153,7 @@ The −19.3 mV offset from the November baseline is consistent with prior report
 
 The retained gain of +25.7 mV (vs +26 mV at day 12) confirms the voltage plateau has been stable since stasis was first reached — a textbook LiFePO4 equilibrium behavior.
 
-![Voltage delta analysis](../figures/fig_voltage_delta_apr05.png)  
+![Voltage delta analysis](../figures/fig_voltage_delta_apr05.png)
 *Figure: Daily mean voltage Mar 6 – Apr 2, 2026 with Nov stasis (13.270 V) and pre-charge baseline (13.225 V) reference lines. The retained gain of +25.7 mV above pre-charge baseline is stable across the full 30-day reporting window.*
 
 ---
@@ -262,6 +262,6 @@ Two data anomalies were identified this period: (1) A 14-day HF gap (approximate
 
 ---
 
-**Repository:** <https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks>  
-**DOI:** 10.5281/zenodo.14538065  
+**Repository:** <https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks>
+**DOI:** 10.5281/zenodo.14538065
 **License:** CC BY 4.0 (data) / MIT (code)

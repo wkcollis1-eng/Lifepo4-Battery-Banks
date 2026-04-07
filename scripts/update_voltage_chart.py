@@ -22,50 +22,51 @@ import os
 # Resolve paths relative to repo root (works from any working directory)
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VOLTAGE_FILE = os.path.join(REPO_ROOT, "data", "combined_output.csv")
-TEMP_FILE    = os.path.join(REPO_ROOT, "data", "combined_temperature.csv")
-OUTPUT_FILE  = os.path.join(REPO_ROOT, "voltage_chart.html")
+TEMP_FILE = os.path.join(REPO_ROOT, "data", "combined_temperature.csv")
+OUTPUT_FILE = os.path.join(REPO_ROOT, "voltage_chart.html")
 
 # Load actual voltage data
 df = pd.read_csv(VOLTAGE_FILE)
-df['datetime'] = pd.to_datetime(df['Date'] + ' ' + df['Time'], format='%d/%m/%Y %H:%M')
-df['avg'] = (df['Min'] + df['Max']) / 2
+df["datetime"] = pd.to_datetime(df["Date"] + " " + df["Time"], format="%d/%m/%Y %H:%M")
+df["avg"] = (df["Min"] + df["Max"]) / 2
 
 # Get daily data
-df['date'] = df['datetime'].dt.date
-daily = df.groupby('date').agg({
-    'Min': 'min',
-    'Max': 'max',
-    'avg': 'mean'
-}).reset_index()
+df["date"] = df["datetime"].dt.date
+daily = (
+    df.groupby("date").agg({"Min": "min", "Max": "max", "avg": "mean"}).reset_index()
+)
 
 # Convert to JavaScript array format
 voltage_data = []
 for _, row in daily.iterrows():
-    voltage_data.append({
-        'date': str(row['date']),
-        'voltage': round(row['avg'] * 1000, 1),
-        'vmax': round(row['Max'] * 1000, 1),
-        'vmin': round(row['Min'] * 1000, 1)
-    })
+    voltage_data.append(
+        {
+            "date": str(row["date"]),
+            "voltage": round(row["avg"] * 1000, 1),
+            "vmax": round(row["Max"] * 1000, 1),
+            "vmin": round(row["Min"] * 1000, 1),
+        }
+    )
 
 # Load temperature data
 temp_df = pd.read_csv(TEMP_FILE)
-temp_df['datetime'] = pd.to_datetime(temp_df['Date'] + ' ' + temp_df['Time'], format='%d/%m/%Y %H:%M')
-temp_df['date'] = temp_df['datetime'].dt.date
-temp_df['temp_avg'] = (temp_df['Min'] + temp_df['Max']) / 2
+temp_df["datetime"] = pd.to_datetime(
+    temp_df["Date"] + " " + temp_df["Time"], format="%d/%m/%Y %H:%M"
+)
+temp_df["date"] = temp_df["datetime"].dt.date
+temp_df["temp_avg"] = (temp_df["Min"] + temp_df["Max"]) / 2
 
-temp_daily = temp_df.groupby('date')['temp_avg'].mean().reset_index()
-merged = pd.merge(daily, temp_daily, on='date', how='inner')
+temp_daily = temp_df.groupby("date")["temp_avg"].mean().reset_index()
+merged = pd.merge(daily, temp_daily, on="date", how="inner")
 
 temp_voltage_data = []
 for _, row in merged.iterrows():
-    temp_voltage_data.append({
-        'temp': round(row['temp_avg'], 1),
-        'voltage': round(row['avg'] * 1000, 1)
-    })
+    temp_voltage_data.append(
+        {"temp": round(row["temp_avg"], 1), "voltage": round(row["avg"] * 1000, 1)}
+    )
 
 # Generate HTML
-html_template = '''<!DOCTYPE html>
+html_template = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -281,17 +282,21 @@ html_template = '''<!DOCTYPE html>
     <a href="https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks" class="back-link">Back to Repository</a>
 </body>
 </html>
-'''
+"""
 
 # Replace placeholders
-html_content = html_template.replace('VOLTAGE_DATA_PLACEHOLDER', json.dumps(voltage_data))
-html_content = html_content.replace('TEMP_DATA_PLACEHOLDER', json.dumps(temp_voltage_data))
-html_content = html_content.replace('TEMP_DAYS', str(len(temp_voltage_data)))
+html_content = html_template.replace(
+    "VOLTAGE_DATA_PLACEHOLDER", json.dumps(voltage_data)
+)
+html_content = html_content.replace(
+    "TEMP_DATA_PLACEHOLDER", json.dumps(temp_voltage_data)
+)
+html_content = html_content.replace("TEMP_DAYS", str(len(temp_voltage_data)))
 
 # Write the file
-with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
+with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
     f.write(html_content)
 
-print(f"Updated voltage_chart.html with actual data")
+print("Updated voltage_chart.html with actual data")
 print(f"- {len(voltage_data)} days of voltage data")
 print(f"- {len(temp_voltage_data)} days of temperature-voltage correlation data")

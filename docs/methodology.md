@@ -27,27 +27,27 @@ flowchart TD
         B[📡 Shelly Plus Uni<br>Voltage Sensor]
         C[🌡️ Temperature Sensor]
     end
-    
+
     subgraph Collection
         D[🏠 Home Assistant<br>State-change logging]
         E[(💾 Database<br>SQLite/InfluxDB)]
     end
-    
+
     subgraph Export
         F[📤 CSV Export<br>Manual periodic]
     end
-    
+
     subgraph Processing
         G[🐍 Python Analysis<br>lifepo4_analysis.py]
     end
-    
+
     subgraph Outputs
         H[📊 Hourly Aggregates<br>combined_output.csv]
         I[📈 Figures<br>fig1–fig7]
         J[📉 Statistics<br>Drift, MA-60s, etc.]
         K[📄 Reports<br>Technical analysis]
     end
-    
+
     A --> B
     A -.-> C
     B -->|~3s samples| D
@@ -267,16 +267,16 @@ The temperature effect is **second-order** relative to monotonic drift for endur
 
 From bus-level voltage monitoring, we observe:
 
-✅ No growing instability signatures  
-✅ Trendless anomalies (no systematic pattern)  
-✅ Stable detrended variance over 94+ days  
-✅ Spread increase correlates with measurement regime, not electrochemistry  
+✅ No growing instability signatures
+✅ Trendless anomalies (no systematic pattern)
+✅ Stable detrended variance over 94+ days
+✅ Spread increase correlates with measurement regime, not electrochemistry
 
 ### 6.2 What We Cannot Claim (Without Additional Sensing)
 
-❌ Per-cell SOC equality  
-❌ Per-block current sharing  
-❌ Individual cell degradation rates  
+❌ Per-cell SOC equality
+❌ Per-block current sharing
+❌ Individual cell degradation rates
 
 ### 6.3 Evidence Quality
 
@@ -295,16 +295,16 @@ The "architectural immunity" hypothesis is **supported but not proven** by this 
 
 ## 7. References
 
-1. Wang, Y., et al. (2023). "State of Charge Estimation of LiFePO₄ in Various Temperature Scenarios." *Batteries*, 9(1), 43.  
+1. Wang, Y., et al. (2023). "State of Charge Estimation of LiFePO₄ in Various Temperature Scenarios." *Batteries*, 9(1), 43.
    DOI: [10.3390/batteries9010043](https://doi.org/10.3390/batteries9010043)
 
-2. Espressif Developer Portal (2025). "Comparing ADC Performance of Espressif SoCs."  
+2. Espressif Developer Portal (2025). "Comparing ADC Performance of Espressif SoCs."
    Link: [developer.espressif.com](https://developer.espressif.com/blog/2025/08/adc-performance/)
 
-3. ESP-IDF Programming Guide. "ESP32-S2 ADC Calibration."  
+3. ESP-IDF Programming Guide. "ESP32-S2 ADC Calibration."
    Link: [docs.espressif.com](https://docs.espressif.com/projects/esp-idf/en/v4.4.8/esp32s2/api-reference/peripherals/adc.html)
 
-4. NIST/SEMATECH e-Handbook of Statistical Methods. "OLS Regression."  
+4. NIST/SEMATECH e-Handbook of Statistical Methods. "OLS Regression."
    Link: [itl.nist.gov](https://www.itl.nist.gov/div898/handbook/)
 
 ---

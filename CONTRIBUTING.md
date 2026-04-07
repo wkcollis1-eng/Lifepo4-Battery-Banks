@@ -154,13 +154,13 @@ python -m pytest tests/
 
 ```python
 def compute_drift_rate(
-    daily_means: pd.Series, 
-    start_date: str, 
+    daily_means: pd.Series,
+    start_date: str,
     end_date: str
 ) -> dict:
     """
     Compute OLS drift rate for a given time window.
-    
+
     Parameters
     ----------
     daily_means : pd.Series
@@ -169,12 +169,12 @@ def compute_drift_rate(
         Window start date (YYYY-MM-DD format).
     end_date : str
         Window end date (YYYY-MM-DD format).
-    
+
     Returns
     -------
     dict
         Contains 'slope_mv_day', 'r_squared', 'p_value', 'std_error'.
-    
+
     Examples
     --------
     >>> result = compute_drift_rate(daily_means, '2025-11-22', '2026-01-31')

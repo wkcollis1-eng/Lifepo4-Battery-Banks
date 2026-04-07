@@ -24,9 +24,9 @@ Where did you find the issue?
 
 ## Details
 
-**File/Section:** 
+**File/Section:**
 
-**Line number (if applicable):** 
+**Line number (if applicable):**
 
 ## Expected vs Actual
 
@@ -47,8 +47,8 @@ If you know how to fix it, describe the correction.
 
 ## Environment (for script issues)
 
-- Python version: 
-- OS: 
+- Python version:
+- OS:
 - Relevant package versions:
 
 ## Reproducibility

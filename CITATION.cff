@@ -25,10 +25,10 @@ keywords:
   - reproducible research
   - time series analysis
 abstract: >-
-  Long-term monitoring study of a DIY 12V 500Ah LiFePO₄ battery bank 
-  demonstrating "architectural immunity" — the principle that parallel-connected 
-  mixed-brand cells achieve monolithic behavior through topology rather than 
-  cell matching. This dataset includes 94+ days of continuous voltage monitoring, 
-  ~328,000 high-frequency samples, temperature correlation analysis, and 
-  storage viability projections. The study validates 99.3% usable capacity 
+  Long-term monitoring study of a DIY 12V 500Ah LiFePO₄ battery bank
+  demonstrating "architectural immunity" — the principle that parallel-connected
+  mixed-brand cells achieve monolithic behavior through topology rather than
+  cell matching. This dataset includes 94+ days of continuous voltage monitoring,
+  ~328,000 high-frequency samples, temperature correlation analysis, and
+  storage viability projections. The study validates 99.3% usable capacity
   (397 Ah) and projects 7–10 months to 80% SOC under typical parasitic loads.

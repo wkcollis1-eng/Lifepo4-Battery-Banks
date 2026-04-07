@@ -51,25 +51,25 @@ flowchart TD
     A[Load CSV Data] --> B[Parse Timestamps]
     B --> C[Compute Derived Fields]
     C --> D{Analysis Modules}
-    
+
     D --> E[Drift Analysis]
     D --> F[MA-60s Analysis]
     D --> G[Temperature Analysis]
     D --> H[Eco Mode Analysis]
     D --> I[SOC Projection]
-    
+
     E --> J[Console Output]
     F --> J
     G --> J
     H --> J
     I --> J
-    
+
     E --> K[Generate Figures]
     F --> K
     G --> K
     H --> K
     I --> K
-    
+
     K --> L[Save to figures/]
 ```
 
@@ -238,7 +238,7 @@ This project follows these conventions:
 def compute_drift_rate(daily_means: pd.Series, start_date: str, end_date: str) -> dict:
     """
     Compute OLS drift rate for a given time window.
-    
+
     Parameters
     ----------
     daily_means : pd.Series
@@ -247,7 +247,7 @@ def compute_drift_rate(daily_means: pd.Series, start_date: str, end_date: str) -
         Window start date (YYYY-MM-DD)
     end_date : str
         Window end date (YYYY-MM-DD)
-    
+
     Returns
     -------
     dict
@@ -256,7 +256,7 @@ def compute_drift_rate(daily_means: pd.Series, start_date: str, end_date: str) -
     window = daily_means[start_date:end_date]
     days = (window.index - window.index[0]).days
     slope, intercept, r, p, se = stats.linregress(days, window.values)
-    
+
     return {
         'slope_mv_day': slope * 1000,
         'r_squared': r ** 2,
