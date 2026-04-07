@@ -179,7 +179,7 @@ Contains weekly consolidated CSV files with ~3-second cadence voltage readings.
 
 ```python
 # Correct parsing
-df['datetime'] = pd.to_datetime(df['Date'] + ' ' + df['Time'], 
+df['datetime'] = pd.to_datetime(df['Date'] + ' ' + df['Time'],
                                  format='%d/%m/%Y %H:%M')
 
 # WRONG - will misinterpret dates
@@ -200,7 +200,7 @@ import pandas as pd
 # ============================================================
 voltage = pd.read_csv('data/combined_output.csv')
 voltage['datetime'] = pd.to_datetime(
-    voltage['Date'] + ' ' + voltage['Time'], 
+    voltage['Date'] + ' ' + voltage['Time'],
     format='%d/%m/%Y %H:%M'
 )
 voltage['Mid'] = (voltage['Min'] + voltage['Max']) / 2
@@ -214,7 +214,7 @@ print(f"Voltage: {len(voltage)} records, "
 # ============================================================
 temp = pd.read_csv('data/combined_temperature.csv')
 temp['datetime'] = pd.to_datetime(
-    temp['Date'] + ' ' + temp['Time'], 
+    temp['Date'] + ' ' + temp['Time'],
     format='%d/%m/%Y %H:%M'
 )
 temp['Mid'] = (temp['Min'] + temp['Max']) / 2

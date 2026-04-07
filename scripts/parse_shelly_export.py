@@ -65,6 +65,7 @@ Scheduling (Task Scheduler, hourly):
     Program : pythonw.exe
     Arguments: "C:/Users/wkcol/OneDrive/Documents/Lifepo4 Battery Banks/scripts/parse_shelly_export.py" --fetch
 """
+
 __version__ = "1.6.0"
 
 import argparse
@@ -79,22 +80,24 @@ import urllib.request
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 SCRIPT_DIR = pathlib.Path(__file__).parent
-DATA_DIR   = pathlib.Path(r"C:\Users\wkcol\OneDrive\Documents\Repos\Lifepo4-Battery-Banks\data")
+DATA_DIR = pathlib.Path(
+    r"C:\Users\wkcol\OneDrive\Documents\Repos\Lifepo4-Battery-Banks\data"
+)
 
-VOLTAGE_CSV  = DATA_DIR / "combined_output.csv"
-TEMP_CSV     = DATA_DIR / "combined_temperature.csv"
+VOLTAGE_CSV = DATA_DIR / "combined_output.csv"
+TEMP_CSV = DATA_DIR / "combined_temperature.csv"
 HUMIDITY_CSV = DATA_DIR / "combined_humidity.csv"
 
 # Live-fetch device addresses
-VOLTAGE_IP  = "10.0.0.142"   # voltage measurement (Shelly Plus Uni or similar)
-TEMP_HUM_IP = "10.0.0.213"   # temperature + humidity sensor
+VOLTAGE_IP = "10.0.0.142"  # voltage measurement (Shelly Plus Uni or similar)
+TEMP_HUM_IP = "10.0.0.213"  # temperature + humidity sensor
 
 SHELLY_DATE_FMT = "%d/%m/%Y %H:%M"
 OUTPUT_DATE_FMT = "%d/%m/%Y"
 OUTPUT_TIME_FMT = "%H:%M"
 
-VOLTAGE_HEADER  = ["Date", "Time", "Min", "Max"]
-TEMP_HEADER     = ["Date", "Time", "Min", "Max"]
+VOLTAGE_HEADER = ["Date", "Time", "Min", "Max"]
+TEMP_HEADER = ["Date", "Time", "Min", "Max"]
 HUMIDITY_HEADER = ["Date", "Time", "Humidity"]
 
 
@@ -197,7 +200,7 @@ def fetch_and_append(dry_run: bool, force: bool, timeout: int = 5) -> int:
     now = datetime.datetime.now().replace(minute=0, second=0, microsecond=0)
     date_str = now.strftime(OUTPUT_DATE_FMT)
     time_str = now.strftime(OUTPUT_TIME_FMT)
-    row_key  = f"{date_str}|{time_str}"
+    row_key = f"{date_str}|{time_str}"
 
     print(f"\nLive fetch — timestamp: {date_str} {time_str}")
 
@@ -217,8 +220,9 @@ def fetch_and_append(dry_run: bool, force: bool, timeout: int = 5) -> int:
             if not force and row_key in existing:
                 print(f" SKIPPED voltage — {date_str} {time_str} already recorded")
             else:
-                rows = [{"Date": date_str, "Time": time_str,
-                         "Min": voltage, "Max": voltage}]
+                rows = [
+                    {"Date": date_str, "Time": time_str, "Min": voltage, "Max": voltage}
+                ]
                 written = append_rows(rows, VOLTAGE_CSV, VOLTAGE_HEADER, dry_run)
                 total_written += written
 
@@ -229,7 +233,7 @@ def fetch_and_append(dry_run: bool, force: bool, timeout: int = 5) -> int:
     print(f" Querying temp/hum → http://{TEMP_HUM_IP}/rpc/Shelly.GetStatus")
     try:
         temp_f, humidity = get_shelly_temp_hum(TEMP_HUM_IP, timeout)
-        temp_f   = round(temp_f, 2)
+        temp_f = round(temp_f, 2)
         humidity = round(humidity, 2)
         print(f"   Temperature = {temp_f} °F  |  Humidity = {humidity} %RH")
 
@@ -241,8 +245,9 @@ def fetch_and_append(dry_run: bool, force: bool, timeout: int = 5) -> int:
             if not force and row_key in existing:
                 print(f" SKIPPED temperature — {date_str} {time_str} already recorded")
             else:
-                rows = [{"Date": date_str, "Time": time_str,
-                         "Min": temp_f, "Max": temp_f}]
+                rows = [
+                    {"Date": date_str, "Time": time_str, "Min": temp_f, "Max": temp_f}
+                ]
                 written = append_rows(rows, TEMP_CSV, TEMP_HEADER, dry_run)
                 total_written += written
 
@@ -279,16 +284,19 @@ def normalise_section_header(raw: str) -> str:
     whitespace to a single space, giving a clean single-spaced key regardless
     of the source punctuation.
     """
-    s = re.sub(r'\.', '', raw.strip().lower())
-    return re.sub(r'\s+', ' ', s).strip()
+    s = re.sub(r"\.", "", raw.strip().lower())
+    return re.sub(r"\s+", " ", s).strip()
 
 
 def is_section_header(s: str) -> bool:
     norm = normalise_section_header(s)
     return norm in {
-        "min voltage", "max voltage",
-        "min temperature", "max temperature",
-        "min humidity", "max humidity",
+        "min voltage",
+        "max voltage",
+        "min temperature",
+        "max temperature",
+        "min humidity",
+        "max humidity",
         "humidity",
     }
 
@@ -326,7 +334,7 @@ def get_file_info(csv_path: pathlib.Path) -> dict:
             info["count"] = len(rows)
             if rows:
                 first_row = rows[0]
-                last_row  = rows[-1]
+                last_row = rows[-1]
                 try:
                     info["first"] = datetime.datetime.strptime(
                         f"{first_row['Date'].strip()} {first_row['Time'].strip()}",
@@ -348,20 +356,26 @@ def show_status() -> None:
     print("\nCurrent dataset status:")
     print("─" * 80)
     for label, path, _header in [
-        ("Voltage",     VOLTAGE_CSV,  VOLTAGE_HEADER),
-        ("Temperature", TEMP_CSV,     TEMP_HEADER),
-        ("Humidity",    HUMIDITY_CSV, HUMIDITY_HEADER),
+        ("Voltage", VOLTAGE_CSV, VOLTAGE_HEADER),
+        ("Temperature", TEMP_CSV, TEMP_HEADER),
+        ("Humidity", HUMIDITY_CSV, HUMIDITY_HEADER),
     ]:
         info = get_file_info(path)
         if info["last"]:
             next_hour = info["last"] + datetime.timedelta(hours=1)
             print(f" {label:11} last row  : {info['last'].strftime('%d/%m/%Y %H:%M')}")
             print(f"            first row : {info['first'].strftime('%d/%m/%Y %H:%M')}")
-            print(f"            rows      : {info['count']:,}  (size: {info['size_kb']} KB)")
-            print(f"            next export: {next_hour.strftime('%d/%m/%Y %H:%M')} → "
-                  f"{now.strftime('%d/%m/%Y %H:%M')}")
+            print(
+                f"            rows      : {info['count']:,}  (size: {info['size_kb']} KB)"
+            )
+            print(
+                f"            next export: {next_hour.strftime('%d/%m/%Y %H:%M')} → "
+                f"{now.strftime('%d/%m/%Y %H:%M')}"
+            )
         else:
-            print(f" {label:11} {'not found' if not path.exists() else 'empty'}: {path.name}")
+            print(
+                f" {label:11} {'not found' if not path.exists() else 'empty'}: {path.name}"
+            )
     print()
 
 
@@ -459,9 +473,7 @@ def _filter(dt_str: str, existing: set[str], force: bool) -> bool:
 
 
 # ── Row builders ───────────────────────────────────────────────────────────────
-def build_voltage_rows(
-    sections: dict, existing: set[str], force: bool
-) -> list[dict]:
+def build_voltage_rows(sections: dict, existing: set[str], force: bool) -> list[dict]:
     min_s = sections.get("min voltage", {})
     max_s = sections.get("max voltage", {})
     rows = []
@@ -472,18 +484,18 @@ def build_voltage_rows(
             print(f" WARNING: {dt_str} missing Min or Max voltage — skipping")
             continue
         dt = datetime.datetime.strptime(dt_str, SHELLY_DATE_FMT)
-        rows.append({
-            "Date": dt.strftime(OUTPUT_DATE_FMT),
-            "Time": dt.strftime(OUTPUT_TIME_FMT),
-            "Min":  round(min_s[dt_str], 4),
-            "Max":  round(max_s[dt_str], 4),
-        })
+        rows.append(
+            {
+                "Date": dt.strftime(OUTPUT_DATE_FMT),
+                "Time": dt.strftime(OUTPUT_TIME_FMT),
+                "Min": round(min_s[dt_str], 4),
+                "Max": round(max_s[dt_str], 4),
+            }
+        )
     return rows
 
 
-def build_temp_rows(
-    sections: dict, existing: set[str], force: bool
-) -> list[dict]:
+def build_temp_rows(sections: dict, existing: set[str], force: bool) -> list[dict]:
     min_s = sections.get("min temperature", {})
     max_s = sections.get("max temperature", {})
     rows = []
@@ -494,18 +506,18 @@ def build_temp_rows(
             print(f" WARNING: {dt_str} missing Min or Max temp — skipping")
             continue
         dt = datetime.datetime.strptime(dt_str, SHELLY_DATE_FMT)
-        rows.append({
-            "Date": dt.strftime(OUTPUT_DATE_FMT),
-            "Time": dt.strftime(OUTPUT_TIME_FMT),
-            "Min":  round(min_s[dt_str], 2),
-            "Max":  round(max_s[dt_str], 2),
-        })
+        rows.append(
+            {
+                "Date": dt.strftime(OUTPUT_DATE_FMT),
+                "Time": dt.strftime(OUTPUT_TIME_FMT),
+                "Min": round(min_s[dt_str], 2),
+                "Max": round(max_s[dt_str], 2),
+            }
+        )
     return rows
 
 
-def build_humidity_rows(
-    sections: dict, existing: set[str], force: bool
-) -> list[dict]:
+def build_humidity_rows(sections: dict, existing: set[str], force: bool) -> list[dict]:
     single = sections.get("humidity", {})
     if single:
         rows = []
@@ -513,11 +525,13 @@ def build_humidity_rows(
             if not _filter(dt_str, existing, force):
                 continue
             dt = datetime.datetime.strptime(dt_str, SHELLY_DATE_FMT)
-            rows.append({
-                "Date":     dt.strftime(OUTPUT_DATE_FMT),
-                "Time":     dt.strftime(OUTPUT_TIME_FMT),
-                "Humidity": round(single[dt_str], 2),
-            })
+            rows.append(
+                {
+                    "Date": dt.strftime(OUTPUT_DATE_FMT),
+                    "Time": dt.strftime(OUTPUT_TIME_FMT),
+                    "Humidity": round(single[dt_str], 2),
+                }
+            )
         return rows
 
     # Legacy min/max humidity fallback
@@ -532,11 +546,13 @@ def build_humidity_rows(
             print(f" WARNING: {dt_str} only has one humidity value — using it")
         if vals:
             dt = datetime.datetime.strptime(dt_str, SHELLY_DATE_FMT)
-            rows.append({
-                "Date":     dt.strftime(OUTPUT_DATE_FMT),
-                "Time":     dt.strftime(OUTPUT_TIME_FMT),
-                "Humidity": round(sum(vals) / len(vals), 2),
-            })
+            rows.append(
+                {
+                    "Date": dt.strftime(OUTPUT_DATE_FMT),
+                    "Time": dt.strftime(OUTPUT_TIME_FMT),
+                    "Humidity": round(sum(vals) / len(vals), 2),
+                }
+            )
     return rows
 
 
@@ -552,7 +568,9 @@ def append_rows(
 
     if dry_run:
         for row in rows:
-            vals = " ".join(f"{k}={row[k]}" for k in header if k not in ("Date", "Time"))
+            vals = " ".join(
+                f"{k}={row[k]}" for k in header if k not in ("Date", "Time")
+            )
             print(f" DRY RUN {row['Date']} {row['Time']} {vals}")
         return len(rows)
 
@@ -567,7 +585,9 @@ def append_rows(
                 writer.writeheader()
             for row in rows:
                 writer.writerow(row)
-                vals = " ".join(f"{k}={row[k]}" for k in header if k not in ("Date", "Time"))
+                vals = " ".join(
+                    f"{k}={row[k]}" for k in header if k not in ("Date", "Time")
+                )
                 print(f" Appended {row['Date']} {row['Time']} {vals}")
         return len(rows)
     except Exception as e:
@@ -605,9 +625,13 @@ def process_file(path: pathlib.Path, dry_run: bool, force: bool) -> int:
             last_dt = get_last_datetime(VOLTAGE_CSV)
             if last_dt:
                 print(f" Voltage last recorded: {last_dt.strftime('%d/%m/%Y %H:%M')}")
-            dup = count_skipped_duplicates(
-                ["min voltage", "max voltage"], sections, existing
-            ) if not force else 0
+            dup = (
+                count_skipped_duplicates(
+                    ["min voltage", "max voltage"], sections, existing
+                )
+                if not force
+                else 0
+            )
             if dup:
                 print(f" Skipped {dup} duplicate voltage row(s)")
             rows = build_voltage_rows(sections, existing, force)
@@ -623,10 +647,16 @@ def process_file(path: pathlib.Path, dry_run: bool, force: bool) -> int:
             existing = set() if force else get_existing_keys(TEMP_CSV)
             last_dt = get_last_datetime(TEMP_CSV)
             if last_dt:
-                print(f" Temperature last recorded: {last_dt.strftime('%d/%m/%Y %H:%M')}")
-            dup = count_skipped_duplicates(
-                ["min temperature", "max temperature"], sections, existing
-            ) if not force else 0
+                print(
+                    f" Temperature last recorded: {last_dt.strftime('%d/%m/%Y %H:%M')}"
+                )
+            dup = (
+                count_skipped_duplicates(
+                    ["min temperature", "max temperature"], sections, existing
+                )
+                if not force
+                else 0
+            )
             if dup:
                 print(f" Skipped {dup} duplicate temperature row(s)")
             rows = build_temp_rows(sections, existing, force)
@@ -635,7 +665,11 @@ def process_file(path: pathlib.Path, dry_run: bool, force: bool) -> int:
             new_counts["temp"] = written
 
     # ── Humidity ──────────────────────────────────────────────────────────────
-    if sections.get("humidity") or sections.get("min humidity") or sections.get("max humidity"):
+    if (
+        sections.get("humidity")
+        or sections.get("min humidity")
+        or sections.get("max humidity")
+    ):
         if not validate_header(HUMIDITY_CSV, HUMIDITY_HEADER):
             print(f" SKIPPED humidity — header mismatch in {HUMIDITY_CSV.name}")
         else:
@@ -644,10 +678,15 @@ def process_file(path: pathlib.Path, dry_run: bool, force: bool) -> int:
             if last_dt:
                 print(f" Humidity last recorded: {last_dt.strftime('%d/%m/%Y %H:%M')}")
             dup_keys = (
-                ["humidity"] if sections.get("humidity")
+                ["humidity"]
+                if sections.get("humidity")
                 else ["min humidity", "max humidity"]
             )
-            dup = count_skipped_duplicates(dup_keys, sections, existing) if not force else 0
+            dup = (
+                count_skipped_duplicates(dup_keys, sections, existing)
+                if not force
+                else 0
+            )
             if dup:
                 print(f" Skipped {dup} duplicate humidity row(s)")
             rows = build_humidity_rows(sections, existing, force)
@@ -655,9 +694,11 @@ def process_file(path: pathlib.Path, dry_run: bool, force: bool) -> int:
             total_written += written
             new_counts["hum"] = written
 
-    print(f" → Voltage: {new_counts['voltage']} new | "
-          f"Temp: {new_counts['temp']} new | "
-          f"Hum: {new_counts['hum']} new")
+    print(
+        f" → Voltage: {new_counts['voltage']} new | "
+        f"Temp: {new_counts['temp']} new | "
+        f"Hum: {new_counts['hum']} new"
+    )
     return total_written
 
 
@@ -674,7 +715,7 @@ def parse_sections(lines: list[str]) -> dict[str, dict[str, float]]:
     current = None
     skipped = 0
     for line in lines:
-        s   = line.strip()
+        s = line.strip()
         low = s.lower()
 
         if is_section_header(low):
@@ -711,23 +752,47 @@ def parse_sections(lines: list[str]) -> dict[str, dict[str, float]]:
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Append Shelly data to Lifepo4-Battery-Banks datasets "
-                    "(live fetch or CSV import)"
+        "(live fetch or CSV import)"
     )
-    parser.add_argument("files", nargs="*", metavar="FILE",
-                        help="Shelly app CSV export file(s) to import")
-    parser.add_argument("--fetch", action="store_true",
-                        help="Query Shelly devices live over the LAN and append current readings")
-    parser.add_argument("--dir", metavar="DIR",
-                        help="Parse all *.csv files in a folder (CSV-import mode)")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Preview output without writing")
-    parser.add_argument("--status", action="store_true",
-                        help="Show dataset status and next export range")
-    parser.add_argument("--force", action="store_true",
-                        help="Ignore duplicates — append all rows (use with caution)")
-    parser.add_argument("--timeout", type=int, default=5, metavar="SEC",
-                        help="Network timeout in seconds for --fetch (default: 5)")
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "files",
+        nargs="*",
+        metavar="FILE",
+        help="Shelly app CSV export file(s) to import",
+    )
+    parser.add_argument(
+        "--fetch",
+        action="store_true",
+        help="Query Shelly devices live over the LAN and append current readings",
+    )
+    parser.add_argument(
+        "--dir",
+        metavar="DIR",
+        help="Parse all *.csv files in a folder (CSV-import mode)",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Preview output without writing"
+    )
+    parser.add_argument(
+        "--status",
+        action="store_true",
+        help="Show dataset status and next export range",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Ignore duplicates — append all rows (use with caution)",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=5,
+        metavar="SEC",
+        help="Network timeout in seconds for --fetch (default: 5)",
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
+    )
     args = parser.parse_args()
 
     if args.status:
@@ -774,7 +839,7 @@ def main() -> None:
         print("\nTo import a Shelly app CSV export:")
         print('  python parse_shelly_export.py "your_export.csv"')
         print("\nFor a folder of exports:")
-        print('  python parse_shelly_export.py --dir path/to/exports/')
+        print("  python parse_shelly_export.py --dir path/to/exports/")
         sys.exit(0)
 
     if args.dry_run:

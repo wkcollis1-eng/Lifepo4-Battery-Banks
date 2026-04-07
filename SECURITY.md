@@ -64,7 +64,7 @@ This project uses common Python data science libraries. Known vulnerabilities in
 
 Current dependencies (`requirements.txt`):
 - pandas
-- numpy  
+- numpy
 - scipy
 - matplotlib
 - seaborn

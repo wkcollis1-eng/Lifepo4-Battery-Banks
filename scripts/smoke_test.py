@@ -20,12 +20,14 @@ print("=== Creating minimal dummy data (covers your stasis dates) ===")
 dates = pd.date_range(start="2025-11-22", end="2026-02-21", freq="7D")
 
 # Voltage CSV
-voltage_df = pd.DataFrame({
-    "Date": dates.strftime("%d/%m/%Y"),
-    "Time": "12:00",
-    "Min": np.round(13.20 + np.random.normal(0, 0.03, len(dates)), 4),
-    "Max": np.round(13.25 + np.random.normal(0, 0.03, len(dates)), 4),
-})
+voltage_df = pd.DataFrame(
+    {
+        "Date": dates.strftime("%d/%m/%Y"),
+        "Time": "12:00",
+        "Min": np.round(13.20 + np.random.normal(0, 0.03, len(dates)), 4),
+        "Max": np.round(13.25 + np.random.normal(0, 0.03, len(dates)), 4),
+    }
+)
 voltage_df.to_csv(os.path.join(DATA_DIR, "combined_output.csv"), index=False)
 
 # Temperature CSV – add random variation to avoid constant values
@@ -38,24 +40,31 @@ temp_max = temp_max_base + np.random.normal(0, 0.2, len(dates))
 temp_min = np.minimum(temp_min, temp_max - 0.1)
 temp_max = np.maximum(temp_max, temp_min + 0.1)
 
-temp_df = pd.DataFrame({
-    "Date": dates.strftime("%d/%m/%Y"),
-    "Time": "12:00",
-    "Min": np.round(temp_min, 1),
-    "Max": np.round(temp_max, 1),
-})
+temp_df = pd.DataFrame(
+    {
+        "Date": dates.strftime("%d/%m/%Y"),
+        "Time": "12:00",
+        "Min": np.round(temp_min, 1),
+        "Max": np.round(temp_max, 1),
+    }
+)
 temp_df.to_csv(os.path.join(DATA_DIR, "combined_temperature.csv"), index=False)
 
 # One HF file (500 samples in stasis window)
 hf_dates = pd.date_range("2025-11-22", "2026-02-21", freq="5min", tz="UTC")[:500]
-hf_df = pd.DataFrame({
-    "entity_id": "shelly",
-    "voltage": np.round(13.22 + np.random.normal(0, 0.01, len(hf_dates)), 4),
-    "timestamp": hf_dates,
-})
+hf_df = pd.DataFrame(
+    {
+        "entity_id": "shelly",
+        "voltage": np.round(13.22 + np.random.normal(0, 0.01, len(hf_dates)), 4),
+        "timestamp": hf_dates,
+    }
+)
 hf_df.to_csv(os.path.join(HF_DIR, "dummy_hf.csv"), index=False)
 
-print(f"✅ Dummy data ready: {len(dates)} days voltage/temp + {len(hf_dates)} HF samples")
+print(
+    f"✅ Dummy data ready: {len(dates)} days voltage/temp + {len(hf_dates)} HF samples"
+)
+
 
 def run_script(script_name, args=None, capture_output=True):
     """Run a Python script and print full output on failure."""
@@ -63,7 +72,9 @@ def run_script(script_name, args=None, capture_output=True):
     cmd = [sys.executable, script_path] + (args or [])
     print(f"\n--- Running {script_name} ---")
     try:
-        result = subprocess.run(cmd, check=True, capture_output=capture_output, text=True, cwd=REPO_ROOT)
+        result = subprocess.run(
+            cmd, check=True, capture_output=capture_output, text=True, cwd=REPO_ROOT
+        )
         if capture_output:
             print(result.stdout)
         return result
@@ -76,9 +87,12 @@ def run_script(script_name, args=None, capture_output=True):
             print(e.stderr)
         raise
 
+
 # Test 1: parse_shelly_export.py
 print("\n=== Testing parse_shelly_export.py ===")
-with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, encoding="utf-8") as f:
+with tempfile.NamedTemporaryFile(
+    mode="w", suffix=".csv", delete=False, encoding="utf-8"
+) as f:
     f.write("""Min. voltage
 21/03/2026 08:00,3.300
 Max. voltage

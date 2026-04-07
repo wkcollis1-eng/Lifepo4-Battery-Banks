@@ -1,8 +1,8 @@
 # LiFePO₄ Battery Bank: Technical Report
 
-**Data through:** January 31, 2026  
-**Published:** February 1, 2026  
-**Version:** 2026-01-31  
+**Data through:** January 31, 2026
+**Published:** February 1, 2026
+**Version:** 2026-01-31
 **DOI:** [10.5281/zenodo.14538065](https://doi.org/10.5281/zenodo.14538065)
 
 ---
@@ -256,7 +256,7 @@ Stability remains excellent with no degradation signals.
 
 **Direct 24–72h bus-current measurement** using a calibrated shunt/meter with mA resolution. This collapses SOC/endurance uncertainty in the flat-OCV region.
 
-**Estimated effort:** Low (hardware: ~$30–50; time: 1–3 days)  
+**Estimated effort:** Low (hardware: ~$30–50; time: 1–3 days)
 **Expected impact:** High (reduces SOC uncertainty from ±30% to ±5%)
 
 ### 9.2 Optional Improvements
@@ -294,22 +294,22 @@ These findings support the viability of mixed-brand parallel LiFePO₄ configura
 
 ## References
 
-1. Wang, Y., et al. (2023). "State of Charge Estimation of LiFePO₄ in Various Temperature Scenarios." *Batteries*, 9(1), 43.  
+1. Wang, Y., et al. (2023). "State of Charge Estimation of LiFePO₄ in Various Temperature Scenarios." *Batteries*, 9(1), 43.
    DOI: [10.3390/batteries9010043](https://doi.org/10.3390/batteries9010043)
 
-2. Espressif Developer Portal (2025). "Comparing ADC Performance of Espressif SoCs."  
+2. Espressif Developer Portal (2025). "Comparing ADC Performance of Espressif SoCs."
    Link: [developer.espressif.com](https://developer.espressif.com/blog/2025/08/adc-performance/)
 
-3. ESP-IDF Programming Guide. "ESP32-S2 ADC Calibration."  
+3. ESP-IDF Programming Guide. "ESP32-S2 ADC Calibration."
    Link: [docs.espressif.com](https://docs.espressif.com/projects/esp-idf/en/v4.4.8/esp32s2/api-reference/peripherals/adc.html)
 
 ---
 
 ## Appendix A: Data Availability
 
-All data and code are available at:  
-**Repository:** https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks  
-**DOI:** 10.5281/zenodo.14538065  
+All data and code are available at:
+**Repository:** https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks
+**DOI:** 10.5281/zenodo.14538065
 **License:** CC BY 4.0 (data) / MIT (code)
 
 ---
