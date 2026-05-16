@@ -664,7 +664,6 @@ If a dedicated battery-bank monitor board is designed as V2:
 
 - **Integrated reverse-polarity protection:** LM74700-Q1 + N-channel MOSFET on-board (replacing the external Pololu module) — saves an external component and ~3 cm of wiring
 - **Dedicated shunt-sense terminal block:** 3- or 4-position terminal for VIN+/VIN−/VBUS routed as Kelvin pair with optional 100 Ω + 0.1 µF input filters
-- **Larger BATT_RAW trace:** 2.0 mm minimum for headroom in shared monitoring + light load applications
 - **TVS diode (P6KE18CA)** across BATT_RAW for inverter-bus transient protection
 - **Test points** at BATT_RAW, VIN, +3V3, GND for field debugging
 
