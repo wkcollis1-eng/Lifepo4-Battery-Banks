@@ -1,0 +1,2577 @@
+# ============================================================================
+# Battery Bank Monitor V1.13 — PRODUCTION Configuration
+#   CORE (backup readiness — must be correct): V/I/T acquisition, stale-bus FAULT
+#     watchdog, 3-tier low-voltage alarms + overvoltage guard, bank_state machine,
+#     runtime-remaining, and SOC (Coulomb counter anchored at full charge).
+#   OBSERVABILITY (free data, isolated — never feeds back into CORE): stasis
+#     trend, lifetime + per-outage energy, self-discharge reconciliation logger,
+#     opportunistic Ri. A bug in this layer can produce a wrong number but cannot
+#     affect readiness detection.
+#   Hardware target: OSH Park UPS-Monitor-THT board repurposed for battery-bank
+#     monitoring; INA228 breakout in INA260 footprint with header pin 5 LIFTED,
+#     R2 DNP, external 375 µΩ Kelvin shunt, INA228 onboard 15 mΩ shunt REMOVED.
+#   Source-level reviewed against ESPHome 2026.4.3; high-side topology committed
+#   (see V1.11 changelog for low-side → high-side rationale and Kelvin-sense
+#   fusing requirement). Flash-ready after credential placeholders are replaced.
+#   CORE (backup readiness — must be correct): V/I/T acquisition, stale-bus FAULT
+#     watchdog, 3-tier low-voltage alarms + overvoltage guard, bank_state machine,
+#     runtime-remaining, and SOC (Coulomb counter anchored at full charge).
+#   OBSERVABILITY (free data, isolated — never feeds back into CORE): stasis
+#     trend, lifetime + per-outage energy, opportunistic Ri. A bug in this layer
+#     can produce a wrong number but cannot affect readiness detection.
+#   (V1.8 Apparent Ri remains PROVISIONAL — not field-validated.)
+# ============================================================================
+# Purpose : Full instrumentation for 12V/500Ah LiFePO4 battery bank with
+#           2000W inverter and LiTime 80A charger. Reports V/I/P, accumulated
+#           Ah/Wh, SOC estimate, temperature, charge/discharge session metrics,
+#           and round-trip efficiency to Home Assistant via Wi-Fi.
+#
+# Hardware: XIAO ESP32-C3 + Adafruit INA228 breakout (5832 or 6349) + DS18B20
+#           + Pololu D24V7F3 (3.3V buck) + Pololu Ideal Diode (LM74700-Q1)
+#           on UPS-Monitor-THT V1 PCB (OSH Park, repurposed from UPS build).
+#           Wiring per: battery-bank-monitor-wiring-summary-v1.4.md (high-side topology)
+#
+# INA228 hardware pre-build requirements (MANDATORY — V1.11 high-side topology):
+#   1. Remove the onboard 15 mΩ shunt from the INA228 breakout PCB.
+#   2. Solder the VBUS jumper CLOSED on the back of the breakout (high-side
+#      configuration — internally ties VBUS to VIN+, eliminating the need for
+#      a separate VBUS wire). NOTE: original wiring doc V1.2 specified jumper
+#      OPEN for low-side; superseded by V1.11 review (high-side is cleaner
+#      ground topology for this 200A bank, see V1.11 changelog).
+#   3. Lift U2 header pin 5 (silk "ALT") before solder — board trace is repurposed
+#      from INA260 ALERT routing; INA228 puts VBUS on pin 5 which must NOT enter
+#      the PCB pad. R2 is DNP (do not populate).
+#   4. Verify Kelvin sense terminals on DROK 200A/75mV shunt (small screws).
+#   5. Inline-fuse each Kelvin sense lead with a 100–250 mA fast-blow fuse close
+#      to the shunt end. High-side topology means the sense wires sit at +13V
+#      relative to chassis; a shorted sense lead would otherwise fault battery+
+#      to ground through the shunt's Kelvin tap leads. Sense current is
+#      microamps, so a 100 mA fuse has 1000× headroom over normal current.
+#
+# Dashboard panels:
+#   ① Real-time V / I / P (signed: positive = charging, negative = discharging)
+#   ② SOC estimate — Coulomb-counted, anchored at each confirmed full charge
+#   ③ Runtime remaining — hours and days at current net discharge rate
+#   ④ Discharge phases — settling · plateau · knee · cliff state machine
+#   ⑤ Ah/Wh counters — per-cycle (since last full charge) + lifetime totals
+#   ⑥ Charge session tracking — CC/CV profile, peak current, round-trip RTE
+#   ⑦ System health — temperatures, WiFi, INA228 and DS18B20 connectivity
+#
+# INA228 Configuration:
+#   I2C address : 0x40 (A0, A1 jumpers OPEN — factory default on breakout)
+#                 NOTE: UPS board has A0 bridged → 0x41. Different address.
+#   Shunt       : 375 µΩ (DROK 200A/75mV manganin; onboard INA228 shunt REMOVED)
+#   ADC range   : ±163.84 mV (adc_range 0 — mandatory for 75 mV at 200A shunt)
+#   Max current : 200 A
+#
+# Sign convention — Option B wiring (V1.11: HIGH-SIDE topology):
+#   Shunt installed between battery+ and the load bus bar.
+#   VIN+ at shunt battery-side Kelvin tap, VIN− at shunt load-side Kelvin tap.
+#   With VBUS jumper closed, VBUS is internally tied to VIN+ (≈ battery+).
+#
+#   POSITIVE current → CHARGING     (LiTime charger delivering current to bank)
+#   NEGATIVE current → DISCHARGING  (net load exceeds charge rate)
+#   Zero              → Standby     (load equals charge rate exactly)
+#
+#   Matches ups-monitor.yaml convention (positive = charging, negative = discharge).
+#   The INA228 reports sign based on which input is at higher potential, NOT on
+#   which side the chip sits — so Option B applies identically in high-side and
+#   low-side topologies. Only the physical position of the shunt changes.
+#
+#   V1.11 supersedes earlier "natural low-side / §6.2 of wiring doc" framing —
+#   see V1.11 changelog for the rationale (clean system ground, simpler wiring
+#   for 200A bus, no separate VBUS wire needed). Wiring doc to be updated to
+#   V1.3 reflecting high-side topology.
+#
+# Validated system parameters — from LiFePO4_Report_2026-03-06.md:
+#   Usable capacity : 397 Ah (99.3% of ~400 Ah actual; bank is 500 Ah nominal)
+#                     Source: discharge test Oct 2025, Lifepo4-Battery-Banks repo
+#   Stasis OCV      : 13.262–13.265 V (130+ day monitoring study, Nov–Mar 2026)
+#                     Source: LiFePO4_Report_2026-03-06.md — used as float_voltage
+#   Plateau voltage : 12.65–13.00 V band; knee 12.40–12.65 V (LiFePO4 chemistry,
+#                     same as UPS monitor V1.3 validated values — TODO: cross-
+#                     check against actual discharge curve in report §Fig.1)
+#   Inverter RTE    : 90.3% @ 440W avg (discharge test — included in efficiency calc)
+#   Charger         : LiTime 80A — CC bulk to ~80A → CV at 14.6V → taper → stop
+#
+# Parameters verified against ESPHome docs (ina2xx_i2c, INA228, shunt_resistance,
+# max_current, adc_range, temperature sub-sensor) — confirmed correct for 2026.x.
+#
+# Survival sleep — NOT IMPLEMENTED (engineering decision):
+#   Monitor draw ~100 mA → 397 Ah ÷ 0.1 A = 3970 h = 165 days at monitor-only.
+#   Inverter standby ~15 W → 1.25 A → 397 Ah ÷ 1.25 A = 318 h = 13.2 days.
+#   Monitor is 8% of total standby — sleep buys ~1 day. Not justified.
+#   Protection relies on the three-tier HA automation chain (voltage_warning →
+#   notify; voltage_critical → shed loads; voltage_emergency → shut inverter)
+#   plus inverter internal LVC and BMS cell protection.
+#
+# Key differences from ups-monitor.yaml V1.9.1:
+#   • INA228 (20-bit, external shunt) replaces INA260 (16-bit, internal shunt)
+#   • I2C address 0x40 (vs 0x41 on UPS board — different, do not confuse)
+#   • Shunt: external 375 µΩ DROK 200A/75mV; onboard shunt physically removed
+#   • Option B wiring: same sign convention as UPS (positive = charging)
+#   • 397 Ah / 5082 Wh measured capacity (vs 4.18 Ah / 53.3 Wh UPS)
+#   • float_voltage 13.26 V from measured stasis OCV (vs 13.30 V generic)
+#   • Separate charge and discharge Ah/Wh integration sensors
+#   • SOC Coulomb counter anchored at confirmed full-charge events
+#   • Round-trip efficiency per cycle (Ah_out / Ah_in)
+#   • Runtime in hours AND days (scale appropriate for 397 Ah bank)
+#   • No survival sleep; no BP-65 LVD coordination; no priority -150 boot logic
+#
+# Changelog:
+#   V1.13 — Robustness pass for the MANUAL / data-driven operating model (no HA
+#           control of the bank; operator reads SOC and manually opens the transfer
+#           switch / panel breakers at ~20% SOC). In this model the DATA is the
+#           safety system, so this pass hardens SOC integrity, SOC visibility, and
+#           recovery — NOT alarm actuation (the alarms drive no automated action here).
+#           (1) CURRENT-CHANNEL HEALTH + PLAUSIBILITY (SOC integrity — primary):
+#               - New substitutions v_min_plausible / v_max_plausible (8 / 16 V) and
+#                 i_max_plausible_a (350 A). 350 A clears the 200 A shunt rating and any
+#                 real AVERAGED reading (sub-second inverter surges are averaged down by
+#                 the 128x / ~1.58 s conversion, so a sustained ≥350 A reading is
+#                 non-physical) while sitting below the ~437 A ADC ceiling, so it catches
+#                 a saturated/garbage current channel — including the high-side
+#                 open-Kelvin-lead failure, whose floating differential input rails high.
+#               - Bus voltage: a lambda filter DROPS out-of-range readings (returns {}).
+#                 A single glitch is silently rejected (state holds one cycle); sustained
+#                 garbage produces no on_value callbacks, so the EXISTING stale-bus
+#                 watchdog trips FAULT at 10 s. Every downstream consumer already guards
+#                 isnan / stale, so this one filter protects them all without new code.
+#               - Current: the 4 SOC integration sources (discharge/charge current+power)
+#                 now FREEZE (return 0.0f) when fabsf(I) > i_max_plausible_a, alongside the
+#                 existing V1.7 stale-bus guard. Current is NOT drop-filtered (a dropped/
+#                 held current would keep integrating a STUCK value — the exact silent
+#                 drift this is meant to stop), so the bound is enforced inline on the
+#                 integration path instead.
+#               - bank_state gains the same current bound in its FAULT condition, so the
+#                 operator's primary state indicator shows FAULT (do-not-trust-SOC) when
+#                 the current channel is implausible.
+#               - New diagnostic binary_sensor "Current Channel Fault" for dashboard
+#                 visibility (5 s delayed_on rejects transients).
+#               HONEST LIMIT (documented, not papered over): a current channel that fails
+#               by reading PLAUSIBLY-but-WRONG (e.g. a partial/high-resistance Kelvin
+#               connection giving a believable-but-incorrect value) is NOT detectable by
+#               bounds. Mitigation is the quarterly ELECTRICAL sense-fuse/Kelvin check in
+#               the wiring doc (made functional, not just visual) and the periodic §7.1
+#               calibration cross-check against a clamp meter.
+#           (5) REBOOT-TIMEOUT for continuous local operation: wifi reboot_timeout and
+#               api reboot_timeout both set to 0 s (disabled). Rationale: in the manual
+#               model the device's value is CONTINUOUS local SOC publishing; a WiFi blip
+#               or a long (>30 min) outage with HA briefly unreachable must NOT blank the
+#               readout via a reboot. Recovery from a genuinely wedged stack now relies on
+#               safe_mode (crash-loop recovery, below) plus a manual feed power-cycle,
+#               which is always available on a manual system. (If a wedge-recovery net is
+#               preferred over pure continuity, set a long FINITE timeout, e.g. 4h, rather
+#               than 0 — see the api/wifi blocks.)
+#           OTA HYGIENE:
+#               - Explicit safe_mode: block added (OTA already enables safe mode
+#                 implicitly; configuring it explicitly makes the crash-loop recovery
+#                 behavior intentional and tunable). After num_attempts failed boots the
+#                 device enters safe mode — logging + WiFi + OTA only — so a bad config
+#                 can be re-flashed OVER THE AIR rather than requiring physical access to
+#                 a USB port entangled with the bank feed.
+#               - signed_ota_verification: NOT added in this revision (deliberate). The
+#                 exact YAML schema could not be confirmed against authoritative docs, it
+#                 is entangled with Secure Boot V2 signing schemes + chip-revision
+#                 requirements on the ESP32-C3, and a verification-key build error was
+#                 reported in the 2026.4.x line. Adding an unverified block could break the
+#                 OTA path on a hard-to-reflash device. TO ADOPT: confirm the schema on the
+#                 signed_ota_verification docs page, verify the XIAO C3 chip revision
+#                 supports the chosen scheme, and bench-test a full OTA round-trip before
+#                 relying on it. Tracked as a sequenced commissioning to-do.
+#           NOTE: NVS flash-wear question (raised in review) resolved — ESPHome batches
+#               all restore/preference writes and flushes them as one NVS transaction on
+#               preferences: flash_write_interval (default 60 s), wear-leveled, and NVS
+#               survives power loss. So the seven restore integrators + globals cost ~1
+#               batched write/min, not per-update; multi-year wear is fine. The knob
+#               (preferences: flash_write_interval) is available if a longer interval is
+#               ever wanted; not changed here.
+#   V1.12 — INA228 conversion-cadence correction + doc/firmware alignment pass:
+#           CADENCE (the substantive change): update_interval 1s -> 2s, and
+#             adc_time / adc_averaging now pinned EXPLICITLY (4120us, 128) rather
+#             than inherited from ESPHome defaults. Reason: at the default 128x
+#             averaging the INA228's full averaged-conversion cycle is
+#               cycle = adc_averaging × (VSHCT + VBUSCT + VTCT)
+#                     = 128 × (4120 + 4120 + 4120) µs ≈ 1.58 s
+#             (three channels enabled because the temperature sub-sensor is
+#             configured). The old update_interval: 1s therefore polled the device
+#             ~1.6× faster than it produced a fresh averaged sample, so ~40% of
+#             reads returned a still-converting (repeat) value. This never hurt the
+#             dt-based integrals (integration_method: left integrates a held value
+#             over the correct elapsed dt) or the watchdog (publish still fires each
+#             poll), but it made the repeated "1s native rate" comments inaccurate.
+#             128x averaging is RETAINED deliberately — it keeps the noise floor far
+#             below the 0.05 A threshold, which is what makes the ~100 mA self-draw
+#             capture and the sub-mAh self-discharge reconciliation clean. This
+#             bank's dynamics are slow (slope 60s, SOC 30s, alarms debounce 10-60s),
+#             so sub-second sampling buys nothing; halving averaging to chase 1s
+#             would only raise noise on exactly the low-current paths this design
+#             cares about. update_interval: 2s sits safely above the 1.58 s cycle so
+#             every poll now returns a genuinely fresh averaged sample. Pinning
+#             adc_time/adc_averaging also removes a hidden dependency on ESPHome
+#             defaults (which can change between releases) for a watchdog-timed config.
+#             NOTE: the integration-source template sensors and signed_power keep
+#             update_interval: 1s — they read the held INA228 value and integrate it
+#             correctly regardless; their cadence does not need to match the device.
+#           ALIGNMENT (no behavior change):
+#             - Wiring doc updated to v1.4 (high-side topology); header reference
+#               repointed v1.2 -> v1.4. Supersedes the "V1.2 -> V1.3 update required"
+#               pending-task note in the V1.11 entry below.
+#             - CPU-frequency performance note in the V1.11 entry CORRECTED: on the
+#               ESP32-C3, 160 MHz is BOTH the default AND the maximum, so the
+#               2026.4.0 default change (160->240 MHz, which applies to ESP32
+#               classic/S2/S3) does not affect the C3, and the suggested
+#               `cpu_frequency: 160MHZ` override is a no-op here. No action needed.
+#             - Reference-only substitutions relabeled as informational (not consumed
+#               by any lambda): float_voltage, absorption_voltage, standby_threshold_a.
+#               The active thresholds are warning/critical/emergency/overvoltage and
+#               full_charge_v_min; the standby band is enforced by fall-through past
+#               discharge_threshold_a / charge_threshold_a (no fabs() comparison exists).
+#             - float_voltage value aligned to the wiring doc / report (13.262 V).
+#             - INA228 Watchdog comment corrected: last_ina228_update is uint32_t/0,
+#               not NaN-initialised (the lambda already used the uint32_t/0 design;
+#               only the descriptive comment was stale).
+#   V1.11 — Source-level review against ESPHome 2026.4.3 + hardware lock-in:
+#           Verified against current 2026.4.3 spec:
+#             - ina2xx_i2c: model=INA228, shunt_resistance, max_current, adc_range,
+#               adc_time, reset_on_boot=false, sub-sensor schema (current,
+#               bus_voltage, power, temperature). All required params present.
+#             - one_wire (list with platform: gpio) + dallas_temp (post-2024.6
+#               schema). Confirmed migration is correct.
+#             - integration: time_unit, integration_method, restore — all match.
+#             - time: platform: homeassistant. .now().is_valid() / .timestamp API
+#               confirmed against current docs (web search this session).
+#             - api / ota (list with platform: esphome) / wifi / captive_portal /
+#               mdns — all match 2024+ schema.
+#             - internal_temperature: supported on ESP32-C3. Confirmed.
+#             - No usage of clamp filter (2026.2.0 inf/NaN behavior change N/A).
+#             - No deprecated APIs in any lambda; ESP_LOGx / id() / millis() /
+#               isnan / fabsf / sqrtf usage is current.
+#           Hardware target fully locked (V1.11 commissioning): INA228 breakout
+#             in INA260 footprint with U2 header pin 5 physically LIFTED before
+#             solder (isolates VBUS pin from PCB trace to GPIO20), R2 DNP, external
+#             375 µΩ Kelvin shunt, INA228 onboard 15 mΩ shunt REMOVED, **VBUS
+#             jumper CLOSED on the breakout (high-side topology)**.
+#           Topology decision (low-side → high-side): the original wiring doc V1.2
+#             specified low-side, inherited from a generic recommendation rather
+#             than analyzed for this specific install. V1.11 source-level review
+#             surfaced the VBUS-drive issue (pin 5 lifted + jumper open = no VBUS
+#             drive at all) and prompted the reassessment. High-side wins because:
+#             (1) ground integrity — no 75 mV shift on system ground at 200 A peak,
+#             which matters if a second monitor / BMS link / ground-referenced
+#             inverter input is ever added;
+#             (2) physical separation — 200 A bus routes through the shunt at the
+#             battery, only thin sense wires run to the breakout (cleaner than
+#             routing battery negative through the monitor enclosure);
+#             (3) simpler wiring — jumper closed eliminates the separate VBUS wire
+#             that low-side + lifted pin 5 would otherwise require.
+#             Sign convention (Option B, positive = charging) is unaffected — the
+#             INA228 reports sign based on VIN+/VIN− relative potential regardless
+#             of which side hosts the shunt.
+#           One real cost: with high-side, the Kelvin sense wires sit at ~13 V
+#             relative to chassis. A shorted sense lead would fault battery+ to
+#             ground through the shunt's Kelvin tap. Mitigation now mandatory in
+#             pre-build §5: inline 100–250 mA fast-blow fuse on each Kelvin sense
+#             lead, close to the shunt end. Sense current is microamps so a 100 mA
+#             fuse has 1000× headroom over normal operation.
+#           Wiring doc V1.2 → V1.3 update required (separate task) to document
+#             high-side topology, jumper closed, pin 5 lifted, R2 DNP, and Kelvin
+#             sense fusing. This firmware file's header is the authoritative source
+#             until the wiring doc is updated.
+#           Added GPIO20 internal-pullup clamp: with U2 pin 5 lifted and R2 DNP,
+#             the trace to GPIO20 is genuinely floating. binary_sensor with
+#             internal: true and pin mode pullup: true clamps it to a defined
+#             level. internal: true keeps it out of HA. Costs nothing, removes
+#             the indeterminate-input concern documented at agreement time.
+#           Performance note (NOT a change to this file): ESPHome 2026.4.0 changed
+#             the default CPU frequency on ESP32 from 160 MHz to 240 MHz. On the
+#             XIAO ESP32-C3 the C3 was already at 160 MHz default, but the 2026.4
+#             release also tunes scheduler behavior — modest power-draw increase
+#             expected. If the Pololu D24V7F3 starts running warm under continuous
+#             load, override with cpu_frequency: 160MHZ under esp32: framework:
+#             advanced: (option is available 2026.4.0+).
+#           Pre-flash checklist before commissioning (NOT firmware changes — user
+#             actions): (1) Replace the four credential placeholders: API key
+#             (32-byte base64), OTA password, WiFi SSID/password, fallback-AP
+#             password — currently REPLACE_WITH_... or hardcoded test values.
+#             (2) Confirm hardware as-built matches the locked V1.11 target:
+#                 - U2 pin 5 LIFTED before solder (isolates VBUS from PCB)
+#                 - R2 NOT POPULATED
+#                 - INA228 onboard 15 mΩ shunt REMOVED
+#                 - INA228 VBUS jumper SOLDERED CLOSED (high-side config)
+#                 - External 375 µΩ shunt installed between battery+ and load bus
+#                 - VIN+ at battery-side Kelvin tap, VIN− at load-side Kelvin tap
+#                 - Each Kelvin sense lead fused with 100–250 mA fast-blow inline
+#                   fuse close to the shunt end (high-side safety mitigation)
+#             (3) Bench validation: flash, confirm I2C scan finds INA228 at 0x40,
+#             confirm DS18B20 found on GPIO10, confirm bus voltage reads battery
+#             voltage (not 3.3 V), and confirm a known small load (~1 A) reads
+#             with correct sign and within ±1% of a multimeter reference.
+#           Restart button hardened (V1.11 amendment): the existing
+#             `platform: restart` button has been replaced with a template
+#             button that explicitly logs the press at WARN level, waits
+#             500ms for the log to flush over WiFi/UART, then calls
+#             App.safe_reboot(). Rationale: `platform: restart`'s on_press
+#             actions race the reboot — log writes don't reliably flush
+#             before WiFi tears down (per ESPHome community report,
+#             github.com/esphome/issues/4107-area discussion). The new
+#             pattern provides reliable post-mortem evidence of manual
+#             restarts, useful for distinguishing user-initiated reboots
+#             from watchdog-triggered reboots or crashes. Also added
+#             comprehensive comment block documenting restore_value
+#             semantics: which globals survive reboot (lifetime totals,
+#             last-outage stats) and which don't (in-progress outage
+#             tracking). Useful context for users debating whether to
+#             press reset during an active outage. entity_category:
+#             diagnostic so the button appears in HA's diagnostic
+#             section rather than the main controls.
+#   V1.10 — Self-discharge reconciliation at full-charge anchors (OBSERVABILITY):
+#           At each clean full->full bracket, computes unseen drain in DC Ah:
+#             U = recon_coul_eff × ah_charged_cycle − ah_discharged_cycle
+#           Working in Ah (not Wh) cancels charger efficiency and the charge/discharge
+#             voltage gap, leaving only the fixed ~1% coulombic term (recon_coul_eff,
+#             default 0.99). U = intrinsic self-discharge + any INA228 offset — exactly
+#             the quantity the self_discharge_pct_per_month hook models.
+#           Converts U over the HA-time stasis interval to an equivalent %/month and
+#             LOGS it as a recommended self_discharge_pct_per_month, with a 1σ
+#             uncertainty estimate and a quality flag (LOW-CONFIDENCE if interval
+#             <14 d, NOISE-LIMITED if |U|<2σ). Writes NOTHING to SOC — human applies
+#             by editing the substitution (keeps the CORE/OBSERVABILITY isolation:
+#             an observability calc never silently rewrites a CORE input).
+#           Gate: recon_min_ah_in (default 20 Ah ≈ half the ~40 Ah typical top-up).
+#             Below it, U is skipped — but the anchor epoch still advances, so a small
+#             clean top-up between two larger ones cannot cause a later double-count.
+#           Added HA time source (time: platform: homeassistant). millis() cannot
+#             measure a months-long interval (49-day wrap + zeroes on reboot); HA time
+#             survives reboots. If time is unsynced at an anchor, reconciliation skips
+#             and leaves the bracket start unchanged — never emits a garbage interval.
+#           Two diagnostic sensors: Last Unseen Drain (Ah), Recommended Self-Discharge
+#             Rate (%/mo). NaN until the first measured bracket.
+#           Model is constant-rate (linear from anchor); real self-discharge is mildly
+#             front-loaded, negligible at ~1-2%/mo over a ~6-month bracket. On record.
+#           NOTE: standby brackets are stasis-DURATION-limited, not charge-size-limited
+#             — a short interval makes U tiny vs ~±0.45 Ah noise regardless of ah_in.
+#             Hence the logged uncertainty + interval: trust long brackets, not short.
+#   V1.9 — Standby-duty alignment (backup-bank duty cycle):
+#           Self-discharge model hook: new substitution self_discharge_pct_per_month
+#             (default 0.0 = inert). Modeled as an equivalent constant current
+#             integrated into self_discharge_ah and added to the SOC numerator;
+#             resets at each full-charge anchor with the cycle counters. At 0.0 it
+#             integrates exactly zero, so SOC shows the pure measured Coulomb count
+#             — justified by the measured ~0%/month intrinsic self-discharge at
+#             ~12°C (LiFePO4_Report_2026-03-01.md §5.4). Kept OUT of discharge_current
+#             and the outage path so measurement stays pure; only SOC carries the model.
+#             No real-time clock needed (rides the integration's own dt).
+#           Per-outage energy capture: a sustained discharge on this backup bank is
+#             treated as an outage event. New per-event Ah/Wh integrations (reset at
+#             outage start), peak-load tracking (5s, sustained — not sub-second inrush),
+#             and an outage-end summary frozen into last_outage_* globals: Ah, Wh,
+#             peak W, average W, duration, and a lifetime outage counter. Exposed as
+#             six diagnostic sensors for "what can I run / what should I shed" planning.
+#           CORE / OBSERVABILITY split documented (header + section labels). The
+#             observability layer only READS V/I/T and publishes its own sensors; it
+#             never writes an alarm, the state machine, or (except the SOC anchor +
+#             inert model hook) the SOC. A fault in observability cannot take down
+#             backup readiness detection.
+#           Threshold validation note: observed charge peaks 14.51–14.55V (report
+#             data) confirm the 14.80V overvoltage guard and 14.2V absorption floor
+#             are correctly placed against real charge events.
+#           Still open (NOT changed): capacity-fade recalibration of validated_capacity_ah
+#             over years (opportunistic on a deep-discharge outage); Apparent Ri remains
+#             PROVISIONAL and is slated for opportunistic bidirectional rework next.
+#   V1.8 — Apparent Ri aging-trend feature (PROVISIONAL — NOT yet field-validated):
+#           Captures apparent internal resistance from rest->discharge load steps
+#             (inverter turning on from standby) as a relative aging trend.
+#           Method: Ri = ΔV/ΔI across the step. The OCV term cancels because SOC
+#             barely moves across a 1s step, so this isolates ohmic + fast-RC drop
+#             far better than the OCV-minus-loaded-V approach. In Option B both ΔV
+#             and ΔI are negative on a load step → Ri positive.
+#           Single qualifying condition for repeatability: before-state near rest
+#             (|I_prev| <= ri_quiescent_a) AND step into discharge >= ri_min_step_a.
+#             Mixing edge types (on/off, charge/discharge) would add polarization
+#             scatter that tracks usage pattern, not aging — deliberately excluded.
+#           Each qualified measurement is published raw (no on-device EMA) and
+#             temperature-tagged via apparent_ri_temp, for SPC trending in HA.
+#           Reads V and I in one 1s interval tick (same conversion cycle); rejects
+#             on FAULT/stale-bus and NaN; sanity-bands result to [ri_min, ri_max] mΩ.
+#           Metric measured = 1s-SETTLED apparent Ri at the INA228 VBUS sense point
+#             (cells + busbars + terminals + cable), NOT instantaneous pure-ohmic
+#             DCIR and NOT cell-only Ri. Valid for relative trend; absolute value
+#             depends on sense-point topology — see VALIDATION TODO below.
+#           VALIDATION TODO before this feature is signed off as production-worthy:
+#             1. Confirm VBUS taps where the wiring doc says relative to the shunt
+#                (an unexpected tap point changes what series R is included).
+#             2. Capture 10+ inverter-on events; confirm Ri clusters tightly and
+#                sits in a physically plausible band (est. ~2-10 mΩ at this scale).
+#             3. Confirm rest->discharge events actually occur often enough given
+#                real usage (continuous-load periods produce no from-rest steps).
+#             4. Decide temp-banding/normalization policy for the trend (basement
+#                ~upper-40s°F gives a naturally narrow band — likely sufficient).
+#           No change to the V1.7 production core (SOC, integration, state machine,
+#             alarms). Feature is isolated: it only reads existing sensors and
+#             publishes new ones.
+#   V1.7 — Production review corrections (pre-sign-off):
+#           Stale-bus integration trap (BLOCKING): the watchdog detected a hung
+#             I2C bus (stale cached non-NaN state) but the Ah/Wh integration
+#             sources kept accumulating against the cached value — the documented
+#             "integration stops on fault" claim was false for that exact mode.
+#             Fix: added a stale-bus guard (>10s since last read, after boot
+#             grace) to discharge_current, charge_current, discharge_power,
+#             charge_power → return 0.0f, freezing SOC/Ah/Wh during FAULT.
+#           absorption_reached stale-flag (BLOCKING): flag was cleared only on a
+#             successful full-charge record, never on the heavy-load abort (else)
+#             path. A charge that hit absorption then lost to a load left the flag
+#             set, so a later unrelated partial charge falsely anchored SOC to
+#             100%. Fix: clear absorption_reached in the else branch, on discharge
+#             start (is_discharging on_press), and in the manual anchor button.
+#           Overvoltage alarm added: Battery Overvoltage binary sensor + bank_state
+#             OVERVOLTAGE state (V > overvoltage_threshold while charging) — catches
+#             a stuck/runaway charger. Previously unbounded above 14.2V.
+#           bank_state semantics fixed: low-voltage tiers now match the binary
+#             sensors — EMERGENCY (<11.80V), CRITICAL (<12.20V), WARNING (<12.40V),
+#             each AND-discharging. Was a single "CRITICAL" at the WARNING (12.40V)
+#             threshold with no emergency state.
+#           Coulombic-efficiency relabel: "Round-Trip Efficiency" actually computed
+#             Ah_out/Ah_in = coulombic efficiency, not energy RTE (Wh_out/Wh_in).
+#             Renamed sensor + global to Coulombic Efficiency to stop conflating it
+#             with the header's 90.3% inverter RTE.
+#           INA228 LSB doc fix: shunt LSB is 312.5 nV/LSB at ADCRANGE=0 (TI
+#             datasheet Table 8-1), not 3.13 µV. Corrected quantization step to
+#             ~0.83 mA (was 8.3 mA, 10x high); 50 mA threshold is ~60x the step,
+#             not 6x. Conclusion (no spurious-sign risk) unchanged — margin larger.
+#           Removed unused substitution typical_load_amps (never referenced).
+#           Version banner V1.1 -> V1.7 (title + boot log now match content).
+#   V1.0 — Initial release (Option A sign convention; 500 Ah generic capacity)
+#   V1.6 — Four correctness fixes (external review):
+#           NaN integration trap (BLOCKING): reverted NaN returns to 0.0f.
+#             Source: integration_sensor.cpp L26-27 — NaN skips last_update_,
+#             causing next real sample to see full gap as dt, injecting phantom
+#             Wh spike. Fix: 0.0f returns + integration_method: left on all 7
+#             integration sensors. Left-sum: area = previous × dt; 0.0f source
+#             always contributes 0 regardless of gap duration. Confirmed from
+#             ESPHome source and esphome/issues#3531.
+#           SOC deadband: removed net_discharged < 0.0f premature clamp.
+#             Clamp discards ah_in surplus, creating a dead zone at 100% SOC
+#             equal to the surplus Ah. Final soc > 100.0f clamp handles it.
+#           Heavy-load absorption hijack: added I > -1.0A guard in is_charging
+#             on_release. If a load overwhelms the charger, net current goes
+#             deeply negative; guard blocks false full-charge anchor on load-stop.
+#           millis() watchdog type: last_ina228_update float/NAN -> uint32_t/0.
+#             Eliminates float precision limit (~512ms at 49d) and NaN sentinel.
+#             uint32_t subtraction is natively wrap-safe at 49-day rollover.
+#   V1.5 — Three correctness fixes:
+#           Mean discharge voltage: Wh/Ah replaces Vh/Ah (dimensionally correct).
+#             Vh/Ah = V*h/A*h = ohms (wrong). Wh/Ah = current-weighted mean V.
+#             voltage_when_discharging + vh_discharged_cycle removed.
+#             wh_discharged_cycle integration added (source: discharge_power).
+#           NaN from integration sources: all integration source templates now
+#             return NAN (not 0.0f) when inactive. ESPHome integration pauses
+#             on NAN; 0.0f creates trapezoidal phantom Ah/Wh at transitions.
+#             Affected: discharge_current, discharge_power, charge_current,
+#             charge_power.
+#           Watchdog uses millis() not device_uptime (60s sensor).
+#             Old: detection latency up to 70s. New: true 10s resolution.
+#             Wrap-safe: uint32_t subtraction handles 49-day millis() rollover.
+#   V1.4 — Cycle health metrics, watchdog, state machine:
+#           bank_state 8-state machine replaces 4-state operating_mode:
+#             FAULT, CRITICAL, CHARGING_ABSORPT, CHARGING_BULK,
+#             HEAVY_LOAD, DISCHARGING, CHARGING, IDLE
+#           INA228 watchdog binary sensor (stale-data fault, 10s threshold,
+#             15s boot grace, NaN-initialised, auto-recovering)
+#           discharge_peak_a_raw global (cycle-level, reset at full charge)
+#           last_discharge_peak_a and last_discharge_mean_v persisted globals
+#           voltage_when_discharging template + vh_discharged_cycle integration
+#           mean discharge voltage: volt-hours / amp-hours at cycle end
+#           Last Discharge Peak Current and Last Discharge Mean Voltage sensors
+#           vh_discharged_cycle reset added to full-charge path and manual button
+#           bus_voltage on_value -> last_ina228_update (watchdog timestamp feed)
+#           V1.3 residual fixed: throttle_average removed from bus_voltage
+#           NOTE comment removed: INA228 parameters verified in V1.1 review
+#           bulk_charge_threshold_a and heavy_load_threshold_a substitutions
+#   V1.3 — Power register Wh integration:
+#           ina228_power made internal; discharge_power/charge_power templates
+#           now source from POWER register (±0.61mW LSB) instead of V×I
+#           from averaged sensors (±2.5mW at 100mA, ±10mW at 80A)
+#           ina228_current throttle_average removed → 1s native, no sign lag
+#           discharge_current/charge_current update_interval 5s→1s
+#           signed_power template added (display-facing, ±0.61mW source)
+#           I2C frequency 400kHz→100kHz (no throughput loss; lower EMI)
+#           All stale 1A/+1.0/-1.0/V×I comments corrected
+#   V1.2 — Feedback fixes:
+#           SOC deadband: 1.0 A → 0.05 A (captures 100 mA self-consumption,
+#             eliminates ~72 Ah/month SOC drift)
+#           Cycle counter state_class: total_increasing → measurement
+#             (prevents HA statistics anomalies on reset)
+#           Full-charge detection redesigned: two-phase (absorption_phase
+#             binary sensor + is_charging on_release edge trigger) —
+#             robust against sharp LiTime charger cutoff
+#           DS18B20: added filter_out -127.0 (short-to-ground failure)
+#           Runtime capped at 720 h (30 days); days accuracy_decimals 2→1
+#           Removed unused modem_host substitution
+#   V1.1 — Option B sign convention (positive = charging, matches UPS monitor)
+#           Capacity updated to 397 Ah from Oct 2025 discharge test
+#           float_voltage updated to 13.26 V from measured stasis OCV
+#           Added standby_threshold_a substitution for fabs() comparisons
+#           Added reference to LiFePO4_Report_2026-03-06.md throughout
+# ============================================================================
+
+substitutions:
+  device_name: battery-bank-monitor
+  friendly_name: "Battery Bank Monitor"
+  device_description: "12V 500Ah LiFePO4 Bank — INA228 + DS18B20"
+
+  # --- Battery & system parameters ------------------------------------------
+  # Source: LiFePO4_Report_2026-03-06.md, Lifepo4-Battery-Banks repo
+  # Discharge test Oct 2025: 397 Ah = 99.3% of ~400 Ah actual cell capacity.
+  # Bank is 500 Ah nominal (1S5P 5×100Ah advertised); cells measured ~400 Ah actual.
+  # Cross-check against full discharge curve in report before tuning alarms.
+  validated_capacity_ah:    "397"    # Ah; measured Oct 2025 discharge test
+  validated_capacity_wh:    "5082"   # Wh (397 Ah × 12.80 V mean discharge)
+                                     # Informational only — not referenced in any lambda.
+                                     # (typical_load_amps removed in V1.7: it was never used;
+                                     #  runtime uses the live measured discharge current.)
+
+  # --- Intrinsic self-discharge model hook (V1.9) ----------------------------
+  # The shunt already captures the board's own parasitic draw: with high-side
+  # topology (V1.11), the board's supply current flows from battery+ THROUGH the
+  # shunt before reaching the Pololu D24V7F3, so the Coulomb counter measures
+  # all EXTERNAL drain directly. This term models only the INTRINSIC cell self-
+  # discharge that bypasses the shunt entirely.
+  # Measured intrinsic self-discharge for this bank is ~0%/month at ~12°C basement
+  # storage (LiFePO4_Report_2026-03-01.md §5.4), so the default 0.0 is correct and
+  # SOC shows the pure measured Coulomb count. Provisioned as a hook: set non-zero
+  # (e.g. 2.0) in the future if aging or higher storage temps make it measurable.
+  # Implemented as an equivalent constant current integrated into self_discharge_ah
+  # (no real-time clock needed); at 0.0 it integrates exactly zero — fully inert,
+  # and it never touches discharge_current or the outage-energy path (measurement
+  # stays pure; only the SOC estimate carries the model).
+  #   equiv current (A) = (rate/100 × validated_capacity_ah) / 730.5 h/month
+  #   e.g. 2.0%/mo × 397 Ah / 730.5 h ≈ 10.9 mA (≈ the measured 12.5 mA parasitic).
+  self_discharge_pct_per_month: "0.0"   # %/month; 0.0 = measured-only SOC (default)
+
+  # --- Self-discharge reconciliation (V1.10 — OBSERVABILITY, logs only) -------
+  # At each clean full->full anchor, compute unseen drain U (Ah that left the bank
+  # without passing through the shunt = intrinsic self-discharge + any INA228
+  # offset), express it as %/month over the stasis interval, and LOG it as a
+  # recommended self_discharge_pct_per_month. Writes nothing to SOC — human applies
+  # it by editing the substitution above. See the anchor lambda for the full method.
+  #   U = (recon_coul_eff × ah_charged_cycle) − ah_discharged_cycle   [DC Ah]
+  # Working in Ah (not Wh) cancels charger efficiency AND the charge/discharge
+  # voltage gap — both leave only the ~1% coulombic term, fixed here per your call.
+  recon_coul_eff:           "0.99"   # fixed coulombic efficiency (DC Ah_out/Ah_in)
+  # Gate: skip reconciliation if this charge returned less than this many Ah.
+  # 20 Ah ≈ half the ~40 Ah typical maintenance top-up: a normal top-up clears it,
+  # a trivial partial is rejected. NOTE: charge size is NOT the main quality driver
+  # — stasis DURATION is. A short interval makes U tiny vs the ~±0.45 Ah measurement
+  # noise regardless of ah_in, so the per-measurement uncertainty + stasis-days are
+  # logged alongside every U for you to judge. See anchor lambda comments.
+  recon_min_ah_in:          "20.0"   # Ah; below this, reconciliation is skipped
+
+  # --- Voltage thresholds (LiFePO4 chemistry) --------------------------------
+  # NOTE (V1.12): absorption_voltage and float_voltage are REFERENCE/INFORMATIONAL
+  # only — neither is consumed by any lambda. They document the LiTime CV setpoint
+  # and the measured stasis OCV for context; editing them has NO runtime effect.
+  # The active voltage thresholds are warning/critical/emergency/overvoltage and
+  # full_charge_v_min below.
+  # float_voltage source: 130-day stasis monitoring (Nov 2025 – Mar 2026), measured
+  # equilibrium band 13.262–13.265 V, LiFePO4_Report_2026-03-06.md (low-parasitic).
+  absorption_voltage:       "14.60"  # V; reference only: LiTime CC/CV absorption setpoint (not referenced in any lambda)
+  float_voltage:            "13.262" # V; reference only: measured stasis OCV 13.262–13.265 V (not referenced in any lambda)
+  warning_voltage:          "12.40"  # V; first HA warning — send push notification
+  critical_voltage:         "12.20"  # V; HA critical — shed non-essential loads
+  emergency_voltage:        "11.80"  # V; HA emergency — shut down inverter NOW
+  # Overvoltage: LiTime CV setpoint is 14.60 V; a healthy charger never exceeds it.
+  # A pack sustained above this while charging indicates the charger is not regulating
+  # (stuck/runaway). 14.80 V = 0.20 V above setpoint (~3.70 V/cell, 4S) — below the
+  # BMS cell-overvoltage cutoff but a clear "charger fault" signal. Tune if the LiTime
+  # shows a larger normal CV overshoot at the CC→CV transition.
+  overvoltage_threshold:    "14.80"  # V; V > this AND charging -> OVERVOLTAGE fault
+
+  # --- Discharge phase boundary voltages (LiFePO4 chemistry) ----------------
+  # Same boundaries used in ups-monitor.yaml V1.3 (validated against real data).
+  # TODO: cross-check settling_min_v and plateau_min_v against the actual
+  # discharge curve voltage profile in LiFePO4_Report_2026-03-06.md Fig.1.
+  # The 13.26 V stasis OCV confirms the settling phase starts above 13.00 V
+  # (OCV relaxes from 13.26 V toward plateau over ~5–15 min after load onset).
+  settling_min_v:           "13.00"  # V; above → settling (OCV relaxation from 13.26 V)
+  plateau_min_v:            "12.65"  # V; 12.65–13.00 → plateau (bulk capacity)
+  knee_min_v:               "12.40"  # V; 12.40–12.65 → knee (accelerating drop)
+                                     #    below 12.40 → cliff (rapid fall)
+
+  # --- Voltage slope thresholds (mV/min, EMA-smoothed) ----------------------
+  # Chemistry-based; same validated values as ups-monitor.yaml.
+  knee_slope_threshold:     "-3.0"   # EMA slope < −3 mV/min → knee approaching
+  cliff_slope_threshold:    "-10.0"  # EMA slope < −10 mV/min → cliff imminent
+
+  # --- Sensor plausibility bounds (V1.13 — SOC-integrity guard) --------------
+  # The stale-bus watchdog catches a HUNG bus (no new reads). It does NOT catch a
+  # bus returning consistent GARBAGE that is non-NaN and non-stale (e.g. an I2C bit
+  # error on lines that run beside 2/0 AWG 200 A transients — the INA228 has no PEC
+  # on its data registers). These bounds reject physically-impossible readings so a
+  # stuck-but-valid value cannot corrupt SOC or mislead the operator.
+  #   Voltage: a healthy 12 V LiFePO4 bus lives ~10.0–14.8 V; 8/16 V gives margin and
+  #     flags only genuine garbage. Out-of-range V is DROP-filtered → the existing
+  #     watchdog trips FAULT on sustained garbage.
+  #   Current: 350 A is above the 200 A shunt rating AND above any real averaged value
+  #     (sub-second inverter surges are averaged down by the 128x / ~1.58 s conversion),
+  #     yet below the ~437 A ADC ceiling — so it catches a saturated/garbage current
+  #     channel, including the high-side open-Kelvin-lead case (floating differential
+  #     input rails high). Enforced inline on the SOC integration path + bank_state.
+  v_min_plausible:          "8.0"    # V; bus voltage below this is non-physical → drop (watchdog → FAULT)
+  v_max_plausible:          "16.0"   # V; bus voltage above this is non-physical → drop (watchdog → FAULT)
+  i_max_plausible_a:        "350.0"  # A; |I| above this is non-physical (saturation/garbage) → freeze SOC + FAULT
+
+  # --- Current detection thresholds (Option B: positive = charging) ----------
+  # With Option B wiring: charging → I positive; discharging → I negative.
+  # 0.05 A threshold (50 mA) — ~60× the INA228 shunt quantization step of ~0.83 mA
+  # (312.5 nV LSB at ADCRANGE=0, per TI datasheet Table 8-1, ÷ 375 µΩ = 0.833 mA).
+  # NOTE: this is the LSB quantization step, not measured RMS noise (which depends
+  # on conversion time / AVG settings); either way the threshold has ample margin.
+  # This captures the monitor's own ~100 mA self-consumption in the SOC integration,
+  # preventing the previous 1 A deadband from accumulating ~72 Ah/month SOC drift.
+  # discharge_threshold_a is NEGATIVE (I < -0.05 → discharging confirmed).
+  # charge_threshold_a is POSITIVE  (I > +0.05 → charging confirmed).
+  # standby_threshold_a (V1.12): REFERENCE/INFORMATIONAL only — not consumed by any
+  #   lambda. The ±0.05 A standby band is enforced implicitly: a sample that is
+  #   neither I < discharge_threshold_a nor I > charge_threshold_a falls through to
+  #   the IDLE / "N/A" states. (No fabs() comparison against this symbol exists.)
+  discharge_threshold_a:    "-0.05"  # A; I < this → net discharging
+  charge_threshold_a:       "0.05"   # A; I > this → charger actively charging
+  standby_threshold_a:      "0.05"   # A; reference only — see note above (not referenced in any lambda)
+
+  # Threshold below which net discharge is classified as heavy load (A).
+  # At -50 A: ~640 W at 12.8 V, ~1/3 inverter capacity, ~8h runtime remaining.
+  # Adjust once actual standby vs. load current profile is measured.
+  heavy_load_threshold_a:   "-50.0"  # A; I < this AND discharging -> HEAVY_LOAD state
+
+  # Threshold above which charging is classified as bulk CC phase (A).
+  # LiTime ramps quickly to ~80 A CC; 5 A clears the startup transient.
+  bulk_charge_threshold_a:  "5.0"    # A; I > this AND V < 14.2V -> CHARGING_BULK state
+
+  # --- Full charge detection (LiTime absorption complete) -------------------
+  # LiTime holds 14.6 V until current tapers to near zero → charger stops.
+  # Trigger: V ≥ 14.50 V AND I > 0 (charging direction) AND I < 2.0 A (tapered).
+  full_charge_v_min:        "14.20"  # V; absorption detection floor (14.2V = in CV phase)
+                                       #    Charger can only sustain ≥14.2V during CV absorption
+  # full_charge_taper_a removed — taper detection no longer needed.
+  # Full-charge event fires on charger-stop edge (is_charging on_release).
+
+  # --- Apparent Ri capture (V1.8 — PROVISIONAL aging-trend feature) ----------
+  # Captures apparent internal resistance from rest->discharge load steps only.
+  # See the V1.8 changelog and the "Apparent Ri" interval/sensor blocks below.
+  # All four are tunable from bench data once real inverter-on events are logged.
+  ri_min_step_a:            "25.0"   # A; minimum |ΔI| into discharge to qualify a step
+                                     #    (25A → ~256 LSB ΔV even at 2mΩ; ~0.55% quant noise)
+  ri_quiescent_a:           "5.0"    # A; before-state |I| must be ≤ this ("from rest").
+                                     #    5A × ~2mΩ = ~10mV pre-load drop — negligible vs step.
+  ri_min_mohm:              "0.5"    # mΩ; sanity-band lower bound (reject below)
+  ri_max_mohm:              "50.0"   # mΩ; sanity-band upper bound (reject above)
+
+
+# ============================================================================
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  comment: ${device_description}
+  build_path: C:\\esphome_build\\battery-bank-monitor
+  on_boot:
+    - priority: -200
+      then:
+        - logger.log:
+            level: INFO
+            format: "Battery Bank Monitor V1.13 boot -- INA228 @ 0x40, DS18B20 on GPIO10"
+
+esp32:
+  board: seeed_xiao_esp32c3
+  framework:
+    type: esp-idf
+
+logger:
+  level: INFO
+  baud_rate: 0              # Disable serial — USB must NOT be connected in production
+
+api:
+  encryption:
+    key: "REPLACE_WITH_YOUR_32_BYTE_BASE64_API_KEY"
+  # reboot_timeout: 0s (V1.13) — DISABLED. In the manual/data model the device's value
+  # is continuous local SOC publishing; do NOT reboot just because HA is briefly
+  # unreachable (HA restart, or a long outage > the old 30 min timeout), which would
+  # blank the readout. Crash-loop recovery is handled by safe_mode (below) + a manual
+  # feed power-cycle. (Prefer a wedge-recovery net over pure continuity? Set a long
+  # FINITE value, e.g. 4h, instead of 0s.)
+  reboot_timeout: 0s
+
+ota:
+  - platform: esphome
+    password: "REPLACE_WITH_YOUR_OTA_PASSWORD"
+
+wifi:
+  ssid: "Lake Poco"
+  password: "silentfire590"
+  fast_connect: true
+  power_save_mode: none
+  # reboot_timeout: 0s (V1.13) — DISABLED. A WiFi blip must not reboot the device and
+  # blank the live SOC readout the manual shutdown decision depends on. The device keeps
+  # running its local logic and reconnects when WiFi returns. (See api reboot_timeout note.)
+  reboot_timeout: 0s
+  ap:
+    ssid: "${friendly_name} Fallback"
+    password: "REPLACE_WITH_YOUR_FALLBACK_AP_PASSWORD"
+
+captive_portal:
+
+# ============================================================================
+# Safe mode (V1.13) — crash-loop recovery over the air.
+# OTA already enables safe mode implicitly; configuring it explicitly here makes the
+# recovery behavior intentional and tunable. After num_attempts boots that each fail
+# before becoming "good", the device enters safe mode: logging + WiFi + OTA only, all
+# sensors/logic disabled. That lets a bad config be re-flashed OVER WIFI rather than
+# requiring physical USB access (which on this board means disconnecting the bank feed).
+# Independent of the disabled reboot_timeouts above — safe mode triggers on genuine
+# crash-boot-loops, not on network loss, so the two do not interact adversely.
+# ============================================================================
+safe_mode:
+  num_attempts: 10      # default; enter safe mode after 10 failed-boot attempts
+  reboot_timeout: 5min  # default; time held in safe mode before retrying a normal boot
+
+mdns:
+  disabled: false
+
+# ============================================================================
+# Time source (V1.10)
+# Home Assistant time: survives reboots and gives real wall-clock dates, which
+# millis() cannot — millis() wraps at 49 days and zeroes on every reboot, so it
+# cannot measure a months-long stasis interval. Used ONLY by the OBSERVABILITY
+# self-discharge reconciliation at full-charge anchors; the CORE watchdog and
+# outage-duration timers keep using millis() (correct for their second/hour scale).
+# If time is unsynced at an anchor (first boot, WiFi down), reconciliation skips
+# the U calc and logs why — it never emits a garbage interval.
+# ============================================================================
+time:
+  - platform: homeassistant
+    id: ha_time
+
+# ============================================================================
+# I2C bus
+# SDA = GPIO6 (XIAO D4), SCL = GPIO7 (XIAO D5)
+# INA228 breakout has onboard 10 kΩ pull-ups — no external pull-ups needed.
+# Address 0x40: A0 and A1 jumpers OPEN (factory default — do NOT bridge A0,
+# which is done on the UPS board to give 0x41).
+# scan: false — device validated at 0x40 on bench before production flash.
+# ============================================================================
+i2c:
+  sda: GPIO6
+  scl: GPIO7
+  scan: false
+  id: bus_a
+  frequency: 100kHz  # 400kHz unnecessary at 1s telemetry — bus utilisation <0.3%
+                      # at 100kHz. Lower clock rate reduces EMI on SDA/SCL, which
+                      # run adjacent to 2/0 AWG cables carrying 200A transients.
+                      # INA228 has no minimum I2C speed constraint (SBOS951 §7.5.3).
+
+# ============================================================================
+# 1-Wire bus — DS18B20 on GPIO10 (XIAO D10).
+# DS18B20 module has built-in 4.7 kΩ pull-up; no external resistor needed.
+# ============================================================================
+one_wire:
+  - platform: gpio
+    pin: GPIO10
+
+# ============================================================================
+# GLOBALS
+# ============================================================================
+globals:
+
+  # --- Voltage slope (transient — not persisted) ----------------------------
+  - id: voltage_1min_ago
+    type: float
+    initial_value: 'NAN'
+    restore_value: no
+
+  - id: slope_ema
+    type: float
+    initial_value: 'NAN'    # NAN seed: first sample initialises cleanly (no zero bias)
+    restore_value: no
+
+  # --- Charge session tracking (transient — reset each session start) -------
+  - id: charge_session_start_v
+    type: float
+    initial_value: '0.0'
+    restore_value: no
+
+  - id: charge_peak_a_raw
+    type: float
+    initial_value: '0.0'    # Tracks most-positive I value during charge session
+    restore_value: no       # Positive = charging in Option B; reset to 0 on session start
+
+  # --- Full-charge cycle summary (persisted — survive reboot) ---------------
+  # Updated at each confirmed full charge. Enables cycle-by-cycle aging analysis.
+  - id: last_cycle_ah_in
+    type: float
+    initial_value: '0.0'
+    restore_value: yes      # Ah charged into bank during last completed cycle
+
+  - id: last_cycle_ah_out
+    type: float
+    initial_value: '0.0'
+    restore_value: yes      # Ah discharged from bank during last completed cycle
+
+  - id: last_coulombic_eff
+    type: float
+    initial_value: '0.0'
+    restore_value: yes      # Ah_out / Ah_in × 100% = COULOMBIC efficiency (charge
+                            # efficiency), NOT energy round-trip (Wh_out/Wh_in).
+                            # Healthy LiFePO4 coulombic eff: ~99%+.
+
+  # --- Self-discharge reconciliation state (V1.10 — persisted) ---------------
+  # last_anchor_epoch: HA-time unix seconds at the previous clean full-charge anchor,
+  #   for the stasis interval. 0 = no valid prior anchor yet (first clean anchor just
+  #   seeds it and skips the U calc — you need TWO clean anchors to bracket an interval).
+  # last_unseen_drain_ah / last_recommended_sd_rate: most recent reconciliation
+  #   result, surfaced as diagnostic sensors. NaN-free (0.0 = not yet computed).
+  - id: last_anchor_epoch
+    type: uint32_t
+    initial_value: '0'
+    restore_value: yes
+  - id: last_unseen_drain_ah
+    type: float
+    initial_value: '0.0'
+    restore_value: yes
+  - id: last_recommended_sd_rate
+    type: float
+    initial_value: '0.0'
+    restore_value: yes
+
+  - id: total_full_charge_count
+    type: int
+    initial_value: '0'
+    restore_value: yes      # Persistent cycle count — lifetime health indicator
+
+  # --- Outage event tracking (V1.9 — OBSERVABILITY, isolated from core) ------
+  # For a manual-transfer-switch backup bank, a sustained discharge IS an outage
+  # (the bank only discharges when grid is lost or during a deliberate test).
+  # These capture per-event energy + load profile for "what should I shed" planning.
+  # outage_active_ms: millis() at outage start, for duration. uint32 wrap-safe over
+  #   any realistic outage (« 49 days). outage_peak_w: running peak load this outage.
+  # The last_outage_* set is frozen on outage end and persisted. None of these feed
+  # back into the core (alarms / state machine / SOC) — a bug here cannot affect
+  # readiness detection.
+  - id: outage_active_ms
+    type: uint32_t
+    initial_value: '0'
+    restore_value: no
+  - id: outage_peak_w
+    type: float
+    initial_value: '0.0'
+    restore_value: yes      # Survive a brownout-reboot mid-outage without losing peak
+  - id: last_outage_ah
+    type: float
+    initial_value: '0.0'
+    restore_value: yes
+  - id: last_outage_wh
+    type: float
+    initial_value: '0.0'
+    restore_value: yes
+  - id: last_outage_peak_w
+    type: float
+    initial_value: '0.0'
+    restore_value: yes
+  - id: last_outage_avg_w
+    type: float
+    initial_value: '0.0'
+    restore_value: yes
+  - id: last_outage_hours
+    type: float
+    initial_value: '0.0'
+    restore_value: yes
+  - id: total_outage_count
+    type: int
+    initial_value: '0'
+    restore_value: yes
+
+  - id: last_charge_peak_a
+    type: float
+    initial_value: '0.0'
+    restore_value: yes      # Peak LiTime CC current; declining trend = charger aging
+
+  # --- Full-charge detection state (transient) -------------------------------
+  # Set true when the absorption_phase binary sensor fires (V ≥ 14.2V sustained 60s).
+  # Cleared in is_charging on_release after the full-charge event fires.
+  # Transient: a power cycle mid-charge resets to false → that partial charge session
+  # is not counted as a full charge. Acceptable: the cycle counters restore via NVS
+  # and continue accumulating on next charge session.
+  - id: absorption_reached
+    type: bool
+    initial_value: 'false'
+    restore_value: no
+
+  # --- Discharge cycle health (transient — reset at full charge) ------------
+  # Cycle-level peak: accumulates across all discharge sessions since last
+  # full charge. discharge_peak_a_raw is most-negative I seen (Option B: negative
+  # = discharge), initialised 0.0 so any discharge sample immediately populates it.
+  - id: discharge_peak_a_raw
+    type: float
+    initial_value: '0.0'
+    restore_value: no
+
+  # --- Discharge cycle summary (persisted) ----------------------------------
+  - id: last_discharge_peak_a
+    type: float
+    initial_value: '0.0'
+    restore_value: yes    # Peak discharge current magnitude last completed cycle
+
+  - id: last_discharge_mean_v
+    type: float
+    initial_value: '0.0'
+    restore_value: yes    # Mean discharge voltage last completed cycle (Wh / Ah)
+                          # Declining trend = rising internal resistance (bank aging)
+
+  # --- INA228 watchdog timestamp (transient) --------------------------------
+  # Stores millis() at each successful INA228 bus_voltage on_value callback.
+  # Using millis() not device_uptime (60s sensor) gives true 10s-resolution.
+  # type: uint32_t — same width as millis() return; subtraction wraps correctly
+  # at the 49-day rollover. Initial value 0: if INA228 never produces a reading
+  # before the 15s boot grace expires, the watchdog fires correctly (INA228 fault
+  # at init). No NaN sentinel needed — boot guard handles the startup window.
+  - id: last_ina228_update
+    type: uint32_t
+    initial_value: '0'
+    restore_value: no
+
+  # --- Apparent Ri trackers (V1.8 — PROVISIONAL) -----------------------------
+  # ri_prev_v / ri_prev_i hold the immediately-preceding 1s sample so the next
+  # tick can compute ΔV/ΔI across a step. NAN seed: the first tick (and any tick
+  # after a NaN/FAULT reset) cannot compute a spurious step. Transient by design.
+  - id: ri_prev_v
+    type: float
+    initial_value: 'NAN'
+    restore_value: no
+  - id: ri_prev_i
+    type: float
+    initial_value: 'NAN'
+    restore_value: no
+  # Lifetime count of qualified Ri measurements captured (diagnostic).
+  - id: ri_sample_count
+    type: int
+    initial_value: '0'
+    restore_value: yes
+
+
+# ============================================================================
+# INTERVALS
+# ============================================================================
+interval:
+
+  # --------------------------------------------------------------------------
+  # Voltage slope — 60 s sampling, EMA-smoothed (α = 0.35).
+  #
+  # Raw delta: (V_now − V_60s_ago) × 1000  →  mV/min.
+  # EMA:       slope_ema = 0.35 × raw + 0.65 × slope_ema_prev.
+  #
+  # Drives Knee Approaching and Cliff Imminent binary sensors.
+  # At 397 Ah / 10 A: plateau spans ~35+ hours; knee ~9 h; cliff TBD (validate
+  # against LiFePO4_Report_2026-03-06.md discharge curve when available).
+  # At ~100 A inverter load: phase durations approach UPS-monitor scale.
+  # --------------------------------------------------------------------------
+  - interval: 60s
+    then:
+      - lambda: |-
+          float v_now  = id(ina228_voltage).state;
+          float v_then = id(voltage_1min_ago);
+          if (!isnan(v_then) && !isnan(v_now)) {
+            float raw = (v_now - v_then) * 1000.0f;  // mV/min
+            float ema = id(slope_ema);
+            if (isnan(ema)) {
+              ema = raw;                         // Cold-start: seed from first sample
+            } else {
+              ema = 0.35f * raw + 0.65f * ema;  // α=0.35 EMA
+            }
+            id(slope_ema) = ema;
+            id(voltage_slope).publish_state(ema);
+          }
+          id(voltage_1min_ago) = v_now;
+
+  # --------------------------------------------------------------------------
+  # 5-second trackers — charge and discharge peak current.
+  #   charge_peak_a_raw   : most-positive I each charge session (reset on session start)
+  #   discharge_peak_a_raw: most-negative I since last full charge (cycle-level)
+  # Declining charge peak  -> charger or connection degradation.
+  # Deepening discharge peak -> load growth or rising internal resistance.
+  # --------------------------------------------------------------------------
+  - interval: 5s
+    then:
+      - if:
+          condition:
+            lambda: 'return id(ina228_current).state > ${charge_threshold_a}f;'
+          then:
+            - lambda: |-
+                float i = id(ina228_current).state;
+                if (i > id(charge_peak_a_raw))
+                  id(charge_peak_a_raw) = i;   // Most-positive = highest charge A
+      - if:
+          condition:
+            lambda: 'return id(ina228_current).state < ${discharge_threshold_a}f;'
+          then:
+            - lambda: |-
+                float i = id(ina228_current).state;
+                // Most-negative = deepest discharge (I is negative in Option B)
+                if (i < id(discharge_peak_a_raw))
+                  id(discharge_peak_a_raw) = i;
+                // Outage peak load (V1.9): track max discharge power this event.
+                // discharge_power is the 1s-reported magnitude (0 when not discharging),
+                // so this is the sustained peak, not sub-second inrush (below INA228
+                // reporting cadence anyway) — which is what load-shedding planning needs.
+                float pw = id(discharge_power).state;
+                if (!isnan(pw) && pw > id(outage_peak_w))
+                  id(outage_peak_w) = pw;
+
+  # --------------------------------------------------------------------------
+  # Apparent Ri capture (V1.8 — PROVISIONAL aging-trend feature)
+  #
+  # Detects a rest->discharge load step (inverter turning on from standby) and
+  # records apparent internal resistance Ri = ΔV / ΔI across that step.
+  #
+  # WHY ΔV/ΔI (not OCV - V_loaded): across a 1s step the SOC barely moves, so the
+  # OCV term cancels in the difference. This isolates ohmic + fast-RC drop rather
+  # than conflating it with the poorly-known SOC-dependent OCV shift on the LiFePO4
+  # plateau. In Option B a load step makes BOTH ΔI and ΔV negative → Ri positive.
+  #
+  # WHY ONE EDGE TYPE: only rest->discharge qualifies (before-state near rest AND a
+  # step deeper into discharge). Mixing on/off or charge/discharge edges would add
+  # polarization-asymmetry scatter that tracks usage pattern, not aging.
+  #
+  # WHAT IT IS: 1s-SETTLED apparent Ri at the INA228 VBUS sense point (cells +
+  # busbars + terminals + cable). NOT instantaneous pure-ohmic DCIR (needs ms-scale
+  # triggered capture) and NOT cell-only Ri. Defined and stable → good for trending.
+  #
+  # Both V and I are read in this single tick, so they come from the same latest
+  # INA228 conversion (no cross-sensor on_value ordering risk). Sampling at 1s
+  # matches the INA228 update rate — faster would only re-read the same value.
+  #
+  # ri_prev_* updated EVERY tick so the "before" sample is always the prior second.
+  # Reset to NAN on FAULT/stale-bus or NaN so no step is computed across a gap.
+  # --------------------------------------------------------------------------
+  - interval: 1s
+    then:
+      - lambda: |-
+          float i_now = id(ina228_current).state;
+          float v_now = id(ina228_voltage).state;
+
+          // FAULT / stale-bus or NaN: drop the history so the next valid tick
+          // cannot compute a phantom step across the gap.
+          bool stale = (millis() > 15000u) &&
+                       ((millis() - id(last_ina228_update)) > 10000u);
+          if (stale || isnan(i_now) || isnan(v_now)) {
+            id(ri_prev_i) = NAN;
+            id(ri_prev_v) = NAN;
+            return;
+          }
+
+          float i_prev = id(ri_prev_i);
+          float v_prev = id(ri_prev_v);
+          if (!isnan(i_prev) && !isnan(v_prev)) {
+            float di = i_now - i_prev;   // negative for a step into discharge (Option B)
+            float dv = v_now - v_prev;   // negative as voltage sags under the new load
+            // Qualify: before-state near rest AND a step deeper into discharge.
+            if (di <= -${ri_min_step_a}f && fabs(i_prev) <= ${ri_quiescent_a}f) {
+              float ri = (dv / di) * 1000.0f;   // mΩ; (−/−) → positive for a real resistive step
+              if (ri >= ${ri_min_mohm}f && ri <= ${ri_max_mohm}f) {
+                float t = id(battery_temp).state;   // °F — tag for trend normalization
+                id(ri_sample_count) += 1;
+                id(apparent_ri).publish_state(ri);
+                id(apparent_ri_temp).publish_state(t);   // NaN-safe: HA shows unavailable if no temp
+                ESP_LOGI("bank.ri",
+                  "Apparent Ri=%.3f mΩ | dV=%.1fmV dI=%.1fA | I_prev=%.2fA->I_now=%.2fA | T=%.1f°F | n=%d",
+                  ri, dv * 1000.0f, di, i_prev, i_now,
+                  isnan(t) ? -999.0f : t, id(ri_sample_count));
+              } else {
+                ESP_LOGD("bank.ri",
+                  "Ri step rejected (out of band): %.3f mΩ | dV=%.1fmV dI=%.1fA",
+                  ri, dv * 1000.0f, di);
+              }
+            }
+          }
+          id(ri_prev_i) = i_now;
+          id(ri_prev_v) = v_now;
+
+  # --------------------------------------------------------------------------
+  # 60-second health log — grep-friendly single-line diagnostic snapshot.
+  # All sign-independent: uses fabs(i) for power; SOC from Coulomb counter.
+  # --------------------------------------------------------------------------
+  - interval: 60s
+    then:
+      - lambda: |-
+          float v    = id(ina228_voltage).state;
+          float i    = id(ina228_current).state;
+          float soc  = id(soc_estimate).state;
+          float lout = id(ah_discharged_lifetime).state;
+          float lin  = id(ah_charged_lifetime).state;
+          if (!isnan(v) && !isnan(i)) {
+            std::string state = id(bank_state).has_state() ? id(bank_state).state : "?";
+            ESP_LOGI("bank",
+              "[%s] V=%.3fV I=%.3fA (%.1fW net) | SOC~%.1f%% | Lifetime: out=%.1fAh in=%.1fAh | Cycles: %d",
+              state.c_str(), v, i, v * fabs(i),
+              isnan(soc) ? -1.0f : soc,
+              isnan(lout) ? -1.0f : lout,
+              isnan(lin)  ? -1.0f : lin,
+              id(total_full_charge_count));
+          }
+
+
+# ============================================================================
+# SENSORS
+# ============================================================================
+sensor:
+
+  # --------------------------------------------------------------------------
+  # INA228 — Battery V / I / P
+  #
+  # Platform: ina2xx_i2c, model: INA228.
+  # Verify parameter names against https://esphome.io/components/sensor/ina2xx.html
+  #
+  # Shunt physics (cross-check before flash):
+  #   Resistance: 75 mV / 200 A = 0.000375 Ω = 375 µΩ ✓
+  #   At 80 A charge:   80 × 0.000375 =  30 mV drop (within ±163.84 mV) ✓
+  #   At 200 A discharge: 200 × 0.000375 = 75 mV drop (at ADC full scale) ✓
+  #   ADC range MUST be 0 (±163.84 mV) — range 1 (±40.96 mV) clips at ~109 A.
+  #
+  # Sign convention (Option B wiring — see header):
+  #   POSITIVE I = CHARGING; NEGATIVE I = DISCHARGING.
+  #
+  # Current accuracy at typical loads:
+  #   INA228 shunt quantization step: ~0.83 mA (312.5 nV LSB at ADCRANGE=0 ÷ 375 µΩ)
+  #     Datasheet: 312.5 nV/LSB (TI INA228 Table 8-1) — NOT 3.13 µV.
+  #     Quantization step is the floor; true RMS noise depends on conv. time / AVG.
+  #   At the 0.05 A threshold: ~60× the quantization step → no spurious-sign risk
+  #   Shunt ±1% tolerance: ±2 A absolute at 200 A (dominant at full scale)
+  #   For SOC integration at 10–50 A: ±0.4% full-scale — adequate for
+  #   capacity accounting. Run §7.1 calibration to reduce to ±0.1%.
+  # --------------------------------------------------------------------------
+  - platform: ina2xx_i2c
+    model: INA228
+    address: 0x40
+    shunt_resistance: 0.000375 ohm # Ω (375 µΩ = 75 mV / 200 A) — unit suffix required per ESPHome docs example
+    max_current: 200.0 A           # — unit suffix required per ESPHome docs example; sets INA228 LSB scaling
+    adc_range: 0                   # 0 = ±163.84 mV full scale (mandatory); 1 = ±40.96 mV (clips at ~109 A)
+    reset_on_boot: false           # Preserve INA228 internal energy/charge accumulators across reboot.
+                                   # Our SOC tracking uses ESPHome integration sensors (not INA228 hardware
+                                   # accumulators) — this setting does not affect primary SOC data.
+                                   # Set false for future-proofing if charge:/energy: sub-sensors are added.
+    # --- Conversion cadence pinned explicitly (V1.12) — do NOT rely on ESPHome defaults ---
+    # cycle = adc_averaging × (VSHCT + VBUSCT + VTCT) = 128 × (4120+4120+4120) µs ≈ 1.58 s
+    #   for one fresh averaged sample (3 channels: the temperature sub-sensor is configured).
+    # 128× averaging is retained deliberately: it holds the noise floor far below the
+    # 0.05 A threshold, which is what makes the ~100 mA self-draw capture and the sub-mAh
+    # self-discharge reconciliation clean. This bank's dynamics are slow (slope 60s, SOC
+    # 30s, alarms debounce 10–60s), so sub-second sampling buys nothing, and lowering the
+    # averaging to chase 1s would only raise noise on exactly those low-current paths.
+    # update_interval: 2s sits safely above the 1.58 s cycle, so every poll returns a
+    # genuinely fresh averaged sample (the old 1s polled mid-conversion ~40% of the time —
+    # harmless to the dt-based integrals, but the "1s native" comments were inaccurate).
+    adc_time: 4120us         # explicit (= current ESPHome default); per-channel ADC conversion time
+    adc_averaging: 128       # explicit (= current ESPHome default); samples averaged per reported value
+    update_interval: 2s      # ≥ the ~1.58 s averaged-conversion cycle (was 1s in ≤V1.11)
+    current:
+      name: "Battery Current"
+      id: ina228_current
+      unit_of_measurement: "A"
+      accuracy_decimals: 3
+      device_class: current
+      state_class: measurement
+      # No throttle_average — device update_interval (2s, ≥ the ~1.58 s averaged-conversion
+      # cycle) is the native rate. signed_power, discharge_current, and charge_current read
+      # this value while current (≤2s old) — far newer than any alarm debounce. At the 0.05A
+      # threshold the INA228 ~0.83mA quantization step (312.5nV LSB ÷ 375µΩ) poses no
+      # spurious-sign risk — the threshold is ~60× the step.
+      # Positive = charging; negative = discharging (Option B — see header)
+    bus_voltage:
+      name: "Battery Voltage"
+      id: ina228_voltage
+      unit_of_measurement: "V"
+      accuracy_decimals: 3
+      device_class: voltage
+      state_class: measurement
+      # Plausibility filter (V1.13): drop a bus-voltage reading outside [v_min, v_max].
+      # A dropped value is NOT published, so .state holds the last good value for that
+      # cycle (transient glitch rejected) AND on_value does not fire — so sustained
+      # garbage stops refreshing last_ina228_update and the watchdog trips FAULT at 10s.
+      # Every downstream consumer already guards stale/NaN, so this one filter protects
+      # them all (no false EMERGENCY from a stuck-low reading, no garbage on the dashboard).
+      filters:
+        - lambda: |-
+            if (x < ${v_min_plausible}f || x > ${v_max_plausible}f) return {};  // drop: out of physical range
+            return x;
+      # No throttle_average: device update_interval (2s) is the native rate. on_value
+      # updates the watchdog timestamp on every successful (in-range) read (~every 2s,
+      # well within the 10s fault threshold). Fault declared if no callback fires for >10s.
+      on_value:
+        - lambda: 'id(last_ina228_update) = millis();'
+    power:
+      name: "INA228 Power Register"
+      id: ina228_power
+      internal: true             # Magnitude only (always positive, W) — not exposed to HA.
+      unit_of_measurement: "W"   # signed_power template below adds direction and is the
+      accuracy_decimals: 1       # display-facing "Battery Power" sensor.
+      device_class: power
+      state_class: measurement
+      # No throttle_average — device update_interval (2s) native rate, so discharge_power
+      # and charge_power read a register value from the same conversion as the current sign.
+      # Power register LSB = 3.2 × CURRENT_LSB = 3.2 × 381.5µA ≈ 1.221mW.
+      # Quantisation error = ±0.61mW (constant, load-independent).
+      # vs V×I from averaged sensors: ±2.5mW at low loads, ±10mW at 80A.
+      # Improvement: 4× at low loads, 17× at 80A. See design notes.
+    temperature:
+      name: "INA228 Die Temperature"
+      id: ina228_die_temp
+      unit_of_measurement: "°C"
+      accuracy_decimals: 1
+      device_class: temperature
+      entity_category: diagnostic
+      filters:
+        - throttle_average: 60s
+
+  # --------------------------------------------------------------------------
+  # DS18B20 — Battery pack temperature (°F)
+  # Mount against battery case for representative cell temperature.
+  # --------------------------------------------------------------------------
+  - platform: dallas_temp
+    name: "Battery Pack Temperature"
+    id: battery_temp
+    update_interval: 60s
+    accuracy_decimals: 1
+    unit_of_measurement: "°F"
+    device_class: temperature
+    state_class: measurement
+    filters:
+      - filter_out: 85.0           # Reject DS18B20 power-on reset artefact (Celsius).
+                                   # NOTE: also drops a genuine 85.0°C reading — acceptable
+                                   # here (basement bank; 85°C = 185°F is far outside any
+                                   # plausible operating temp and would itself be a fault).
+      - filter_out: -127.0         # Reject DS18B20 short-to-ground failure (Celsius)
+      - lambda: return x * 1.8 + 32.0;
+
+  # --------------------------------------------------------------------------
+  # Discharge current magnitude (internal) — feeds Ah discharge integration.
+  #
+  # Option B: discharging = I negative (I < -0.05 A = discharge_threshold_a).
+  # Returns |I| = -i when discharging, 0 otherwise.
+  # 0.05 A threshold (50 mA) — ~60× the INA228 quantization step of ~0.83 mA, captures
+  # monitor self-consumption (~100 mA) that was invisible at the old 1 A deadband.
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Discharge Current Magnitude"
+    id: discharge_current
+    internal: true
+    unit_of_measurement: "A"
+    accuracy_decimals: 3
+    lambda: |-
+      float i = id(ina228_current).state;
+      // Stale-bus guard (V1.7): if no INA228 read for >10s (after the 15s boot
+      // grace), stop integrating. Otherwise a hung I2C bus leaves a cached non-NaN
+      // value here and the integration would accumulate phantom Ah against it — the
+      // exact failure the watchdog flags. integration_method:left + 0.0f = zero area.
+      if (millis() > 15000u && (millis() - id(last_ina228_update)) > 10000u) return 0.0f;
+      if (isnan(i) || fabsf(i) > ${i_max_plausible_a}f) return 0.0f;  // V1.13: freeze on implausible current (saturated/open Kelvin lead)
+      if (i > ${discharge_threshold_a}f) return 0.0f;
+      return -i;    // i is negative during discharge (Option B); -i gives positive magnitude
+    update_interval: 1s
+
+  # Discharge power magnitude (internal) — feeds Wh discharge integration.
+  # Source: INA228 POWER register (0x08), not V×I from averaged sensors.
+  # Register LSB ±0.61mW vs V×I ±2.5mW at low loads — 4× better at 100mA.
+  # Direction confirmed by ina228_current sign — current and power come from the same
+  # ~2s INA228 conversion (both updated together), so the sign matches the power sample.
+  - platform: template
+    name: "Discharge Power Magnitude"
+    id: discharge_power
+    internal: true
+    unit_of_measurement: "W"
+    accuracy_decimals: 1
+    lambda: |-
+      float i = id(ina228_current).state;
+      float p = id(ina228_power).state;
+      // Stale-bus guard (V1.7) — see discharge_current. Freeze Wh integration on FAULT.
+      if (millis() > 15000u && (millis() - id(last_ina228_update)) > 10000u) return 0.0f;
+      if (isnan(i) || isnan(p) || fabsf(i) > ${i_max_plausible_a}f) return 0.0f;  // V1.13: freeze on implausible current
+      if (i > ${discharge_threshold_a}f) return 0.0f;
+      return p;    // POWER register magnitude; direction (discharge) confirmed by i
+    update_interval: 1s
+
+  # --------------------------------------------------------------------------
+  # Watt-hour cycle counter (internal) — feeds mean discharge voltage calculation.
+  #
+  # mean_discharge_v = wh_discharged_cycle / ah_discharged_cycle  [Wh/Ah = V]
+  #
+  # This is the correct formula: (integral(V*I dt)) / (integral(I dt))
+  # = current-weighted mean voltage. Previous Vh/Ah = integral(V dt)/integral(I dt)
+  # has units V*h/A*h = V/A = ohms — dimensionally wrong.
+  # Example: 10A at 13.0V for 1h -> Wh=130, Ah=10, Wh/Ah=13.0V (correct).
+  #
+  # Source: discharge_power (POWER register magnitude, 0.0f when not discharging).
+  # integration_method: left eliminates phantom Wh from the 0→real transition.
+  # Reset at full charge alongside ah_discharged_cycle.
+  # --------------------------------------------------------------------------
+  - platform: integration
+    name: "Wh Discharged (This Cycle)"
+    id: wh_discharged_cycle
+    sensor: discharge_power
+    time_unit: h
+    unit_of_measurement: "Wh"
+    accuracy_decimals: 2
+    integration_method: left    # area = previous_value × dt; 0.0f source → 0 area always
+    state_class: measurement    # Resets at full charge — same as Ah cycle counters
+    restore: true
+
+  # --------------------------------------------------------------------------
+  # Charge current magnitude (internal) — feeds Ah charge integration.
+  #
+  # Option B: charging = I positive (I > +0.05 A = charge_threshold_a).
+  # Returns 0.0f when not charging; integration_method: left eliminates phantom Ah.
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Charge Current Magnitude"
+    id: charge_current
+    internal: true
+    unit_of_measurement: "A"
+    accuracy_decimals: 3
+    lambda: |-
+      float i = id(ina228_current).state;
+      // Stale-bus guard (V1.7) — see discharge_current. Freeze Ah integration on FAULT.
+      if (millis() > 15000u && (millis() - id(last_ina228_update)) > 10000u) return 0.0f;
+      if (isnan(i) || fabsf(i) > ${i_max_plausible_a}f) return 0.0f;  // V1.13: freeze on implausible current
+      if (i < ${charge_threshold_a}f) return 0.0f;
+      return i;    // i is positive during charging (Option B)
+    update_interval: 1s
+
+  # Charge power magnitude (internal) — feeds Wh charge integration.
+  # Source: INA228 POWER register (0x08), not V×I from averaged sensors.
+  - platform: template
+    name: "Charge Power Magnitude"
+    id: charge_power
+    internal: true
+    unit_of_measurement: "W"
+    accuracy_decimals: 1
+    lambda: |-
+      float i = id(ina228_current).state;
+      float p = id(ina228_power).state;
+      // Stale-bus guard (V1.7) — see discharge_current. Freeze Wh integration on FAULT.
+      if (millis() > 15000u && (millis() - id(last_ina228_update)) > 10000u) return 0.0f;
+      if (isnan(i) || isnan(p) || fabsf(i) > ${i_max_plausible_a}f) return 0.0f;  // V1.13: freeze on implausible current
+      if (i < ${charge_threshold_a}f) return 0.0f;
+      return p;    // POWER register magnitude; direction (charge) confirmed by i
+    update_interval: 1s
+
+  # --------------------------------------------------------------------------
+  # Signed Power — display-facing Battery Power sensor (panel ①).
+  # Combines the POWER register magnitude (±0.61mW LSB) with the current
+  # sensor sign. This is the correct instrument for dashboard power display:
+  #   Positive = charging (LiTime delivering power)
+  #   Negative = discharging (load drawing from bank)
+  #   Zero     = standby (|I| < 0.05A threshold)
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Battery Power"
+    id: signed_power
+    unit_of_measurement: "W"
+    accuracy_decimals: 1
+    device_class: power
+    state_class: measurement
+    lambda: |-
+      float p = id(ina228_power).state;
+      float i = id(ina228_current).state;
+      if (isnan(p) || isnan(i)) return NAN;
+      if (i < ${discharge_threshold_a}f) return -p;   // Discharging: negate magnitude
+      if (i > ${charge_threshold_a}f)    return  p;   // Charging: positive magnitude
+      return 0.0f;                                     // Standby: below threshold
+    update_interval: 1s
+
+  # --------------------------------------------------------------------------
+  # Coulomb / energy counters
+  #
+  # CYCLE counters (reset at each confirmed full charge — battery_fully_charged):
+  #   ah_discharged_cycle — Ah removed since last full charge.
+  #   ah_charged_cycle    — Ah returned since last full charge.
+  #                         Accumulates across multiple partial sessions;
+  #                         NOT reset on charge session start (is_charging on_press).
+  #   Together these give round-trip efficiency: Ah_out / Ah_in × 100%.
+  #
+  # LIFETIME counters (never auto-reset; manual button after bank swap):
+  #   ah/wh discharged and charged lifetime totals.
+  #
+  # restore: true — survive ESP reboot (the bank powers the monitor; a glitch
+  # reboot should not lose the Coulomb count mid-cycle).
+  # --------------------------------------------------------------------------
+
+  - platform: integration
+    name: "Ah Discharged (This Cycle)"
+    id: ah_discharged_cycle
+    sensor: discharge_current
+    time_unit: h
+    unit_of_measurement: "Ah"
+    accuracy_decimals: 2
+    integration_method: left    # area = previous_value × dt; 0.0f source → 0 area always
+    state_class: measurement          # Must be 'measurement', NOT 'total_increasing'.
+                                      # This counter resets to zero at each confirmed full charge.
+                                      # HA statistics treat total_increasing as a utility meter and
+                                      # flag the reset as an anomalous negative derivative, breaking
+                                      # the long-term sum. 'measurement' handles resets correctly.
+    restore: true
+
+  - platform: integration
+    name: "Ah Charged (This Cycle)"
+    id: ah_charged_cycle
+    sensor: charge_current
+    time_unit: h
+    unit_of_measurement: "Ah"
+    accuracy_decimals: 2
+    integration_method: left    # area = previous_value × dt; 0.0f source → 0 area always
+    state_class: measurement          # Same reasoning as ah_discharged_cycle above.
+    restore: true
+
+  # --- Intrinsic self-discharge model (V1.9 — inert at rate 0.0) -------------
+  # Equivalent constant current representing modeled intrinsic cell self-discharge
+  # (the component that bypasses the shunt). Integrated into self_discharge_ah and
+  # added to net_discharged in the SOC lambda. At self_discharge_pct_per_month=0.0
+  # this returns 0.0 A → integrates to 0 Ah → zero effect on SOC. Setting the
+  # substitution non-zero later activates it with no other code change.
+  # NOTE: deliberately a separate sensor, NOT folded into discharge_current, so the
+  # measured-current display and outage-energy records stay pure measurement.
+  - platform: template
+    name: "Self-Discharge Equivalent Current"
+    id: self_discharge_equiv_current
+    unit_of_measurement: "A"
+    accuracy_decimals: 4
+    icon: "mdi:battery-minus-outline"
+    entity_category: diagnostic
+    lambda: |-
+      // (rate%/month ÷ 100) × capacity_Ah ÷ 730.5 h/month = equivalent amps.
+      // 730.5 h = 30.4375 days × 24 h (mean month). Constant; 0.0 when rate is 0.
+      return (${self_discharge_pct_per_month}f / 100.0f)
+             * ${validated_capacity_ah}f / 730.5f;
+    update_interval: 60s
+
+  - platform: integration
+    name: "Self-Discharge Ah (This Cycle)"
+    id: self_discharge_ah
+    sensor: self_discharge_equiv_current
+    time_unit: h
+    unit_of_measurement: "Ah"
+    accuracy_decimals: 3
+    integration_method: left
+    state_class: measurement    # Resets at full charge alongside the cycle counters.
+    restore: true
+
+  # --- Per-outage energy (V1.9 — OBSERVABILITY) ------------------------------
+  # Reset at outage start (is_discharging on_press). Give live "this outage so far"
+  # Ah/Wh; the totals are frozen into last_outage_* globals at outage end.
+  # restore: true so a brownout-reboot mid-outage keeps accumulating rather than
+  # zeroing the in-progress event.
+  - platform: integration
+    name: "Outage Ah (This Event)"
+    id: outage_ah
+    sensor: discharge_current
+    time_unit: h
+    unit_of_measurement: "Ah"
+    accuracy_decimals: 2
+    integration_method: left
+    state_class: measurement
+    restore: true
+
+  - platform: integration
+    name: "Outage Wh (This Event)"
+    id: outage_wh
+    sensor: discharge_power
+    time_unit: h
+    unit_of_measurement: "Wh"
+    accuracy_decimals: 1
+    integration_method: left
+    state_class: measurement
+    restore: true
+
+  - platform: integration
+    name: "Ah Discharged (Lifetime)"
+    id: ah_discharged_lifetime
+    sensor: discharge_current
+    time_unit: h
+    unit_of_measurement: "Ah"
+    accuracy_decimals: 0
+    integration_method: left
+    state_class: total_increasing
+    restore: true
+
+  - platform: integration
+    name: "Wh Discharged (Lifetime)"
+    id: wh_discharged_lifetime
+    sensor: discharge_power
+    time_unit: h
+    unit_of_measurement: "Wh"
+    accuracy_decimals: 0
+    integration_method: left
+    state_class: total_increasing
+    restore: true
+
+  - platform: integration
+    name: "Ah Charged (Lifetime)"
+    id: ah_charged_lifetime
+    sensor: charge_current
+    time_unit: h
+    unit_of_measurement: "Ah"
+    accuracy_decimals: 0
+    integration_method: left
+    state_class: total_increasing
+    restore: true
+
+  - platform: integration
+    name: "Wh Charged (Lifetime)"
+    id: wh_charged_lifetime
+    sensor: charge_power
+    time_unit: h
+    unit_of_measurement: "Wh"
+    accuracy_decimals: 0
+    integration_method: left
+    state_class: total_increasing
+    restore: true
+
+  # --------------------------------------------------------------------------
+  # State of Charge — Coulomb-counted estimate (panel ②)
+  #
+  # Formula: SOC% = 100 − [(Ah_out − Ah_in) / validated_capacity_ah × 100]
+  #   Ah_out = ah_discharged_cycle (since last full charge anchor)
+  #   Ah_in  = ah_charged_cycle    (partial charges counted between full charges)
+  #
+  # Anchor: resets to 100% at each confirmed full charge (battery_fully_charged).
+  # Drift without anchor: ±5% over 2–3 weeks (shunt tolerance + integration).
+  #
+  # validated_capacity_ah = 397 Ah (Oct 2025 discharge test,
+  #   LiFePO4_Report_2026-03-06.md). Update if a subsequent D-test revises this.
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "State of Charge"
+    id: soc_estimate
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    icon: "mdi:battery"
+    device_class: battery
+    state_class: measurement
+    lambda: |-
+      float ah_out = id(ah_discharged_cycle).state;
+      float ah_in  = id(ah_charged_cycle).state;
+      if (isnan(ah_out) || isnan(ah_in)) return NAN;
+      // Modeled intrinsic self-discharge (V1.9). Integrates to 0 when the rate
+      // substitution is 0.0 (default) → no effect. NaN-guarded so a not-yet-
+      // initialised integration can't blank the SOC.
+      float sd = id(self_discharge_ah).state;
+      if (isnan(sd)) sd = 0.0f;
+      float net_discharged = ah_out - ah_in + sd;
+      // No clamp to 0 here. If ah_in > ah_out (partial charge returned more than
+      // was discharged since last full charge), net_discharged is negative, making
+      // soc > 100. The final clamp below handles it without creating a deadband.
+      // A premature 0 clamp creates a SOC dead zone at 100% equal to the surplus.
+      float soc = 100.0f - (net_discharged / ${validated_capacity_ah}f * 100.0f);
+      if (soc > 100.0f) soc = 100.0f;
+      if (soc <   0.0f) soc = 0.0f;
+      return soc;
+    update_interval: 30s
+
+  # --------------------------------------------------------------------------
+  # Runtime remaining — hours and days at current net discharge rate (panel ③)
+  # Returns NaN when not discharging (HA shows "unavailable" — correct).
+  # Optimistic below 12.40 V (cliff): treat any Cliff Imminent alarm as
+  # "discharge imminent within cliff duration — validate against report data".
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Runtime Remaining"
+    id: runtime_hours
+    unit_of_measurement: "h"
+    accuracy_decimals: 1
+    icon: "mdi:battery-clock"
+    lambda: |-
+      float i = id(ina228_current).state;
+      // Option B: discharging = I negative; not discharging if I > discharge_threshold
+      if (isnan(i) || i > ${discharge_threshold_a}f) return NAN;
+      float soc = id(soc_estimate).state;
+      if (isnan(soc) || soc <= 0.0f) return 0.0f;
+      float ah_remaining = (soc / 100.0f) * ${validated_capacity_ah}f;
+      float hours = ah_remaining / (-i);  // -i: negative discharge I → positive rate
+      // Cap at 720 h (30 days). At sub-100 mA loads the raw value can exceed 3000 h —
+      // correct arithmetic but meaningless precision at that timescale. Any display
+      // above 30 days conveys only "well provisioned"; the cap keeps HA history sane.
+      return (hours > 720.0f) ? 720.0f : hours;
+    update_interval: 60s
+
+  - platform: template
+    name: "Runtime Remaining Days"
+    id: runtime_days
+    unit_of_measurement: "days"
+    accuracy_decimals: 1
+    icon: "mdi:battery-clock"
+    lambda: |-
+      float h = id(runtime_hours).state;
+      if (isnan(h)) return NAN;
+      return h / 24.0f;
+    update_interval: 60s
+
+  # --------------------------------------------------------------------------
+  # Voltage slope (mV/min) — published by 60s interval above.
+  # Negative = falling voltage (discharge). Near zero at float/charge.
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Voltage Slope"
+    id: voltage_slope
+    unit_of_measurement: "mV/min"
+    accuracy_decimals: 2
+    icon: "mdi:trending-down"
+    state_class: measurement
+
+  # --------------------------------------------------------------------------
+  # Apparent Ri (V1.8 — PROVISIONAL) — published by the 1s Ri interval above.
+  # Event-published (no lambda here): holds the last qualified measurement until
+  # the next rest->discharge step. HA history records each update for SPC trending.
+  # Pair with "Apparent Ri Pack Temp" to normalize/band the trend by temperature.
+  # See the interval block and V1.8 changelog for method and validation TODOs.
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Apparent Ri"
+    id: apparent_ri
+    unit_of_measurement: "mΩ"
+    accuracy_decimals: 2
+    icon: "mdi:omega"
+    state_class: measurement
+    entity_category: diagnostic
+
+  - platform: template
+    name: "Apparent Ri Pack Temp"
+    id: apparent_ri_temp
+    unit_of_measurement: "°F"
+    accuracy_decimals: 1
+    icon: "mdi:thermometer"
+    device_class: temperature
+    state_class: measurement
+    entity_category: diagnostic
+
+  - platform: template
+    name: "Apparent Ri Sample Count"
+    accuracy_decimals: 0
+    icon: "mdi:counter"
+    entity_category: diagnostic
+    lambda: 'return (float)id(ri_sample_count);'
+    update_interval: 60s
+
+  # --------------------------------------------------------------------------
+  # Last full-charge cycle summary — persisted in globals (panel ⑥).
+  # NaN guard suppresses 0.0 display before first full charge completes.
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Last Cycle Ah Discharged"
+    unit_of_measurement: "Ah"
+    accuracy_decimals: 1
+    icon: "mdi:battery-arrow-down"
+    lambda: |-
+      float v = id(last_cycle_ah_out);
+      return (v > 0.0f) ? v : NAN;
+    update_interval: 60s
+
+  - platform: template
+    name: "Last Cycle Ah Charged"
+    unit_of_measurement: "Ah"
+    accuracy_decimals: 1
+    icon: "mdi:battery-charging"
+    lambda: |-
+      float v = id(last_cycle_ah_in);
+      return (v > 0.0f) ? v : NAN;
+    update_interval: 60s
+
+  - platform: template
+    name: "Last Coulombic Efficiency"
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    icon: "mdi:recycle"
+    lambda: |-
+      // Coulombic efficiency = Ah_out / Ah_in (NOT energy RTE = Wh_out/Wh_in).
+      float v = id(last_coulombic_eff);
+      return (v > 0.0f) ? v : NAN;
+    update_interval: 60s
+
+  # Peak LiTime CC current — declining trend over months = charger aging
+  - platform: template
+    name: "Last Charge Peak Current"
+    unit_of_measurement: "A"
+    accuracy_decimals: 1
+    icon: "mdi:flash"
+    device_class: current
+    entity_category: diagnostic
+    lambda: |-
+      float v = id(last_charge_peak_a);
+      return (v > 0.5f) ? v : NAN;
+    update_interval: 60s
+
+  # --------------------------------------------------------------------------
+  # Discharge cycle health metrics — aging indicators (panel ⑥)
+  # Both persisted in globals; NaN guard suppresses display before first full cycle.
+  #
+  # last_discharge_peak_a: magnitude of deepest discharge current last cycle.
+  #   Deepening trend = load growth or increasing internal resistance.
+  # last_discharge_mean_v: mean bus voltage during discharge last cycle.
+  #   Declining trend at fixed load = rising internal resistance (key aging metric).
+  #   Computed as integral(V dt) / integral(I dt) = volt-hours / amp-hours.
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Last Discharge Peak Current"
+    id: last_discharge_peak_a_sensor
+    unit_of_measurement: "A"
+    accuracy_decimals: 1
+    icon: "mdi:lightning-bolt"
+    device_class: current
+    entity_category: diagnostic
+    lambda: |-
+      float v = id(last_discharge_peak_a);
+      return (v > 0.1f) ? v : NAN;   // Positive magnitude stored; NaN until first cycle
+    update_interval: 60s
+
+  - platform: template
+    name: "Last Discharge Mean Voltage"
+    id: last_discharge_mean_v_sensor
+    unit_of_measurement: "V"
+    accuracy_decimals: 3
+    icon: "mdi:sine-wave"
+    device_class: voltage
+    entity_category: diagnostic
+    lambda: |-
+      float v = id(last_discharge_mean_v);
+      // Wh/Ah = current-weighted mean voltage. LiFePO4 plateau ~12.6-13.0V;
+      // guard >10V accepts any plausible discharge state.
+      return (v > 10.0f) ? v : NAN;
+    update_interval: 60s
+
+  - platform: template
+    name: "Total Full Charge Cycles"
+    accuracy_decimals: 0
+    icon: "mdi:counter"
+    entity_category: diagnostic
+    lambda: 'return (float)id(total_full_charge_count);'
+    update_interval: 60s
+
+  # --------------------------------------------------------------------------
+  # Last outage summary (V1.9 — OBSERVABILITY, panel: outage planning)
+  # Frozen at outage end (is_discharging on_release). NaN-guarded so HA shows
+  # "unavailable" before the first outage rather than a misleading 0.
+  # peak_w / avg_w answer "what can I run / what should I shed"; ah / wh / hours
+  # record the event size; total count + lifetime Ah/Wh build the long record.
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Last Outage Ah"
+    unit_of_measurement: "Ah"
+    accuracy_decimals: 2
+    icon: "mdi:battery-arrow-down"
+    entity_category: diagnostic
+    lambda: 'return (id(total_outage_count) > 0) ? id(last_outage_ah) : NAN;'
+    update_interval: 60s
+
+  - platform: template
+    name: "Last Outage Wh"
+    unit_of_measurement: "Wh"
+    accuracy_decimals: 1
+    icon: "mdi:lightning-bolt"
+    entity_category: diagnostic
+    lambda: 'return (id(total_outage_count) > 0) ? id(last_outage_wh) : NAN;'
+    update_interval: 60s
+
+  - platform: template
+    name: "Last Outage Peak Power"
+    unit_of_measurement: "W"
+    accuracy_decimals: 0
+    icon: "mdi:flash-alert"
+    device_class: power
+    entity_category: diagnostic
+    lambda: 'return (id(total_outage_count) > 0) ? id(last_outage_peak_w) : NAN;'
+    update_interval: 60s
+
+  - platform: template
+    name: "Last Outage Average Power"
+    unit_of_measurement: "W"
+    accuracy_decimals: 0
+    icon: "mdi:flash"
+    device_class: power
+    entity_category: diagnostic
+    lambda: 'return (id(total_outage_count) > 0) ? id(last_outage_avg_w) : NAN;'
+    update_interval: 60s
+
+  - platform: template
+    name: "Last Outage Duration"
+    unit_of_measurement: "h"
+    accuracy_decimals: 2
+    icon: "mdi:timer-outline"
+    entity_category: diagnostic
+    lambda: 'return (id(total_outage_count) > 0) ? id(last_outage_hours) : NAN;'
+    update_interval: 60s
+
+  - platform: template
+    name: "Total Outage Events"
+    accuracy_decimals: 0
+    icon: "mdi:counter"
+    entity_category: diagnostic
+    lambda: 'return (float)id(total_outage_count);'
+    update_interval: 60s
+
+  # --------------------------------------------------------------------------
+  # Self-discharge reconciliation result (V1.10 — OBSERVABILITY, logs/diagnostic).
+  # Surfaces the last clean-anchor measurement. These are RECOMMENDATIONS — they
+  # never auto-change SOC; apply by editing self_discharge_pct_per_month. NaN until
+  # the first measured bracket (two clean anchors) completes.
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Last Unseen Drain"
+    unit_of_measurement: "Ah"
+    accuracy_decimals: 2
+    icon: "mdi:battery-alert-variant-outline"
+    entity_category: diagnostic
+    lambda: 'return (id(last_anchor_epoch) != 0 && id(last_recommended_sd_rate) != 0.0f) ? id(last_unseen_drain_ah) : NAN;'
+    update_interval: 300s
+
+  - platform: template
+    name: "Recommended Self-Discharge Rate"
+    unit_of_measurement: "%/mo"
+    accuracy_decimals: 2
+    icon: "mdi:battery-clock-outline"
+    entity_category: diagnostic
+    lambda: 'return (id(last_recommended_sd_rate) != 0.0f) ? id(last_recommended_sd_rate) : NAN;'
+    update_interval: 300s
+
+  # --- ESP diagnostics -------------------------------------------------------
+  - platform: uptime
+    name: "Uptime"
+    id: device_uptime
+    update_interval: 60s
+
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    id: wifi_rssi
+    update_interval: 60s
+
+  - platform: internal_temperature
+    name: "ESP32 Internal Temperature"
+    update_interval: 60s
+
+
+# ============================================================================
+# TEXT SENSORS
+# ============================================================================
+text_sensor:
+
+  # --------------------------------------------------------------------------
+  # Bank State — unified state machine for HA automations (panel ①)
+  #
+  # Supersedes "Operating Mode". Use bank_state as the single automation
+  # trigger entity for all operational decisions in Home Assistant.
+  #
+  # Priority order (first match wins):
+  #   FAULT           : no INA228 read >10s — all values unreliable
+  #   OVERVOLTAGE     : V > 14.80V AND charging — stuck/runaway charger
+  #   EMERGENCY       : V < 11.80V AND discharging — shut down inverter NOW
+  #   CRITICAL        : V < 12.20V AND discharging — shed non-essential loads
+  #   WARNING         : V < 12.40V AND discharging — notify; review load shedding
+  #   CHARGING_ABSORPT: V >= 14.20V AND I > 0 (LiTime CV absorption)
+  #   CHARGING_BULK   : I > 5A AND V < 14.20V (LiTime CC bulk phase)
+  #   HEAVY_LOAD      : I < -50A (high draw — runtime alert warranted)
+  #   DISCHARGING     : I < -0.05A (normal net discharge)
+  #   CHARGING        : I > +0.05A below bulk threshold (partial/trickle charge)
+  #   IDLE            : |I| < 0.05A (near-zero net current, bank at rest)
+  #
+  # V1.7: the three low-voltage tiers now match the Voltage Warning/Critical/
+  # Emergency binary sensors exactly (was a single "CRITICAL" at the 12.40V
+  # WARNING threshold, with no emergency state). bank_state can now drive the
+  # full three-tier HA chain directly, consistent with the binary sensors.
+  # OVERVOLTAGE added to catch a charger that stops regulating.
+  #
+  # Watchdog: suppressed first 15s on boot (INA228 init window).
+  # Gap threshold: >10s without a bus_voltage on_value callback = FAULT.
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Bank State"
+    id: bank_state
+    icon: "mdi:state-machine"
+    lambda: |-
+      float i      = id(ina228_current).state;
+      float v      = id(ina228_voltage).state;
+      // FAULT: watchdog. uint32_t subtraction is natively wrap-safe.
+      // Boot guard: millis() < 15000u suppresses during INA228 init window.
+      // No NaN sentinel: last_ina228_update is uint32_t, initial value 0;
+      // if INA228 never initialises, watchdog fires correctly after boot grace.
+      bool fault = (millis() > 15000u) &&
+                   ((millis() - id(last_ina228_update)) > 10000u);
+      // V1.13: an implausible current magnitude (saturated/garbage channel, e.g. an
+      // open Kelvin sense lead railing the differential input) also forces FAULT, so the
+      // operator's primary state indicator reads FAULT (= do not trust SOC). The
+      // voltage side needs no explicit bound here: out-of-range V is drop-filtered at
+      // the sub-sensor, so ina228_voltage.state is always plausible-or-stale, and a
+      // sustained drop is caught by the stale-bus watchdog above.
+      if (fault || isnan(i) || isnan(v) ||
+          fabsf(i) > ${i_max_plausible_a}f)      return std::string("FAULT");
+
+      // OVERVOLTAGE: charger not regulating (stuck/runaway). Check before charge
+      // states so a runaway charger is never mislabeled CHARGING_ABSORPT.
+      if (v > ${overvoltage_threshold}f &&
+          i > ${charge_threshold_a}f)             return std::string("OVERVOLTAGE");
+
+      // Low-voltage alarm tiers during net discharge — most severe first.
+      // Thresholds match the Voltage Emergency/Critical/Warning binary sensors.
+      if (v < ${emergency_voltage}f &&
+          i < ${discharge_threshold_a}f)          return std::string("EMERGENCY");
+      if (v < ${critical_voltage}f &&
+          i < ${discharge_threshold_a}f)          return std::string("CRITICAL");
+      if (v < ${warning_voltage}f &&
+          i < ${discharge_threshold_a}f)          return std::string("WARNING");
+
+      // Charge states (absorption before bulk — voltage takes priority)
+      if (v >= ${full_charge_v_min}f &&
+          i > ${charge_threshold_a}f)             return std::string("CHARGING_ABSORPT");
+      if (i > ${bulk_charge_threshold_a}f &&
+          v < ${full_charge_v_min}f)              return std::string("CHARGING_BULK");
+
+      // Discharge states
+      if (i < ${heavy_load_threshold_a}f)         return std::string("HEAVY_LOAD");
+      if (i < ${discharge_threshold_a}f)          return std::string("DISCHARGING");
+
+      // Low-rate charging below bulk threshold
+      if (i > ${charge_threshold_a}f)             return std::string("CHARGING");
+
+      return                                             std::string("IDLE");
+    update_interval: 5s
+    on_value:
+      - lambda: |-
+          ESP_LOGI("bank.state", "State -> %s | V=%.3fV I=%.3fA",
+                   x.c_str(), id(ina228_voltage).state, id(ina228_current).state);
+
+  # --------------------------------------------------------------------------
+  # Discharge Phase — 5-state machine (panel ④)
+  #
+  # Option B: "not discharging" = I > discharge_threshold_a (i.e., I > -0.05 A).
+  # Phase boundaries are voltage-based (chemistry) — same as ups-monitor.yaml V1.3.
+  # TODO: validate plateau_min_v (12.65 V) and knee_min_v (12.40 V) against
+  # the full discharge curve in LiFePO4_Report_2026-03-06.md.
+  #
+  # Phase durations at 10 A (397 Ah bank): plateau ~35+ h, knee ~9 h, cliff TBD.
+  # Phase durations at ~100 A inverter load: roughly 10× UPS-monitor timings.
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Discharge Phase"
+    id: discharge_phase
+    icon: "mdi:battery-arrow-down"
+    lambda: |-
+      float i = id(ina228_current).state;
+      float v = id(ina228_voltage).state;
+      if (isnan(i) || isnan(v))                return std::string("Unknown");
+      if (i > ${discharge_threshold_a}f)       return std::string("N/A");    // Not discharging
+      if (v > ${settling_min_v}f)              return std::string("Settling");
+      if (v > ${plateau_min_v}f)              return std::string("Plateau");
+      if (v > ${knee_min_v}f)                  return std::string("Knee");
+      return                                          std::string("Cliff");
+    update_interval: 30s    // 30s debounce — bank voltage transitions are slow
+    on_value:
+      - lambda: |-
+          float i = id(ina228_current).state;
+          if (i < ${discharge_threshold_a}f)  // Only log during active discharge
+            ESP_LOGI("bank.phase", "Phase -> %s | V=%.3fV I=%.3fA | SOC~%.1f%% | Cycle Ah_out=%.2f",
+                     x.c_str(), id(ina228_voltage).state, i,
+                     id(soc_estimate).state, id(ah_discharged_cycle).state);
+
+  - platform: version
+    name: "ESPHome Version"
+
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+    ssid:
+      name: "WiFi SSID"
+    mac_address:
+      name: "MAC Address"
+
+
+# ============================================================================
+# BINARY SENSORS
+# ============================================================================
+binary_sensor:
+
+  # --------------------------------------------------------------------------
+  # GPIO20 — internal pullup clamp (V1.11)
+  # Position 5 of U2 (silk "ALT" on the INA260 footprint) routes to GPIO20 via R2.
+  # Hardware as-built for INA228 use: U2 pin 5 LIFTED (VBUS isolated from PCB),
+  # R2 DNP. The trace to GPIO20 is genuinely floating with no signal source.
+  # Enable the ESP32-C3 internal pullup to clamp the pin to a defined level —
+  # prevents indeterminate input voltage and the small switching current that
+  # floating CMOS inputs draw. internal: true keeps it out of HA.
+  # --------------------------------------------------------------------------
+  - platform: gpio
+    id: gpio20_unused
+    internal: true
+    pin:
+      number: GPIO20
+      mode:
+        input: true
+        pullup: true
+
+  # --------------------------------------------------------------------------
+  # Discharging — net discharge > 0.05 A sustained 30 s.
+  # Option B: I < discharge_threshold_a (i.e., I < -0.05 A).
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Discharging"
+    id: is_discharging
+    icon: "mdi:battery-arrow-down-outline"
+    lambda: |-
+      return id(ina228_current).state < ${discharge_threshold_a}f;
+    filters:
+      - delayed_on:  30s
+      - delayed_off: 60s
+    on_press:
+      - lambda: |-
+          // discharge_peak_a_raw is NOT reset here — it is cycle-level (reset at
+          // full charge), accumulating the worst-case peak across all discharge
+          // sessions since the last full charge. This gives a cycle-level stress metric.
+          // Clear any pending absorption flag (V1.7): a confirmed 30s discharge means
+          // the bank has left the full/absorption state, so the flag must not persist
+          // to falsely anchor a later partial charge to 100%.
+          if (id(absorption_reached)) {
+            id(absorption_reached) = false;
+            ESP_LOGD("bank", "Discharge started — cleared stale absorption_reached flag");
+          }
+          // Outage event start (V1.9): a sustained discharge on this backup bank is
+          // an outage (or a deliberate test). Mark start time and zero the per-event
+          // peak; the Ah/Wh integrations are reset by the action below.
+          id(outage_active_ms) = millis();
+          id(outage_peak_w) = 0.0f;
+          ESP_LOGI("bank",
+            "Discharge session started | V=%.3fV | SOC~%.1f%% | Cycle Ah_out so far: %.2f",
+            id(ina228_voltage).state,
+            id(soc_estimate).state,
+            id(ah_discharged_cycle).state);
+      - sensor.integration.reset: outage_ah
+      - sensor.integration.reset: outage_wh
+    on_release:
+      - lambda: |-
+          // Outage event end (V1.9): freeze the per-event summary for planning.
+          // Duration via millis() delta (uint32 wrap-safe; an outage is « 49 days).
+          float hours = (float)(millis() - id(outage_active_ms)) / 3600000.0f;
+          float ah = id(outage_ah).state;
+          float wh = id(outage_wh).state;
+          if (isnan(ah)) ah = 0.0f;
+          if (isnan(wh)) wh = 0.0f;
+          float avg_w = (hours > 0.0027f) ? (wh / hours) : 0.0f;   // >~10s to avoid div blowup
+          id(last_outage_ah)     = ah;
+          id(last_outage_wh)     = wh;
+          id(last_outage_peak_w) = id(outage_peak_w);
+          id(last_outage_avg_w)  = avg_w;
+          id(last_outage_hours)  = hours;
+          id(total_outage_count)++;
+          ESP_LOGI("bank.outage",
+            "OUTAGE #%d ended | %.2f h | Ah=%.2f Wh=%.1f | peak=%.0fW avg=%.0fW | V=%.3fV SOC~%.1f%%",
+            id(total_outage_count), hours, ah, wh,
+            id(outage_peak_w), avg_w,
+            id(ina228_voltage).state, id(soc_estimate).state);
+
+  # --------------------------------------------------------------------------
+  # Charging — LiTime delivering > 0.05 A sustained 30 s.
+  # Option B: I > charge_threshold_a (i.e., I > +0.05 A).
+  #
+  # on_press: record session start voltage; reset peak tracker.
+  # NOTE: ah_charged_cycle is NOT reset here — it accumulates across all charge
+  # sessions since the last full charge. Reset only in battery_fully_charged.
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Charging"
+    id: is_charging
+    device_class: battery_charging
+    lambda: |-
+      return id(ina228_current).state > ${charge_threshold_a}f;
+    filters:
+      - delayed_on:  30s
+      - delayed_off: 60s
+    on_press:
+      - lambda: |-
+          id(charge_session_start_v) = id(ina228_voltage).state;
+          id(charge_peak_a_raw)      = 0.0f;   // Reset; 5s interval seeds peak from CC phase
+          ESP_LOGI("bank",
+            "Charge session started | V_start=%.3fV | SOC~%.1f%% | Cycle Ah_in so far: %.2f",
+            id(ina228_voltage).state,
+            id(soc_estimate).state,
+            id(ah_charged_cycle).state);
+    on_release:
+      # Full-charge event fires HERE (not in absorption_phase on_press) so that
+      # it triggers on the charger-stop edge regardless of when the voltage sags.
+      # absorption_reached is set by the absorption_phase binary sensor; once set
+      # it persists until this on_release fires and clears it.
+      then:
+        - if:
+            condition:
+              lambda: |-
+                // Guard: if net current is below -1.0A at charger-stop, a heavy load
+                // overpowered the charger rather than the charger completing normally.
+                // At a genuine LiTime absorption completion, current tapers to near-zero
+                // before the charger stops — net current should be > -1.0A at that point.
+                // Threshold -1.0A gives 1A headroom for minor standby loads (monitor
+                // self-consumption ~0.1A is well clear of this guard).
+                if (id(ina228_current).state < -1.0f) return false;
+                return id(absorption_reached);
+            then:
+              - lambda: |-
+                  id(absorption_reached) = false;  // Clear before any yields
+                  float ah_in  = id(ah_charged_cycle).state;
+                  float ah_out = id(ah_discharged_cycle).state;
+                  // Coulombic efficiency = Ah_out / Ah_in × 100%. Healthy LiFePO4: ~99%+.
+                  // (This is NOT energy round-trip efficiency = Wh_out/Wh_in.)
+                  // Guard: require > 10 Ah in and > 0 Ah out to avoid noise artifacts.
+                  float coul_eff = (ah_in > 10.0f && ah_out > 0.0f)
+                                ? (ah_out / ah_in) * 100.0f : 0.0f;
+                  // Discharge cycle health metrics
+                  float peak_discharge = -id(discharge_peak_a_raw);  // stored negative; expose as positive magnitude
+                  float wh_cyc = id(wh_discharged_cycle).state;
+                  // Wh/Ah = current-weighted mean voltage (correct).
+                  // Vh/Ah = time-averaged voltage (wrong — units are V*h/A*h = ohms).
+                  float mean_v = (ah_out > 1.0f && !isnan(wh_cyc) && wh_cyc > 0.0f)
+                                   ? (wh_cyc / ah_out) : 0.0f;
+                  id(last_discharge_peak_a)     = peak_discharge;
+                  id(last_discharge_mean_v)     = mean_v;
+                  // Charge cycle summary
+                  id(last_cycle_ah_in)          = ah_in;
+                  id(last_cycle_ah_out)         = ah_out;
+                  id(last_coulombic_eff)        = coul_eff;
+                  id(last_charge_peak_a)        = id(charge_peak_a_raw);
+                  id(total_full_charge_count)++;
+                  // Reset cycle-level discharge tracker for next cycle
+                  id(discharge_peak_a_raw) = 0.0f;
+                  ESP_LOGI("bank",
+                    "FULL CHARGE #%d | Ah_out=%.2f Ah_in=%.2f | CoulEff=%.1f%% | mean_V=%.3fV | peak_dis=%.1fA | V=%.3fV | chrg_peak=%.1fA",
+                    id(total_full_charge_count), ah_out, ah_in, coul_eff, mean_v, peak_discharge,
+                    id(ina228_voltage).state, id(charge_peak_a_raw));
+
+                  // ---- Self-discharge reconciliation (V1.10 — OBSERVABILITY, logs only) ----
+                  // U = unseen drain = (recon_coul_eff × ah_in) − ah_out  [DC Ah that left
+                  // the bank without crossing the shunt: intrinsic self-discharge + any
+                  // INA228 offset]. Working in Ah cancels charger efficiency and the
+                  // charge/discharge voltage gap; only the fixed ~1% coulombic term remains.
+                  // CLEAN bracket: this anchor is absorption-confirmed (then-branch), and the
+                  // prior epoch is only ever written from this same branch, so both ends are
+                  // clean. Writes NOTHING to SOC — logs a recommended rate for the human.
+                  //
+                  // EPOCH DISCIPLINE: last_anchor_epoch is updated on EVERY clean anchor that
+                  // has valid time, even when the U calc is skipped (gate/first-anchor). This
+                  // prevents a later measurement from spanning two intervals (double-count) if
+                  // a clean-but-small top-up occurs between two larger ones.
+                  if (id(ha_time).now().is_valid()) {
+                    uint32_t now_epoch = (uint32_t) id(ha_time).now().timestamp;
+                    uint32_t prev = id(last_anchor_epoch);
+                    if (prev != 0u && now_epoch > prev && ah_in >= ${recon_min_ah_in}f) {
+                      float days = (float)(now_epoch - prev) / 86400.0f;
+                      float U = ${recon_coul_eff}f * ah_in - ah_out;   // unseen drain, Ah
+                      // Per-measurement uncertainty (1σ, Ah): shunt ±1% on both integrals
+                      // + coulombic-efficiency uncertainty (~±0.5%) on the charge term.
+                      // These scale with charge size; INA228 offset (~mAh) is negligible.
+                      float sigma = sqrtf(
+                          (0.01f*ah_in)*(0.01f*ah_in)
+                        + (0.01f*ah_out)*(0.01f*ah_out)
+                        + (0.005f*ah_in)*(0.005f*ah_in));
+                      float rate = (days > 0.5f)
+                        ? (U / ${validated_capacity_ah}f) * 100.0f * (30.4375f / days)
+                        : 0.0f;
+                      id(last_unseen_drain_ah)     = U;
+                      id(last_recommended_sd_rate) = rate;
+                      const char* quality =
+                        (days < 14.0f) ? "LOW-CONFIDENCE (short interval)" :
+                        (fabsf(U) < 2.0f*sigma) ? "NOISE-LIMITED (U within 2sigma)" : "OK";
+                      ESP_LOGI("bank.recon",
+                        "RECON | U=%.2f Ah (±%.2f 1sigma) over %.1f d | suggest self_discharge_pct_per_month = %.2f | quality: %s",
+                        U, sigma, days, rate, quality);
+                      ESP_LOGI("bank.recon",
+                        "  (current substitution = %.2f %%/mo; edit to apply — SOC not auto-changed)",
+                        ${self_discharge_pct_per_month}f);
+                    } else if (prev == 0u) {
+                      ESP_LOGI("bank.recon",
+                        "Reconciliation seeded at first clean anchor; need a second to measure U.");
+                    } else if (ah_in < ${recon_min_ah_in}f) {
+                      ESP_LOGD("bank.recon",
+                        "Recon U skipped: ah_in %.1f < gate %.1f Ah (epoch still advanced).",
+                        ah_in, ${recon_min_ah_in}f);
+                    } else {
+                      ESP_LOGW("bank.recon",
+                        "Recon U skipped: non-monotonic time (now <= prior anchor).");
+                    }
+                    // Always advance the bracket start to this clean anchor.
+                    id(last_anchor_epoch) = now_epoch;
+                  } else {
+                    ESP_LOGW("bank.recon",
+                      "Reconciliation skipped: HA time not synced; last_anchor_epoch unchanged.");
+                  }
+              # Reset cycle counters — SOC anchored to 100%
+              - sensor.integration.reset: ah_discharged_cycle
+              - sensor.integration.reset: ah_charged_cycle
+              - sensor.integration.reset: wh_discharged_cycle
+              - sensor.integration.reset: self_discharge_ah   # V1.9: clear modeled SD at anchor
+            else:
+              - lambda: |-
+                  // Partial charge session — absorption was not confirmed (or absorption
+                  // WAS reached but a heavy load drove net current < -1.0A at charger-stop,
+                  // tripping the guard). Either way, clear the flag here so it cannot
+                  // survive to falsely anchor a later, unrelated partial charge to 100%.
+                  bool was_set = id(absorption_reached);
+                  id(absorption_reached) = false;
+                  // Counters accumulate; SOC reflects actual partial charge returned. No anchor reset.
+                  ESP_LOGI("bank",
+                    "Charge session ended (no full-charge anchor) | absorption_reached was %s, now cleared | V_end=%.3fV | Ah_in_cumulative=%.2f | Peak=%.1fA",
+                    was_set ? "true" : "false",
+                    id(ina228_voltage).state,
+                    id(ah_charged_cycle).state,
+                    id(charge_peak_a_raw));
+
+  # --------------------------------------------------------------------------
+  # Voltage Warning — 12.40 V during net discharge (1-min sustained).
+  # HA automation: push notification; review load shedding options.
+  # Reference: chemistry threshold matches ups-monitor.yaml validated value.
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Voltage Warning"
+    id: voltage_warning
+    device_class: problem
+    lambda: |-
+      return id(ina228_voltage).state < ${warning_voltage}f &&
+             id(ina228_current).state < ${discharge_threshold_a}f;
+    filters:
+      - delayed_on: 60s
+    on_press:
+      - lambda: |-
+          ESP_LOGW("bank.alarm",
+            "VOLTAGE WARNING: %.3fV < %.2fV | I=%.3fA | SOC~%.1f%% | Ah_out_cycle=%.2f",
+            id(ina228_voltage).state, ${warning_voltage}f,
+            id(ina228_current).state, id(soc_estimate).state,
+            id(ah_discharged_cycle).state);
+
+  # --------------------------------------------------------------------------
+  # Voltage Critical — 12.20 V during net discharge (30 s sustained).
+  # HA automation: shed non-essential loads via Kasa smart plug automations.
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Voltage Critical"
+    id: voltage_critical
+    device_class: problem
+    lambda: |-
+      return id(ina228_voltage).state < ${critical_voltage}f &&
+             id(ina228_current).state < ${discharge_threshold_a}f;
+    filters:
+      - delayed_on: 30s
+    on_press:
+      - lambda: |-
+          ESP_LOGE("bank.alarm",
+            "VOLTAGE CRITICAL: %.3fV | TRIGGER HA LOAD SHEDDING | I=%.3fA | SOC~%.1f%%",
+            id(ina228_voltage).state, id(ina228_current).state,
+            id(soc_estimate).state);
+
+  # --------------------------------------------------------------------------
+  # Voltage Emergency — 11.80 V during net discharge (10 s sustained).
+  # HA automation: immediately shut down inverter via smart plug.
+  # Inverter internal LVC and BMS cell protection are imminent at this level.
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Voltage Emergency"
+    id: voltage_emergency
+    device_class: problem
+    lambda: |-
+      return id(ina228_voltage).state < ${emergency_voltage}f &&
+             id(ina228_current).state < ${discharge_threshold_a}f;
+    filters:
+      - delayed_on: 10s    // Fast response — hardware protection imminent
+    on_press:
+      - lambda: |-
+          ESP_LOGE("bank.alarm",
+            "VOLTAGE EMERGENCY: %.3fV | SHUT DOWN INVERTER | I=%.3fA | SOC~%.1f%%",
+            id(ina228_voltage).state, id(ina228_current).state,
+            id(soc_estimate).state);
+
+  # --------------------------------------------------------------------------
+  # Battery Overvoltage — V > 14.80 V while charging (15 s sustained).
+  # A healthy LiTime never exceeds its 14.60 V CV setpoint; sustained operation
+  # above overvoltage_threshold while charging means the charger has stopped
+  # regulating (stuck/runaway). HA automation: cut charger via smart plug, notify.
+  # Requires charging direction (I > +0.05 A) so a transient measurement spike at
+  # zero current cannot trip it. 15 s clears any brief CC→CV overshoot.
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Battery Overvoltage"
+    id: battery_overvoltage
+    device_class: problem
+    lambda: |-
+      return id(ina228_voltage).state > ${overvoltage_threshold}f &&
+             id(ina228_current).state > ${charge_threshold_a}f;
+    filters:
+      - delayed_on: 15s
+    on_press:
+      - lambda: |-
+          ESP_LOGE("bank.alarm",
+            "BATTERY OVERVOLTAGE: %.3fV > %.2fV while charging | CUT CHARGER | I=%.3fA",
+            id(ina228_voltage).state, ${overvoltage_threshold}f,
+            id(ina228_current).state);
+    on_release:
+      - lambda: |-
+          ESP_LOGI("bank.alarm", "Overvoltage cleared | V=%.3fV", id(ina228_voltage).state);
+  #
+  # Three simultaneous conditions required to fire:
+  #   1. Confirmed discharge: I < discharge_threshold_a (I < -0.05 A)
+  #   2. Voltage in the correct phase territory (below plateau_min_v guard)
+  #   3. EMA slope below threshold
+  #
+  # The voltage guard (condition 2) is the primary false-trigger prevention:
+  # OCV settling after discharge onset keeps V above 12.65 V throughout —
+  # neither alarm can fire during settling regardless of slope magnitude.
+  # Same logic and thresholds as ups-monitor.yaml V1.1+ (validated in field).
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Knee Approaching"
+    id: knee_approaching
+    device_class: problem
+    lambda: |-
+      float slope = id(voltage_slope).state;
+      float v     = id(ina228_voltage).state;
+      float i     = id(ina228_current).state;
+      if (isnan(slope) || isnan(v) || isnan(i)) return false;
+      if (i > ${discharge_threshold_a}f) return false;   // Not discharging (Option B)
+      if (v >= ${plateau_min_v}f) return false;           // Above knee territory
+      return slope < ${knee_slope_threshold}f;
+    filters:
+      - delayed_on:  120s
+      - delayed_off:  30s
+
+  - platform: template
+    name: "Cliff Imminent"
+    id: cliff_imminent
+    device_class: problem
+    lambda: |-
+      float slope = id(voltage_slope).state;
+      float v     = id(ina228_voltage).state;
+      float i     = id(ina228_current).state;
+      if (isnan(slope) || isnan(v) || isnan(i)) return false;
+      if (i > ${discharge_threshold_a}f) return false;   // Not discharging (Option B)
+      if (v >= ${plateau_min_v}f) return false;           // Not below plateau
+      return slope < ${cliff_slope_threshold}f;
+    filters:
+      - delayed_on:  60s
+      - delayed_off: 30s
+
+  # --------------------------------------------------------------------------
+  # Absorption Phase — LiTime charger in CV absorption (panel ⑥).
+  #
+  # Sets the absorption_reached flag used by is_charging on_release to
+  # recognise a full-charge event. This separation is necessary because the
+  # LiTime charger may cut off sharply when taper current hits its internal
+  # threshold: the bus voltage immediately sags from 14.6 V to ~13.3 V OCV,
+  # causing V to drop below any absorption-voltage gate before a long
+  # delayed_on window can close. By detecting absorption DURING the CV phase
+  # (not at its very end) and using the charger-stop edge as the trigger, we
+  # reliably capture every full-charge completion regardless of cutoff speed.
+  #
+  # Trigger: V ≥ 14.2 V AND I > 0 (charging) sustained 60 s.
+  #   14.2 V is below the 14.6 V absorption setpoint but well above the normal
+  #   resting OCV (~13.26 V), so it can only be sustained during CV absorption.
+  #   No upper current bound needed: at ≥ 14.2 V the charger is necessarily in
+  #   CV mode (CC phase keeps V rising — it can only sustain ≥ 14.2 V in CV).
+  #   60 s window eliminates any brief overshoot at the CC→CV transition.
+  #
+  # The actual full-charge event (RTE, counter reset, log) fires in
+  # is_charging on_release once absorption_reached is true.
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Absorption Phase"
+    id: battery_fully_charged
+    icon: "mdi:battery-charging-100"
+    lambda: |-
+      float v = id(ina228_voltage).state;
+      float i = id(ina228_current).state;
+      if (isnan(v) || isnan(i)) return false;
+      return v >= ${full_charge_v_min}f && i > 0.0f;   // In CV absorption (Option B: I > 0 = charging)
+    filters:
+      - delayed_on:  60s    # 60 s sustained at absorption voltage → confirmed CV phase
+      - delayed_off: 30s
+    on_press:
+      - lambda: |-
+          id(absorption_reached) = true;
+          ESP_LOGI("bank",
+            "Absorption phase confirmed | V=%.3fV I=%.3fA | absorption_reached set",
+            id(ina228_voltage).state, id(ina228_current).state);
+    on_release:
+      - lambda: |-
+          // Absorption phase ended without the charger stopping (e.g., V sagged below
+          // 14.2 V while charger still ran). Flag preserved — is_charging on_release
+          // will still catch the full-charge event when the session ends.
+          ESP_LOGD("bank",
+            "Absorption phase sensor released | V=%.3fV | absorption_reached=%s",
+            id(ina228_voltage).state, id(absorption_reached) ? "true" : "false");
+
+  # --- Sensor health ---------------------------------------------------------
+  # --------------------------------------------------------------------------
+  # INA228 Watchdog — stale-data fault detector.
+  #
+  # The ESPHome ina2xx_i2c component publishes NaN on a failed I2C read, and
+  # our templates guard NaN (integrations stop, binary sensors return false).
+  # That path is safe. The watchdog addresses the silent-stale failure mode:
+  # a hung I2C bus where the component stops calling back entirely, leaving
+  # the last published value cached indefinitely in id().state.
+  #
+  # Mechanism: bus_voltage on_value stores millis() into last_ina228_update on
+  # every successful 1s read. Fault fires if the gap exceeds 10,000ms (10s).
+  # Uses millis() not device_uptime (60s sensor) to achieve true 10s resolution.
+  # uint32_t subtraction in the lambda is wrap-safe at the 49-day millis() rollover.
+  #
+  # Boot guard: watchdog suppressed for first 15s (INA228 needs ~100ms to init;
+  # the 15s window covers any slow ESPHome component startup sequence).
+  # last_ina228_update is uint32_t initialised to 0 (NOT NaN — corrected V1.12 to match
+  # the lambda). The 15s boot guard above prevents a spurious FAULT before the first read:
+  # at init last_ina228_update=0, but millis()<15000 returns false until the grace expires,
+  # by which time a healthy INA228 has refreshed the timestamp.
+  #
+  # Effect when FAULT: bank_state returns "FAULT", HA automation alert fires,
+  # all integration sensors stop accumulating (NaN inputs return 0 from templates).
+  # Recovery is automatic — clears within 5s of first successful INA228 read.
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "INA228 Watchdog"
+    id: ina228_watchdog
+    device_class: problem
+    icon: "mdi:alert-circle"
+    entity_category: diagnostic
+    lambda: |-
+      // No NaN guard needed: last_ina228_update is uint32_t, initial value 0.
+      // If INA228 never reads before boot grace expires, watchdog fires correctly.
+      if (millis() < 15000u) return false;  // 15s boot grace (INA228 init window)
+      // uint32_t subtraction: natively wrap-safe at 49-day millis() rollover.
+      return (millis() - id(last_ina228_update)) > 10000u;  // 10,000ms = 10s         // Fault: >10s since last read
+    on_press:
+      - lambda: |-
+          ESP_LOGE("bank.watchdog",
+            "INA228 WATCHDOG FAULT: no read for >10s | millis=%lu last_update=%u",
+            (unsigned long)millis(), id(last_ina228_update));
+    on_release:
+      - lambda: |-
+          ESP_LOGI("bank.watchdog", "INA228 watchdog cleared — reads resuming");
+
+  - platform: template
+    name: "INA228 Healthy"
+    device_class: connectivity
+    lambda: 'return !isnan(id(ina228_voltage).state);'
+
+  # --------------------------------------------------------------------------
+  # Current Channel Fault (V1.13) — SOC-integrity guard, dashboard visibility.
+  #
+  # Fires when the reported current magnitude is non-physical (> i_max_plausible_a,
+  # 350 A): a saturated or garbage current channel, including the high-side
+  # open-Kelvin-lead failure (a floating differential input rails the reading high).
+  # When this is set, the four SOC integration sources freeze and bank_state shows
+  # FAULT — this sensor surfaces the same condition explicitly for the operator.
+  #
+  # 5 s delayed_on rejects a single transient sample. NaN is treated as NOT a current-
+  # channel fault here (NaN is the stale/dead-bus path, already covered by the watchdog
+  # and INA228 Healthy) so the two diagnostics don't double-report the same event.
+  #
+  # LIMIT (intentional, documented): this catches a SATURATED/garbage channel, not a
+  # channel that reads PLAUSIBLY-but-WRONG (e.g. a partial/high-resistance Kelvin
+  # connection). A believable-but-incorrect current is not bounds-detectable — the
+  # mitigation is the quarterly ELECTRICAL Kelvin/sense-fuse check (wiring doc §10.1)
+  # and the §7.1 clamp-meter calibration cross-check.
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Current Channel Fault"
+    id: current_channel_fault
+    device_class: problem
+    entity_category: diagnostic
+    icon: "mdi:current-dc"
+    lambda: |-
+      float i = id(ina228_current).state;
+      if (isnan(i)) return false;   // stale/dead bus is the watchdog's job, not this
+      return fabsf(i) > ${i_max_plausible_a}f;
+    filters:
+      - delayed_on: 5s
+    on_press:
+      - lambda: |-
+          ESP_LOGE("bank.current",
+            "CURRENT CHANNEL FAULT: |I|=%.1fA > %.0fA plausible limit — SOC integration frozen; check Kelvin sense leads/fuses",
+            id(ina228_current).state, ${i_max_plausible_a}f);
+    on_release:
+      - lambda: |-
+          ESP_LOGI("bank.current", "Current channel fault cleared | I=%.3fA", id(ina228_current).state);
+
+  - platform: template
+    name: "DS18B20 Healthy"
+    device_class: connectivity
+    lambda: 'return !isnan(id(battery_temp).state);'
+
+
+# ============================================================================
+# CONTROLS
+# ============================================================================
+button:
+  # Manual reboot — recovers from INA228 I2C hang, Wi-Fi wedge, or any other
+  # transient ESP32 fault that the watchdog/state-machine alone can't clear.
+  # Re-initializes the I2C bus, reloads firmware state, reconnects to HA.
+  #
+  # Restore semantics on reboot (important for understanding what's lost):
+  #   PRESERVED (restore_value: true) — lifetime Ah/Wh accumulators, total
+  #     outage count, last-outage Ah/Wh/peak/avg/hours/duration, cycle-level
+  #     peak discharge current, Ri sample count.
+  #   LOST on reboot — in-progress outage tracking (outage_active_ms,
+  #     outage_peak_w current value), transient flags (absorption_reached,
+  #     discharge_peak_a_raw cycle accumulator), watchdog timestamp (refills
+  #     at first post-boot INA228 read), Ri prev-V/prev-I (NaN-seeded).
+  #
+  # Practical implication: if pressed during an active outage, the CURRENT
+  # outage's per-event Ah/Wh/duration capture is lost (lifetime totals and
+  # prior-outage stats survive). For non-fault use, prefer to reboot during
+  # normal operation (not during an active outage event).
+  #
+  # Implementation: template button with explicit logger.log → 500ms delay →
+  # App.safe_reboot(). This pattern (delay before reboot) is necessary because
+  # `platform: restart`'s reboot action races on_press log flushes — the device
+  # restarts before WiFi/UART can transmit the log line. The 500ms delay lets
+  # the WARN log reach HA and UART before reboot, providing post-mortem
+  # evidence of the manual press. Post-reboot, the on_boot log (priority -200,
+  # "Battery Bank Monitor V1.13 boot...") provides confirmation that the
+  # restart completed successfully.
+  - platform: template
+    name: "Restart"
+    id: btn_restart
+    entity_category: diagnostic
+    on_press:
+      - logger.log:
+          level: WARN
+          format: "Manual restart pressed — current outage tracking (if any) will be lost"
+      - delay: 500ms
+      - lambda: |-
+          App.safe_reboot();
+
+  # Manual SOC anchor — press when battery is at a confirmed 100% SOC.
+  # Most useful if a full-charge event was missed (charger disconnected early,
+  # or absorption phase didn't hold long enough to trigger the 10-min sensor).
+  - platform: template
+    name: "Mark as Fully Charged (Reset Cycle Counters)"
+    entity_category: diagnostic
+    on_press:
+      - lambda: |-
+          // Manual anchor IS a full-charge event: clear any pending absorption flag and
+          // reset the cycle-level discharge peak tracker, mirroring the automatic path.
+          id(absorption_reached) = false;
+          id(discharge_peak_a_raw) = 0.0f;
+      - sensor.integration.reset: ah_discharged_cycle
+      - sensor.integration.reset: ah_charged_cycle
+      - sensor.integration.reset: wh_discharged_cycle
+      - sensor.integration.reset: self_discharge_ah
+      - logger.log:
+          level: INFO
+          format: "Cycle counters reset manually — SOC anchored to 100%%; absorption flag cleared"
+
+  # Reset lifetime counters — ONLY after battery bank physical replacement.
+  - platform: template
+    name: "Reset Lifetime Counters (Post Battery Swap)"
+    entity_category: diagnostic
+    on_press:
+      - sensor.integration.reset: ah_discharged_lifetime
+      - sensor.integration.reset: wh_discharged_lifetime
+      - sensor.integration.reset: ah_charged_lifetime
+      - sensor.integration.reset: wh_charged_lifetime
+      - logger.log:
+          level: WARN
+          format: "Lifetime counters reset — use ONLY after physical battery swap"
