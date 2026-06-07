@@ -1,5 +1,5 @@
 # ============================================================================
-# Battery Bank Monitor V1.13 — PRODUCTION Configuration
+# Battery Bank Monitor V1.14 — PRODUCTION Configuration
 #   CORE (backup readiness — must be correct): V/I/T acquisition, stale-bus FAULT
 #     watchdog, 3-tier low-voltage alarms + overvoltage guard, bank_state machine,
 #     runtime-remaining, and SOC (Coulomb counter anchored at full charge).
@@ -119,6 +119,47 @@
 #   • No survival sleep; no BP-65 LVD coordination; no priority -150 boot logic
 #
 # Changelog:
+#   V1.14 — Local panel display (Adafruit 938 SSD1306 128x64 I2C) + wake button:
+#           Adds a network-INDEPENDENT readout for the manual operating model — the
+#           operator reads SOC at the panel and manually opens the transfer switch /
+#           breakers at ~20%. Previously SOC was visible only via WiFi->HA->phone; this
+#           closes that gap with a local display that survives any network loss.
+#           HARDWARE: Adafruit 938 (SSD1306, I2C 0x3C) on the EXISTING bus_a (GPIO6/7),
+#             shared with the INA228 (0x40) — no new I2C bus, no pin cost. Connected via
+#             STEMMA QT -> 4-pin Dupont (Adafruit 4209): Red=3V3, Black=GND, Blue=SDA
+#             (GPIO6), Yellow=SCL (GPIO7). Wake button (Adafruit 1505, NO momentary) on
+#             GPIO21 (freed by logger baud_rate: 0) to GND — INPUT_PULLUP, pressed=LOW.
+#             GPIO21 chosen because it is non-strapping and has no other role once the
+#             UART is disabled (GPIO20 is the dead-trace clamp — NOT usable).
+#           BURN-IN MANAGEMENT: SSD1306 panels dim with prolonged on-time, so the display
+#             is OFF by default and only lit on demand. Wake/sleep uses the display C++
+#             API turn_on()/turn_off()/is_on() ONLY — never id(display).setup() (ESPHome
+#             issue #1393: repeated setup() calls to re-init/dim crash the device after a
+#             while). A boot-time on_boot turns the panel off so it starts dark.
+#           BEHAVIOR: 1st press wakes to page 1; each subsequent press cycles pages
+#             (display.page.show_next, wraps); display sleeps after display_timeout
+#             (substitution, default 5min) measured from the LAST press. Implemented with
+#             a script (restart-on-each-press delay, then turn_off) so each press resets
+#             the 5-min clock. NOTE: 5min/press trades panel longevity for dwell time;
+#             display_timeout is a substitution so it can be shortened without a rewrite.
+#           PAGES (4, button-cycled):
+#             ① V / I / W / SOC — SOC large (the decision variable); current SIGNED and
+#                direction-labeled (CHG/DISCHG) so "still draining + how fast" is explicit.
+#             ② Runtime remaining + voltage slope (mV/min) + knee/cliff flags — turns a
+#                bare SOC into "time to act"; guards runtime_hours NaN (not discharging).
+#             ③ Health/trust — bank_state, INA228 watchdog, Current Channel Fault (V1.13),
+#                DS18B20 health, battery temp. This is the "is the SOC trustworthy?" page,
+#                most relevant exactly when the HA path is down.
+#             ④ Charge/absorption — charge current + absorption_reached flag, so the
+#                operator can charge to CONFIRMED absorption THEN switch the charger off,
+#                ensuring the full-charge anchor fires and SOC re-pegs to 100%. Backstops
+#                the re-anchoring dependency that is otherwise invisible at the panel.
+#           BUS NOTE: 938 has onboard I2C pull-ups, as does the INA228 breakout. Two sets
+#             in parallel lower effective pull-up R. Fine at 100kHz on short runs; if the
+#             bus misbehaves with both connected, remove the 938's pull-ups first.
+#           NO impact on CORE acquisition/alarms/SOC: the display only READS published
+#             states; it never writes the alarm path, state machine, or SOC. A display or
+#             button fault cannot affect backup readiness.
 #   V1.13 — Robustness pass for the MANUAL / data-driven operating model (no HA
 #           control of the bank; operator reads SOC and manually opens the transfer
 #           switch / panel breakers at ~20% SOC). In this model the DATA is the
@@ -621,6 +662,12 @@ substitutions:
   v_max_plausible:          "16.0"   # V; bus voltage above this is non-physical → drop (watchdog → FAULT)
   i_max_plausible_a:        "350.0"  # A; |I| above this is non-physical (saturation/garbage) → freeze SOC + FAULT
 
+  # --- Local panel display (V1.14) -------------------------------------------
+  # Auto-sleep timeout, measured from the LAST button press. SSD1306 panels dim with
+  # prolonged on-time, so keep this modest. 5min trades panel longevity for dwell time
+  # during an outage; shorten to 1min if burn-in is a concern (no other change needed).
+  display_timeout:          "5min"
+
   # --- Current detection thresholds (Option B: positive = charging) ----------
   # With Option B wiring: charging → I positive; discharging → I negative.
   # 0.05 A threshold (50 mA) — ~60× the INA228 shunt quantization step of ~0.83 mA
@@ -679,7 +726,10 @@ esphome:
       then:
         - logger.log:
             level: INFO
-            format: "Battery Bank Monitor V1.13 boot -- INA228 @ 0x40, DS18B20 on GPIO10"
+            format: "Battery Bank Monitor V1.14 boot -- INA228 @ 0x40, DS18B20 on GPIO10"
+        # V1.14: start with the panel dark — it only lights on a button press.
+        # turn_off() (not setup()) per ESPHome issue #1393.
+        - lambda: 'id(panel).turn_off();'
 
 esp32:
   board: seeed_xiao_esp32c3
@@ -776,6 +826,151 @@ i2c:
 one_wire:
   - platform: gpio
     pin: GPIO10
+
+# ============================================================================
+# FONTS (V1.14) — for the local panel display.
+# Roboto (Google Fonts) is fetched by ESPHome at compile time. Three sizes:
+# big for the SOC value, medium for primary data, small for labels/status.
+# glyphs: include only what the pages render (digits, units, letters used) to
+# keep the font tables small.
+# ============================================================================
+font:
+  - file: "gfonts://Roboto"
+    id: font_big
+    size: 32
+  - file: "gfonts://Roboto"
+    id: font_med
+    size: 16
+  - file: "gfonts://Roboto"
+    id: font_small
+    size: 11
+
+# ============================================================================
+# DISPLAY (V1.14) — Adafruit 938 SSD1306 128x64, I2C 0x3C, on bus_a (shared w/ INA228).
+# OFF by default (on_boot turns it off); woken by the GPIO21 button (see binary_sensor).
+# Sleep/wake via turn_on()/turn_off() ONLY — never setup() (ESPHome issue #1393).
+# Four pages, button-cycled (display.page.show_next). update_interval 1s is cheap:
+# the panel is dark almost always, and a lit page refreshes its values each second.
+# ============================================================================
+display:
+  - platform: ssd1306_i2c
+    model: "SSD1306 128x64"
+    id: panel
+    i2c_id: bus_a
+    address: 0x3C
+    update_interval: 1s
+    pages:
+      # --- Page 1: V / I / W / SOC (SOC is the decision variable → largest) -----
+      - id: page_main
+        lambda: |-
+          // SOC, big and top-left. NaN-guard → "--".
+          float soc = id(soc_estimate).state;
+          if (isnan(soc)) it.print(0, 0, id(font_big), "SOC --");
+          else            it.printf(0, 0, id(font_big), "%.0f%%", soc);
+          it.print(0, 0, id(font_small), "SOC");  // tiny label above is optional; keep simple
+          // Voltage
+          float v = id(ina228_voltage).state;
+          if (isnan(v)) it.print(0, 36, id(font_med), "V: --");
+          else          it.printf(0, 36, id(font_med), "%.2f V", v);
+          // Signed current with direction word
+          float i = id(ina228_current).state;
+          if (isnan(i)) {
+            it.print(0, 52, id(font_small), "I: --");
+          } else if (i > ${charge_threshold_a}f) {
+            it.printf(0, 52, id(font_small), "%.1fA CHG", i);
+          } else if (i < ${discharge_threshold_a}f) {
+            it.printf(0, 52, id(font_small), "%.1fA DISCHG", -i);
+          } else {
+            it.print(0, 52, id(font_small), "~0A IDLE");
+          }
+          // Power (magnitude), right-aligned-ish
+          float p = id(signed_power).state;
+          if (isnan(p)) it.print(80, 52, id(font_small), "-- W");
+          else          it.printf(80, 52, id(font_small), "%.0f W", p < 0 ? -p : p);
+
+      # --- Page 2: Runtime + slope + knee/cliff (turns SOC into "time to act") ---
+      - id: page_runtime
+        lambda: |-
+          it.print(0, 0, id(font_small), "RUNTIME @ load");
+          float h = id(runtime_hours).state;  // NaN when not discharging
+          if (isnan(h)) {
+            it.print(0, 12, id(font_med), "not discharging");
+          } else if (h >= 720.0f) {
+            it.print(0, 12, id(font_big), ">30d");
+          } else if (h >= 48.0f) {
+            it.printf(0, 12, id(font_big), "%.0f h", h);
+          } else {
+            it.printf(0, 12, id(font_big), "%.1f h", h);
+          }
+          // Voltage slope (mV/min)
+          float s = id(voltage_slope).state;
+          if (isnan(s)) it.print(0, 48, id(font_small), "slope: --");
+          else          it.printf(0, 48, id(font_small), "slope %.1f mV/min", s);
+          // Knee / cliff flags
+          if (id(cliff_imminent).state)        it.print(0, 56, id(font_small), "** CLIFF IMMINENT **");
+          else if (id(knee_approaching).state) it.print(0, 56, id(font_small), "* knee approaching *");
+          else                                 it.print(0, 56, id(font_small), "curve: stable");
+
+      # --- Page 3: Health / trust (is the SOC reading trustworthy?) -------------
+      - id: page_health
+        lambda: |-
+          it.print(0, 0, id(font_small), "STATUS");
+          // bank_state (text_sensor) — the headline trust indicator
+          if (id(bank_state).has_state())
+            it.printf(0, 11, id(font_med), "%s", id(bank_state).state.c_str());
+          else
+            it.print(0, 11, id(font_med), "(no state)");
+          // Fault lines
+          it.printf(0, 30, id(font_small), "INA228 wd: %s",
+                    id(ina228_watchdog).state ? "FAULT" : "ok");
+          it.printf(0, 39, id(font_small), "I-chan: %s",
+                    id(current_channel_fault).state ? "FAULT" : "ok");
+          it.printf(0, 48, id(font_small), "temp sensor: %s",
+                    isnan(id(battery_temp).state) ? "FAULT" : "ok");
+          // Battery temperature
+          float t = id(battery_temp).state;
+          if (isnan(t)) it.print(0, 56, id(font_small), "T: --");
+          else          it.printf(0, 56, id(font_small), "T: %.1f C", t);
+
+      # --- Page 4: Charge / absorption (charge to confirmed absorption, THEN stop)
+      - id: page_charge
+        lambda: |-
+          it.print(0, 0, id(font_small), "CHARGE");
+          float i = id(ina228_current).state;
+          bool charging = (!isnan(i) && i > ${charge_threshold_a}f);
+          if (charging) it.printf(0, 11, id(font_med), "+%.1f A", i);
+          else          it.print(0, 11, id(font_med), "not charging");
+          // absorption_reached flag drives the "safe to switch off" cue
+          bool absorbed = id(absorption_reached);
+          if (absorbed) {
+            it.print(0, 32, id(font_small), "absorption CONFIRMED");
+            it.print(0, 44, id(font_small), "OK to switch charger");
+            it.print(0, 53, id(font_small), "off -> SOC anchors 100%");
+          } else if (charging) {
+            it.print(0, 32, id(font_small), "absorption: not yet");
+            it.print(0, 44, id(font_small), "hold >=14.2V 60s");
+            it.print(0, 53, id(font_small), "before switching off");
+          } else {
+            it.print(0, 32, id(font_small), "idle / discharging");
+            it.print(0, 44, id(font_small), "(use Mark Full button");
+            it.print(0, 53, id(font_small), " if anchor missed)");
+          }
+  # on_boot: start dark (the panel only lights on a button press)
+  # (handled in esphome: on_boot below)
+
+# ============================================================================
+# SCRIPTS (V1.14) — display auto-sleep.
+# `mode: restart` means each new invocation cancels the previous delay and starts
+# over, so every button press resets the full display_timeout (5 min) from that
+# press. When the delay finally elapses (no press for the timeout), the panel
+# turns off. turn_off() only — never setup() (ESPHome issue #1393).
+# ============================================================================
+script:
+  - id: display_sleep_timer
+    mode: restart
+    then:
+      - delay: ${display_timeout}
+      - lambda: 'id(panel).turn_off();'
 
 # ============================================================================
 # GLOBALS
@@ -1993,6 +2188,41 @@ text_sensor:
 binary_sensor:
 
   # --------------------------------------------------------------------------
+  # Display wake/cycle button (V1.14) — Adafruit 1505 NO momentary on GPIO21->GND.
+  # GPIO21 = the XIAO C3 TX pad, freed by logger baud_rate: 0; non-strapping, no
+  # other role in production. INPUT_PULLUP + inverted: pressed = pulled LOW = true.
+  # Behavior: 1st press wakes to page 1; each press while awake advances to the next
+  # page (wraps). Every press (re)starts the 5-min auto-sleep timer.
+  # 50ms delayed_on debounces mechanical contact bounce.
+  # --------------------------------------------------------------------------
+  - platform: gpio
+    id: display_button
+    name: "Display Button"
+    entity_category: diagnostic
+    pin:
+      number: GPIO21
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+    filters:
+      - delayed_on: 50ms
+    on_press:
+      then:
+        - if:
+            condition:
+              lambda: 'return !id(panel).is_on();'
+            then:
+              # Was dark → wake to page 1.
+              - lambda: 'id(panel).turn_on();'
+              - display.page.show: page_main
+            else:
+              # Already lit → advance to the next page (wraps at the end).
+              - display.page.show_next: panel
+        # Every press resets the 5-min auto-sleep countdown.
+        - script.execute: display_sleep_timer
+
+  # --------------------------------------------------------------------------
   # GPIO20 — internal pullup clamp (V1.11)
   # Position 5 of U2 (silk "ALT" on the INA260 footprint) routes to GPIO20 via R2.
   # Hardware as-built for INA228 use: U2 pin 5 LIFTED (VBUS isolated from PCB),
@@ -2529,7 +2759,7 @@ button:
   # restarts before WiFi/UART can transmit the log line. The 500ms delay lets
   # the WARN log reach HA and UART before reboot, providing post-mortem
   # evidence of the manual press. Post-reboot, the on_boot log (priority -200,
-  # "Battery Bank Monitor V1.13 boot...") provides confirmation that the
+  # "Battery Bank Monitor V1.14 boot...") provides confirmation that the
   # restart completed successfully.
   - platform: template
     name: "Restart"
