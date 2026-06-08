@@ -1,5 +1,5 @@
 # ============================================================================
-# Battery Bank Monitor V1.14 — PRODUCTION Configuration
+# Battery Bank Monitor V1.16 — PRODUCTION Configuration
 #   CORE (backup readiness — must be correct): V/I/T acquisition, stale-bus FAULT
 #     watchdog, 3-tier low-voltage alarms + overvoltage guard, bank_state machine,
 #     runtime-remaining, and SOC (Coulomb counter anchored at full charge).
@@ -7,12 +7,12 @@
 #     trend, lifetime + per-outage energy, self-discharge reconciliation logger,
 #     opportunistic Ri. A bug in this layer can produce a wrong number but cannot
 #     affect readiness detection.
-#   Hardware target: OSH Park UPS-Monitor-THT board repurposed for battery-bank
-#     monitoring; INA228 breakout in INA260 footprint with header pin 5 LIFTED,
-#     R2 DNP, external 375 µΩ Kelvin shunt, INA228 onboard 15 mΩ shunt REMOVED.
-#   Source-level reviewed against ESPHome 2026.4.3; high-side topology committed
-#   (see V1.11 changelog for low-side → high-side rationale and Kelvin-sense
-#   fusing requirement). Flash-ready after credential placeholders are replaced.
+#   Hardware target: Battery_Bank-Monitor-THT V2 (OSH Park); native INA228 8-pin
+#     socket; external 375 µΩ DROK Kelvin shunt in negative cable (low-side).
+#     INA228 onboard 15 mΩ shunt REMOVED; VBUS jumper LEFT OPEN (low-side default);
+#     VBUS driven from positive busbar via inline-fused lead at breakout terminal block.
+#   Source-level reviewed against ESPHome 2026.4.3. Flash-ready after credential
+#     placeholders are replaced.
 #   CORE (backup readiness — must be correct): V/I/T acquisition, stale-bus FAULT
 #     watchdog, 3-tier low-voltage alarms + overvoltage guard, bank_state machine,
 #     runtime-remaining, and SOC (Coulomb counter anchored at full charge).
@@ -22,31 +22,29 @@
 #   (V1.8 Apparent Ri remains PROVISIONAL — not field-validated.)
 # ============================================================================
 # Purpose : Full instrumentation for 12V/500Ah LiFePO4 battery bank with
-#           2000W inverter and LiTime 80A charger. Reports V/I/P, accumulated
-#           Ah/Wh, SOC estimate, temperature, charge/discharge session metrics,
-#           and round-trip efficiency to Home Assistant via Wi-Fi.
+#           Giandel 1500W inverter and LiTime 80A charger. Reports V/I/P,
+#           accumulated Ah/Wh, SOC estimate, temperature, charge/discharge
+#           session metrics, and round-trip efficiency to Home Assistant via Wi-Fi.
 #
 # Hardware: XIAO ESP32-C3 + Adafruit INA228 breakout (5832 or 6349) + DS18B20
-#           + Pololu D24V7F3 (3.3V buck) + Pololu Ideal Diode (LM74700-Q1)
-#           on UPS-Monitor-THT V1 PCB (OSH Park, repurposed from UPS build).
-#           Wiring per: battery-bank-monitor-wiring-summary-v1.4.md (high-side topology)
+#           + Pololu D24V7F3 (3.3V buck)
+#           on Battery_Bank-Monitor-THT V2 PCB (OSH Park).
+#           Wiring per: battery-bank-monitor-wiring-summary-v1.8.md (low-side topology)
 #
-# INA228 hardware pre-build requirements (MANDATORY — V1.11 high-side topology):
+# INA228 hardware pre-build requirements (MANDATORY — V2 board, low-side topology):
 #   1. Remove the onboard 15 mΩ shunt from the INA228 breakout PCB.
-#   2. Solder the VBUS jumper CLOSED on the back of the breakout (high-side
-#      configuration — internally ties VBUS to VIN+, eliminating the need for
-#      a separate VBUS wire). NOTE: original wiring doc V1.2 specified jumper
-#      OPEN for low-side; superseded by V1.11 review (high-side is cleaner
-#      ground topology for this 200A bank, see V1.11 changelog).
-#   3. Lift U2 header pin 5 (silk "ALT") before solder — board trace is repurposed
-#      from INA260 ALERT routing; INA228 puts VBUS on pin 5 which must NOT enter
-#      the PCB pad. R2 is DNP (do not populate).
-#   4. Verify Kelvin sense terminals on DROK 200A/75mV shunt (small screws).
-#   5. Inline-fuse each Kelvin sense lead with a 100–250 mA fast-blow fuse close
-#      to the shunt end. High-side topology means the sense wires sit at +13V
-#      relative to chassis; a shorted sense lead would otherwise fault battery+
-#      to ground through the shunt's Kelvin tap leads. Sense current is
-#      microamps, so a 100 mA fuse has 1000× headroom over normal current.
+#   2. Leave the VBUS jumper OPEN (low-side default — jumper open means VBUS pin is
+#      independent of VIN+). Wire the positive busbar to the VBUS terminal on the
+#      breakout's own 3-position terminal block, through a 100–250 mA inline fuse
+#      at the busbar end. This is the one wire at battery+ potential in this build.
+#   3. No pin lifts, no R2 DNP, no Kelvin-lead fuses. All V1-carrier adaptations
+#      are retired — the V2 board is native INA228. U2 pin 5 (VBUS) is a carrier
+#      no-connect by design; ALERT routes natively to GPIO5 via U2 pin 8.
+#   4. Verify Kelvin sense terminals on DROK 200A/75mV shunt (small screws, separate
+#      from the heavy-current bolts). Sense leads sit near ground in low-side — no
+#      inline fuses required on Kelvin leads.
+#   5. Confirm TB1 polarity (pin 1 = GND, pin 2 = BATT_RAW) before energizing —
+#      the V2 board has no reverse-polarity protection.
 #
 # Dashboard panels:
 #   ① Real-time V / I / P (signed: positive = charging, negative = discharging)
@@ -64,10 +62,10 @@
 #   ADC range   : ±163.84 mV (adc_range 0 — mandatory for 75 mV at 200A shunt)
 #   Max current : 200 A
 #
-# Sign convention — Option B wiring (V1.11: HIGH-SIDE topology):
-#   Shunt installed between battery+ and the load bus bar.
+# Sign convention — Option B wiring (low-side topology, V2 board):
+#   Shunt installed in the negative cable between battery− and the negative busbar.
 #   VIN+ at shunt battery-side Kelvin tap, VIN− at shunt load-side Kelvin tap.
-#   With VBUS jumper closed, VBUS is internally tied to VIN+ (≈ battery+).
+#   VBUS wired from positive busbar to breakout VBUS terminal (jumper open).
 #
 #   POSITIVE current → CHARGING     (LiTime charger delivering current to bank)
 #   NEGATIVE current → DISCHARGING  (net load exceeds charge rate)
@@ -77,11 +75,8 @@
 #   The INA228 reports sign based on which input is at higher potential, NOT on
 #   which side the chip sits — so Option B applies identically in high-side and
 #   low-side topologies. Only the physical position of the shunt changes.
-#
-#   V1.11 supersedes earlier "natural low-side / §6.2 of wiring doc" framing —
-#   see V1.11 changelog for the rationale (clean system ground, simpler wiring
-#   for 200A bus, no separate VBUS wire needed). Wiring doc to be updated to
-#   V1.3 reflecting high-side topology.
+#   Confirm sign empirically at commissioning (§8.3 of wiring doc) and swap
+#   VIN+/VIN− leads if inverted — no firmware change needed.
 #
 # Validated system parameters — from LiFePO4_Report_2026-03-06.md:
 #   Usable capacity : 397 Ah (99.3% of ~400 Ah actual; bank is 500 Ah nominal)
@@ -119,6 +114,34 @@
 #   • No survival sleep; no BP-65 LVD coordination; no priority -150 boot logic
 #
 # Changelog:
+#   V1.16 — INA228 hardware ALERT pin activated (GPIO5 / D3):
+#           Configures INA228 limit registers at boot via I2C lambdas and
+#           arms the ALERT pin for four conditions:
+#             BUSUL (bus under-voltage): 12.20 V — matches critical_voltage
+#             BUSOL (bus over-voltage):  14.80 V — matches overvoltage_threshold
+#             SHNTOL (shunt over-limit): 250 A equivalent (93.75 mV, 25% above rating)
+#             POL (power over-limit):    1500 W — Giandel inverter rated output
+#           DIAG_ALRT = 0xA0B8: ALATCH=1 (latched), SLOWALERT=1 (post-averaging),
+#           APOL=0 (active-low, matches R2 pull-up topology).
+#           GPIO5 binary_sensor fires on FALLING edge (active-low interrupt).
+#           on_press handler: reads DIAG_ALRT via I2C (clears latch), decodes
+#           which bit(s) fired, logs at WARN, publishes alert_reason text sensor.
+#           alert_reason text sensor added to text_sensor block.
+#           Alert limit register values added as substitutions for auditability.
+#           No SOC logic, display, or wiring changes.
+#
+#   V1.15 — V2 board pin-map update + GPIO20 clamp removal:
+#           Button pin changed GPIO21 → GPIO4 (D2). V2 PCB routes the button to
+#             the GPIO4_BTN net (J2 pin 1 → R3 10k pull-up → U1 D2). GPIO21 was
+#             the XIAO TX pad used on the V1 carrier; it carries no signal on V2.
+#             logger: baud_rate: 0 retained (harmless; no longer required to free
+#             this pin since D2/GPIO4 is not a UART pad).
+#           GPIO20 pullup clamp removed (gpio20_unused binary_sensor). On V2 the
+#             GPIO20 pad is a true NC — no net in the KiCad schematic — so the
+#             V1.11 clamp was dead code. A tombstone comment is left at the removal
+#             site for audit continuity.
+#           No measurement logic changes. Pre-flash compile + flash required.
+#
 #   V1.14 — Local panel display (Adafruit 938 SSD1306 128x64 I2C) + wake button:
 #           Adds a network-INDEPENDENT readout for the manual operating model — the
 #           operator reads SOC at the panel and manually opens the transfer switch /
@@ -128,9 +151,10 @@
 #             shared with the INA228 (0x40) — no new I2C bus, no pin cost. Connected via
 #             STEMMA QT -> 4-pin Dupont (Adafruit 4209): Red=3V3, Black=GND, Blue=SDA
 #             (GPIO6), Yellow=SCL (GPIO7). Wake button (Adafruit 1505, NO momentary) on
-#             GPIO21 (freed by logger baud_rate: 0) to GND — INPUT_PULLUP, pressed=LOW.
-#             GPIO21 chosen because it is non-strapping and has no other role once the
-#             UART is disabled (GPIO20 is the dead-trace clamp — NOT usable).
+#             GPIO4 (D2, V2 board) to GND — INPUT_PULLUP, pressed=LOW.
+#             GPIO4 chosen because it is the native button pad on the V2 carrier
+#             (R3 10k pull-up on board; J2 connector). logger baud_rate: 0 is
+#             retained but no longer required to free this pin.
 #           BURN-IN MANAGEMENT: SSD1306 panels dim with prolonged on-time, so the display
 #             is OFF by default and only lit on demand. Wake/sleep uses the display C++
 #             API turn_on()/turn_off()/is_on() ONLY — never id(display).setup() (ESPHome
@@ -324,6 +348,8 @@
 #             internal: true and pin mode pullup: true clamps it to a defined
 #             level. internal: true keeps it out of HA. Costs nothing, removes
 #             the indeterminate-input concern documented at agreement time.
+#             [V1.15: clamp removed — GPIO20 is a true NC on the V2 board; the
+#             pad carries no net and the pullup is dead code on V2.]
 #           Performance note (NOT a change to this file): ESPHome 2026.4.0 changed
 #             the default CPU frequency on ESP32 from 160 MHz to 240 MHz. On the
 #             XIAO ESP32-C3 the C3 was already at 160 MHz default, but the 2026.4
@@ -573,11 +599,11 @@ substitutions:
                                      #  runtime uses the live measured discharge current.)
 
   # --- Intrinsic self-discharge model hook (V1.9) ----------------------------
-  # The shunt already captures the board's own parasitic draw: with high-side
-  # topology (V1.11), the board's supply current flows from battery+ THROUGH the
-  # shunt before reaching the Pololu D24V7F3, so the Coulomb counter measures
-  # all EXTERNAL drain directly. This term models only the INTRINSIC cell self-
-  # discharge that bypasses the shunt entirely.
+  # The shunt already captures the board's own parasitic draw: in low-side
+  # topology the board's GND ties to the negative busbar (load side of shunt),
+  # so supply current flows battery− → shunt → busbar → board, passing through
+  # the shunt and registering as discharge in the Coulomb counter. This term
+  # models only the INTRINSIC cell self-discharge that bypasses the shunt entirely.
   # Measured intrinsic self-discharge for this bank is ~0%/month at ~12°C basement
   # storage (LiFePO4_Report_2026-03-01.md §5.4), so the default 0.0 is correct and
   # SOC shows the pure measured Coulomb count. Provisioned as a hook: set non-zero
@@ -656,8 +682,8 @@ substitutions:
   #   Current: 350 A is above the 200 A shunt rating AND above any real averaged value
   #     (sub-second inverter surges are averaged down by the 128x / ~1.58 s conversion),
   #     yet below the ~437 A ADC ceiling — so it catches a saturated/garbage current
-  #     channel, including the high-side open-Kelvin-lead case (floating differential
-  #     input rails high). Enforced inline on the SOC integration path + bank_state.
+  #     channel (floating or open Kelvin lead rails the differential input high).
+  #     Enforced inline on the SOC integration path + bank_state.
   v_min_plausible:          "8.0"    # V; bus voltage below this is non-physical → drop (watchdog → FAULT)
   v_max_plausible:          "16.0"   # V; bus voltage above this is non-physical → drop (watchdog → FAULT)
   i_max_plausible_a:        "350.0"  # A; |I| above this is non-physical (saturation/garbage) → freeze SOC + FAULT
@@ -714,6 +740,23 @@ substitutions:
   ri_min_mohm:              "0.5"    # mΩ; sanity-band lower bound (reject below)
   ri_max_mohm:              "50.0"   # mΩ; sanity-band upper bound (reject above)
 
+  # --------------------------------------------------------------------------
+  # INA228 hardware ALERT limits (V1.16) — written to chip registers at boot.
+  # All values expressed as 16-bit register integers (see register_calc comments
+  # in the on_boot ALERT init block).
+  # BUVL and BOVL use LSB = 3.125 mV (BOVL/BUVL register coding for INA228).
+  # SOVL uses LSB = 5 µV (shunt over-limit register coding at ADCRANGE=0).
+  # PWR_LIMIT uses LSB = 0.3125 W (power-limit register coding for INA228).
+  # --------------------------------------------------------------------------
+  # BUVL: 12.20 V / 3.125 mV = 3904 = 0x0F40
+  alert_buvl_reg:           "0x0F40"   # Bus under-voltage: 12.20 V (matches critical_voltage)
+  # BOVL: 14.80 V / 3.125 mV = 4736 = 0x1280
+  alert_bovl_reg:           "0x1280"   # Bus over-voltage: 14.80 V (overvoltage_threshold)
+  # SOVL: 250 A × 375 µΩ = 93.75 mV / 5 µV = 18750 = 0x493E
+  alert_sovl_reg:           "0x493E"   # Shunt over-current: 250 A equivalent (25% above 200 A rating)
+  # PWR_LIMIT: 1500 W / 0.3125 W = 4800 = 0x12C0
+  alert_pwr_limit_reg:      "0x12C0"   # Power over-limit: 1500 W (Giandel inverter rated output)
+
 
 # ============================================================================
 esphome:
@@ -726,10 +769,60 @@ esphome:
       then:
         - logger.log:
             level: INFO
-            format: "Battery Bank Monitor V1.14 boot -- INA228 @ 0x40, DS18B20 on GPIO10"
+            format: "Battery Bank Monitor V1.16 boot -- INA228 @ 0x40, DS18B20 on GPIO10"
         # V1.14: start with the panel dark — it only lights on a button press.
         # turn_off() (not setup()) per ESPHome issue #1393.
         - lambda: 'id(panel).turn_off();'
+        # V1.16: Configure INA228 hardware ALERT limits.
+        # Runs at priority -200 (after component init) so the INA228 is already live.
+        # Register write order: limit registers first, then DIAG_ALRT to arm the pin.
+        # All writes are big-endian (MSB first), matching the INA228 I2C register format.
+        # The INA228 reset_on_boot: false setting preserves energy/charge accumulators;
+        # the ALERT registers are NOT preserved across chip power cycles, so this
+        # on_boot init is required every boot regardless of reset_on_boot.
+        #
+        # Register coding reference (INA228 datasheet TI SBOS951):
+        #   BUVL/BOVL LSB = 3.125 mV (16-bit, same coding as VBUS upper 16 bits)
+        #   SOVL/SUVL LSB = 5 µV    (16-bit, same coding as VSHUNT upper 16 bits at ADCRANGE=0)
+        #   PWR_LIMIT LSB = 0.3125 W (16-bit, same coding as POWER upper 16 bits)
+        #   DIAG_ALRT bits: [15]=ALATCH [13]=SLOWALERT [7]=SHNTOL [5]=BUSOL [4]=BUSUL [3]=POL
+        - lambda: |-
+            // --- INA228 ALERT register initialization ---
+            // All writes: id(bus_a).write_register(addr, reg, data[], len)
+            // ESPHome 2026.4.3+: no stop-boolean parameter.
+
+            uint8_t buf[2];
+
+            // BUVL (0x0F): bus under-voltage limit — 12.20 V = 3904 = 0x0F40
+            buf[0] = 0x0F; buf[1] = 0x40;
+            if (id(bus_a).write_register(0x40, 0x0F, buf, 2) != i2c::ERROR_OK)
+              ESP_LOGW("alert_init", "BUVL write failed");
+
+            // BOVL (0x0E): bus over-voltage limit — 14.80 V = 4736 = 0x1280
+            buf[0] = 0x12; buf[1] = 0x80;
+            if (id(bus_a).write_register(0x40, 0x0E, buf, 2) != i2c::ERROR_OK)
+              ESP_LOGW("alert_init", "BOVL write failed");
+
+            // SOVL (0x0C): shunt over-voltage limit — 250 A (93.75 mV) = 18750 = 0x493E
+            buf[0] = 0x49; buf[1] = 0x3E;
+            if (id(bus_a).write_register(0x40, 0x0C, buf, 2) != i2c::ERROR_OK)
+              ESP_LOGW("alert_init", "SOVL write failed");
+
+            // PWR_LIMIT (0x11): power over-limit — 1500 W = 4800 = 0x12C0
+            buf[0] = 0x12; buf[1] = 0xC0;
+            if (id(bus_a).write_register(0x40, 0x11, buf, 2) != i2c::ERROR_OK)
+              ESP_LOGW("alert_init", "PWR_LIMIT write failed");
+
+            // DIAG_ALRT (0x0B): arm the ALERT pin — write last so limits are set first.
+            // 0xA0B8 = ALATCH(15) + SLOWALERT(13) + SHNTOL(7) + BUSOL(5) + BUSUL(4) + POL(3)
+            // ALATCH=1: pin stays asserted until DIAG_ALRT is read (safe for serious alerts).
+            // SLOWALERT=1: alert fires after averaging (consistent with 128× averaged data).
+            // APOL=0: active-low (matches open-drain ALERT with R2 pull-up to 3V3).
+            buf[0] = 0xA0; buf[1] = 0xB8;
+            if (id(bus_a).write_register(0x40, 0x0B, buf, 2) != i2c::ERROR_OK)
+              ESP_LOGW("alert_init", "DIAG_ALRT write failed");
+            else
+              ESP_LOGI("alert_init", "INA228 ALERT armed: BUVL=12.20V BOVL=14.80V SOVL=250A POL=1500W");
 
 esp32:
   board: seeed_xiao_esp32c3
@@ -847,7 +940,7 @@ font:
 
 # ============================================================================
 # DISPLAY (V1.14) — Adafruit 938 SSD1306 128x64, I2C 0x3C, on bus_a (shared w/ INA228).
-# OFF by default (on_boot turns it off); woken by the GPIO21 button (see binary_sensor).
+# OFF by default (on_boot turns it off); woken by the GPIO4 button (see binary_sensor).
 # Sleep/wake via turn_on()/turn_off() ONLY — never setup() (ESPHome issue #1393).
 # Four pages, button-cycled (display.page.show_next). update_interval 1s is cheap:
 # the panel is dark almost always, and a lit page refreshes its values each second.
@@ -2054,6 +2147,25 @@ sensor:
 text_sensor:
 
   # --------------------------------------------------------------------------
+  # INA228 Alert Reason — V1.16
+  # Published by the ina228_alert binary_sensor on_press handler.
+  # Contains a decoded description of which DIAG_ALRT bit(s) fired:
+  #   "UNDER-V"  — BUSUL: bus voltage crossed below 12.20 V threshold
+  #   "OVER-V"   — BUSOL: bus voltage crossed above 14.80 V threshold
+  #   "OVER-I"   — SHNTOL: shunt current exceeded 250 A equivalent
+  #   "OVER-P"   — POL: power exceeded 1500 W
+  #   "MATH-OF"  — MATHOF: arithmetic overflow in chip registers (unexpected)
+  #   "MEM-ERR"  — MEMSTAT: chip memory checksum failure (chip fault)
+  # Multiple tokens are space-separated when multiple conditions fire together.
+  # Cleared to "" at boot; not persisted (no NVS). Use HA logbook for history.
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "INA228 Alert Reason"
+    id: alert_reason
+    entity_category: diagnostic
+    icon: "mdi:alert-circle-outline"
+
+  # --------------------------------------------------------------------------
   # Bank State — unified state machine for HA automations (panel ①)
   #
   # Supersedes "Operating Mode". Use bank_state as the single automation
@@ -2188,9 +2300,9 @@ text_sensor:
 binary_sensor:
 
   # --------------------------------------------------------------------------
-  # Display wake/cycle button (V1.14) — Adafruit 1505 NO momentary on GPIO21->GND.
-  # GPIO21 = the XIAO C3 TX pad, freed by logger baud_rate: 0; non-strapping, no
-  # other role in production. INPUT_PULLUP + inverted: pressed = pulled LOW = true.
+  # Display wake/cycle button (V1.15) — Adafruit 1505 NO momentary on GPIO4 (D2) ->GND.
+  # V2 board: button is on J2 pin 1 (GPIO4_BTN net), R3 10k pull-up to +3V3 on board.
+  # INPUT_PULLUP + inverted: pressed = pulled LOW = true.
   # Behavior: 1st press wakes to page 1; each press while awake advances to the next
   # page (wraps). Every press (re)starts the 5-min auto-sleep timer.
   # 50ms delayed_on debounces mechanical contact bounce.
@@ -2200,7 +2312,7 @@ binary_sensor:
     name: "Display Button"
     entity_category: diagnostic
     pin:
-      number: GPIO21
+      number: GPIO4
       mode:
         input: true
         pullup: true
@@ -2223,22 +2335,86 @@ binary_sensor:
         - script.execute: display_sleep_timer
 
   # --------------------------------------------------------------------------
-  # GPIO20 — internal pullup clamp (V1.11)
-  # Position 5 of U2 (silk "ALT" on the INA260 footprint) routes to GPIO20 via R2.
-  # Hardware as-built for INA228 use: U2 pin 5 LIFTED (VBUS isolated from PCB),
-  # R2 DNP. The trace to GPIO20 is genuinely floating with no signal source.
-  # Enable the ESP32-C3 internal pullup to clamp the pin to a defined level —
-  # prevents indeterminate input voltage and the small switching current that
-  # floating CMOS inputs draw. internal: true keeps it out of HA.
+  # GPIO20 — REMOVED in V1.15.
+  # V1.11 clamp is dead code on the V2 board: GPIO20 carries no net (true NC pad).
+  # Retained as a comment for audit trail; do not re-add for V2 hardware.
+
+  # --------------------------------------------------------------------------
+  # INA228 ALERT interrupt — GPIO5 (D3), V1.16
+  # The V2 board routes the INA228 ALRT pin (U2 pad 8) to GPIO5 via the ALERT
+  # net, with R2 10kΩ pull-up to 3V3. The pin is active-low open-drain.
+  # DIAG_ALRT is configured at boot (see on_boot ALERT init) to assert on:
+  #   BUSUL — bus under-voltage  (12.20 V, matches critical_voltage)
+  #   BUSOL — bus over-voltage   (14.80 V, matches overvoltage_threshold)
+  #   SHNTOL — shunt over-limit  (250 A equivalent, 25% above 200 A rating)
+  #   POL   — power over-limit   (1500 W, Giandel rated output)
+  # ALATCH=1: ALERT pin stays asserted until DIAG_ALRT register is read.
+  # SLOWALERT=1: alert fires after averaging (consistent with polled data).
+  #
+  # On interrupt: read DIAG_ALRT via I2C, decode which condition fired, log
+  # at WARN, publish the alert_reason text sensor, and clear the latch.
+  # Reading DIAG_ALRT is what clears the latch and de-asserts the ALERT pin.
+  # delayed_on: 5ms debounces spurious glitches without masking real events
+  # (worst-case I2C clear takes <1 ms; 5 ms is safe margin).
   # --------------------------------------------------------------------------
   - platform: gpio
-    id: gpio20_unused
-    internal: true
+    id: ina228_alert
+    name: "INA228 Alert"
+    entity_category: diagnostic
+    icon: "mdi:alert-circle-outline"
     pin:
-      number: GPIO20
+      number: GPIO5
       mode:
         input: true
-        pullup: true
+        pullup: false          # R2 (10kΩ) on board provides the pull-up — no internal needed
+      inverted: true           # active-low → true = alert asserted
+    filters:
+      - delayed_on: 5ms        # debounce only; no delayed_off (latch clears on DIAG_ALRT read)
+    on_press:
+      - lambda: |-
+          // Read DIAG_ALRT register (0x0B) — this also clears the ALATCH latch.
+          uint8_t reg = 0x0B;
+          uint8_t buf[2] = {0, 0};
+          uint16_t diag = 0;
+
+          // Write register pointer
+          if (id(bus_a).write(0x40, &reg, 1, false) == i2c::ERROR_OK) {
+            // Read 2 bytes
+            if (id(bus_a).read(0x40, buf, 2) == i2c::ERROR_OK) {
+              diag = ((uint16_t)buf[0] << 8) | buf[1];
+            }
+          }
+
+          if (diag == 0) {
+            ESP_LOGW("ina228_alert", "ALERT fired but DIAG_ALRT read failed or cleared");
+            id(alert_reason).publish_state("ALERT: read error");
+            return;
+          }
+
+          // Decode — multiple bits can be set simultaneously
+          bool busul  = (diag >> 4) & 1;   // bus under-voltage
+          bool busol  = (diag >> 5) & 1;   // bus over-voltage
+          bool shntol = (diag >> 7) & 1;   // shunt over-current
+          bool pol    = (diag >> 3) & 1;   // power over-limit
+          bool mathof = (diag >> 9) & 1;   // arithmetic overflow (unexpected)
+          bool memstat = diag & 1;         // memory checksum error (chip fault)
+
+          char reason[80];
+          snprintf(reason, sizeof(reason), "%s%s%s%s%s%s",
+            busul  ? "UNDER-V " : "",
+            busol  ? "OVER-V "  : "",
+            shntol ? "OVER-I "  : "",
+            pol    ? "OVER-P "  : "",
+            mathof ? "MATH-OF " : "",
+            memstat ? "MEM-ERR" : "");
+
+          // Trim trailing space
+          int len = strlen(reason);
+          while (len > 0 && reason[len-1] == ' ') reason[--len] = '\0';
+          if (len == 0) snprintf(reason, sizeof(reason), "UNKNOWN(0x%04X)", diag);
+
+          ESP_LOGW("ina228_alert", "ALERT: %s  (DIAG_ALRT=0x%04X)", reason, diag);
+          id(alert_reason).publish_state(std::string(reason));
 
   # --------------------------------------------------------------------------
   # Discharging — net discharge > 0.05 A sustained 30 s.
@@ -2689,8 +2865,8 @@ binary_sensor:
   # Current Channel Fault (V1.13) — SOC-integrity guard, dashboard visibility.
   #
   # Fires when the reported current magnitude is non-physical (> i_max_plausible_a,
-  # 350 A): a saturated or garbage current channel, including the high-side
-  # open-Kelvin-lead failure (a floating differential input rails the reading high).
+  # 350 A): a saturated or garbage current channel (an open or floating Kelvin
+  # sense lead rails the differential input reading high).
   # When this is set, the four SOC integration sources freeze and bank_state shows
   # FAULT — this sensor surfaces the same condition explicitly for the operator.
   #
@@ -2759,7 +2935,7 @@ button:
   # restarts before WiFi/UART can transmit the log line. The 500ms delay lets
   # the WARN log reach HA and UART before reboot, providing post-mortem
   # evidence of the manual press. Post-reboot, the on_boot log (priority -200,
-  # "Battery Bank Monitor V1.14 boot...") provides confirmation that the
+  # "Battery Bank Monitor V1.16 boot...") provides confirmation that the
   # restart completed successfully.
   - platform: template
     name: "Restart"
