@@ -1,5 +1,5 @@
 # ============================================================================
-# Battery Bank Monitor V1.17 — PRODUCTION Configuration
+# Battery Bank Monitor V1.19 — PRODUCTION Configuration
 #   CORE (backup readiness — must be correct): V/I/T acquisition, stale-bus FAULT
 #     watchdog, 3-tier low-voltage alarms + overvoltage guard, bank_state machine,
 #     runtime-remaining, and SOC (Coulomb counter anchored at full charge).
@@ -11,7 +11,7 @@
 #     socket; external 375 µΩ DROK Kelvin shunt in negative cable (low-side).
 #     INA228 onboard 15 mΩ shunt REMOVED; VBUS jumper LEFT OPEN (low-side default);
 #     VBUS driven from positive busbar via inline-fused lead at breakout terminal block.
-#   Source-level reviewed against ESPHome 2026.4.3. Flash-ready after credentials
+#   Source-level reviewed against ESPHome 2026.5.x. Flash-ready after credentials
 #     are set in secrets.yaml. Apparent Ri (V1.8) remains PROVISIONAL.
 # ============================================================================
 # Purpose : Full instrumentation for 12V/500Ah LiFePO4 battery bank with
@@ -45,7 +45,7 @@
 #   ③ Runtime remaining — hours and days at current net discharge rate
 #   ④ Discharge phases — settling · plateau · knee · cliff state machine
 #   ⑤ Ah/Wh counters — per-cycle (since last full charge) + lifetime totals
-#   ⑥ Charge session tracking — CC/CV profile, peak current, round-trip RTE
+#   ⑥ Charge session tracking — CC/CV profile, peak current, CV/absorption time
 #   ⑦ System health — temperatures, WiFi, INA228 and DS18B20 connectivity
 #
 # INA228 Configuration:
@@ -83,6 +83,50 @@
 #   float_voltage 13.26 V, no BP-65, no survival sleep.
 #
 # Changelog:
+#   V1.19 — CV/absorption-time telemetry + LED pattern swap + R4 value change:
+#            • CV ABSORPTION TIME per charge session (charger-health trend
+#              metric — absorption duration creeping upward across months is an
+#              early indicator of capacity fade or a weak parallel string).
+#              Accumulates while the absorption_phase sensor is pressed (handles
+#              V-sag release/re-press within one session); finalized to
+#              last_absorption_min at the full-charge anchor; discarded on
+#              partial sessions. Two sensors: "CV Absorption Time" (last
+#              completed session, persisted) and "CV Absorption Elapsed" (live,
+#              current session). Sensor debounce (delayed_on 60s / delayed_off
+#              30s) gives a constant ~-30s offset vs true CV time — irrelevant
+#              for trending. In-progress timing is LOST on reboot (transient,
+#              consistent with absorption_reached).
+#            • LED pattern SWAPPED vs V1.18: SLOW flash (0.5 Hz) = idle/no
+#              fault — continuous proof-of-life that the 250 ms loop runs (a
+#              stuck-solid or stuck-dark LED is now unambiguously a fault);
+#              SOLID = charging/discharging; FAST (2 Hz) = FAULT unchanged.
+#            • R4 changed 220 Ω → 1 kΩ on PCB Rev 1.1 (~1.2 mA lit; ~0.6 mA
+#              average at idle with 50% flash duty).
+#
+#   V1.18 — Production-review fixes + status LED (review vs ESPHome 2026.5.x
+#            source and TI INA228 datasheet SLYS021):
+#            • Fixed YAML parse error: Apparent-Ri interval block was indented
+#              4 spaces (V1.17 as-shipped failed `esphome config`).
+#            • Boot ALERT init rewritten: i2c::I2CBus has no write_register();
+#              raw 3-byte writes {reg, MSB, LSB} used instead.
+#            • DIAG_ALRT corrected to 0xA000 (ALATCH+SLOWALERT only). V1.16's
+#              0xA0B8 wrote 1s into read-only/status flag positions — INA228
+#              has no per-condition enable bits; limits arm via limit registers.
+#            • DIAG_ALRT decode bit map corrected (each flag was one bit high):
+#              MEMSTAT=0, CNVRF=1, POL=2, BUSUL=3, BUSOL=4, SHNTUL=5, SHNTOL=6,
+#              TMPOL=7, MATHOF=9. MEMSTAT polarity fixed (1 = normal; V1.16
+#              appended MEM-ERR on every alert).
+#            • SUVL (0x0D) armed at −250A: in Option B low-side wiring discharge
+#              current is negative shunt voltage, so SOVL alone only caught
+#              charge-direction over-current. SHNTUL now decodes OVER-I(DIS),
+#              SHNTOL OVER-I(CHG).
+#            • Two `//` pseudo-comments on option lines (discharge_phase
+#              update_interval, voltage_emergency delayed_on) → `#` (would have
+#              failed time-period validation).
+#            • Status LED on GPIO20 (D7) via R4, active-high: solid = idle/no
+#              fault, 0.5 Hz flash = charging/discharging, 2 Hz flash = FAULT.
+#              250 ms tick driver mirrors bank_state + charge/discharge flags.
+#
 #   V1.17 — Display redesign (simulator-verified). 4 fonts: font_soc(24),
 #            font_runtime(28), font_body(12), font_hdr(10). All pages centred.
 #            Page ①: SOC/V/I/W y=0/28/42/55. Page ②: RUNTIME @ LOAD header,
@@ -232,7 +276,7 @@ esphome:
       then:
         - logger.log:
             level: INFO
-            format: "Battery Bank Monitor V1.17 boot -- INA228 @ 0x40, DS18B20 on GPIO10"
+            format: "Battery Bank Monitor V1.19 boot -- INA228 @ 0x40, DS18B20 on GPIO10"
         # Start panel dark — wakes on button press only. turn_off() not setup() (issue #1393).
         - lambda: 'id(panel).turn_off();'
         # INA228 ALERT register init — runs after component init (priority -200).
@@ -244,41 +288,53 @@ esphome:
         # accumulators with reset_on_boot: false), so this runs on every boot.
         - delay: 200ms
         - lambda: |-
-            // INA228 ALERT register initialization
-            // ESPHome 2026.4.3+: write_register(addr, reg, data[], len) — no stop param.
+            // INA228 ALERT register initialization (V1.18 corrected).
+            // i2c::I2CBus has NO write_register() — only write()/read()/write_readv()
+            // (verified against esphome/components/i2c/i2c_bus.h). Register writes are
+            // therefore raw 3-byte transactions: {register pointer, MSB, LSB}.
+            // The driver never touches DIAG_ALRT in this config (it only reads it when
+            // energy:/charge: sub-sensors are configured — ina2xx_base.cpp
+            // read_diagnostics_and_act_), so the ALATCH latch is ours alone.
+            // CAUTION: if energy:/charge: sub-sensors are ever added, the driver will
+            // read DIAG_ALRT each cycle and clear the latch — revisit alert handling.
 
-            uint8_t buf[2];
+            auto wr16 = [](uint8_t reg, uint16_t val, const char *tag) {
+              uint8_t buf[3] = { reg, (uint8_t)(val >> 8), (uint8_t)(val & 0xFF) };
+              if (id(bus_a).write(0x40, buf, 3) != i2c::ERROR_OK)
+                ESP_LOGW("alert_init", "%s write failed", tag);
+            };
 
-            // BUVL (0x0F): bus under-voltage limit — 12.20 V = 3904 = 0x0F40
-            buf[0] = 0x0F; buf[1] = 0x40;
-            if (id(bus_a).write_register(0x40, 0x0F, buf, 2) != i2c::ERROR_OK)
-              ESP_LOGW("alert_init", "BUVL write failed");
+            // Limit registers first, then DIAG_ALRT to arm — all big-endian MSB first.
+            // BUVL (0x0F): bus under-voltage — 12.20 V / 3.125 mV = 3904 = 0x0F40
+            wr16(0x0F, 0x0F40, "BUVL");
+            // BOVL (0x0E): bus over-voltage — 14.80 V / 3.125 mV = 4736 = 0x1280
+            wr16(0x0E, 0x1280, "BOVL");
+            // SOVL (0x0C): shunt over-voltage = CHARGE-direction over-current.
+            //   +250 A × 375 µΩ = +93.75 mV / 5 µV (ADCRANGE=0) = 18750 = 0x493E
+            wr16(0x0C, 0x493E, "SOVL");
+            // SUVL (0x0D): shunt under-voltage = DISCHARGE-direction over-current
+            //   (Option B: discharge is negative shunt voltage; SOVL alone would only
+            //   ever fire on an impossible +250 A charge — the 80 A LiTime can't reach it).
+            //   −250 A → −93.75 mV / 5 µV = −18750 → two's complement 0xB6C2
+            wr16(0x0D, 0xB6C2, "SUVL");
+            // PWR_LIMIT (0x11): power over-limit — 1500 W / 0.3125 W = 4800 = 0x12C0
+            //   (PWR_LIMIT LSB = 256 × Power LSB = 256 × 3.2 × (200 A / 2^19) = 0.3125 W.
+            //   POWER register is magnitude — POL covers both directions.)
+            wr16(0x11, 0x12C0, "PWR_LIMIT");
 
-            // BOVL (0x0E): bus over-voltage limit — 14.80 V = 4736 = 0x1280
-            buf[0] = 0x12; buf[1] = 0x80;
-            if (id(bus_a).write_register(0x40, 0x0E, buf, 2) != i2c::ERROR_OK)
-              ESP_LOGW("alert_init", "BOVL write failed");
-
-            // SOVL (0x0C): shunt over-voltage limit — 250 A (93.75 mV) = 18750 = 0x493E
-            buf[0] = 0x49; buf[1] = 0x3E;
-            if (id(bus_a).write_register(0x40, 0x0C, buf, 2) != i2c::ERROR_OK)
-              ESP_LOGW("alert_init", "SOVL write failed");
-
-            // PWR_LIMIT (0x11): power over-limit — 1500 W = 4800 = 0x12C0
-            buf[0] = 0x12; buf[1] = 0xC0;
-            if (id(bus_a).write_register(0x40, 0x11, buf, 2) != i2c::ERROR_OK)
-              ESP_LOGW("alert_init", "PWR_LIMIT write failed");
-
-            // DIAG_ALRT (0x0B): arm the ALERT pin — write last so limits are set first.
-            // 0xA0B8 = ALATCH(15) + SLOWALERT(13) + SHNTOL(7) + BUSOL(5) + BUSUL(4) + POL(3)
-            // ALATCH=1: pin stays asserted until DIAG_ALRT is read (safe for serious alerts).
-            // SLOWALERT=1: alert fires after averaging (consistent with 128× averaged data).
+            // DIAG_ALRT (0x0B): 0xA000 = ALATCH(bit15) + SLOWALERT(bit13) ONLY.
+            // The limit-violation bits (POL=2, BUSUL=3, BUSOL=4, SHNTUL=5, SHNTOL=6,
+            // TMPOL=7 — INA228 datasheet SLYS021 register map) are hardware STATUS FLAGS, not enables;
+            // the INA228 has no per-condition enable bits. Alerts are "disabled" by
+            // leaving their limit registers at the never-trip defaults (SUVL/TEMP_LIMIT
+            // defaults are never-trip; we now set SUVL deliberately above).
+            // The previous 0xA0B8 wrote 1s into status-flag bits — removed.
+            // ALATCH=1: pin stays asserted until DIAG_ALRT is read.
+            // SLOWALERT=1: alert evaluated on averaged conversions (matches AVG=128).
             // APOL=0: active-low (matches open-drain ALERT with R2 pull-up to 3V3).
-            buf[0] = 0xA0; buf[1] = 0xB8;
-            if (id(bus_a).write_register(0x40, 0x0B, buf, 2) != i2c::ERROR_OK)
-              ESP_LOGW("alert_init", "DIAG_ALRT write failed");
-            else
-              ESP_LOGI("alert_init", "INA228 ALERT armed: BUVL=12.20V BOVL=14.80V SOVL=250A POL=1500W");
+            wr16(0x0B, 0xA000, "DIAG_ALRT");
+            ESP_LOGI("alert_init",
+              "INA228 ALERT armed: BUVL=12.20V BOVL=14.80V SOVL=+250A SUVL=-250A POL=1500W");
 
 esp32:
   board: seeed_xiao_esp32c3
@@ -337,7 +393,7 @@ i2c:
   frequency: 100kHz  # 400kHz unnecessary at 1s telemetry — bus utilisation <0.3%
                       # at 100kHz. Lower clock rate reduces EMI on SDA/SCL, which
                       # run adjacent to 2/0 AWG cables carrying 200A transients.
-                      # INA228 has no minimum I2C speed constraint (SBOS951 §7.5.3).
+                      # INA228 has no minimum I2C speed constraint (datasheet SLYS021 §7.5.3).
 
 # 1-Wire: DS18B20 on GPIO10 (D10). Module has built-in 4.7 kΩ pull-up.
 one_wire:
@@ -532,6 +588,38 @@ display:
   # on_boot: start dark (the panel only lights on a button press)
   # (handled in esphome: on_boot below)
 
+# ============================================================================
+# STATUS LED (V1.18, semantics revised V1.19) — 3 mm green LED on GPIO20 via
+# R4 (1 kΩ, PCB Rev 1.1), active-high.
+# Requires the Rev 1.1 PCB LED fix: GPIO20 → R4 → LED anode, LED cathode → GND.
+# (As drawn in Rev 1, R4 ran from +3V3 and the LED cathode faced the GPIO node —
+#  see review notes. If flashing a board built WITHOUT the fix and with the LED
+#  physically reversed, change this output to open-drain:
+#  pin: { number: GPIO20, mode: { output: true, open_drain: true } } — never
+#  push-pull, or the pin sources unlimited current into the un-resistored LED.)
+# Semantics (V1.19 — OBSERVABILITY: reads published states, cannot affect CORE):
+#   SLOW flash = bank idle, no faults (1 s on / 1 s off). Idle-flash is the
+#                proof-of-life signal: it is continuous evidence the 250 ms
+#                loop is running. A stuck-SOLID or stuck-DARK LED is therefore
+#                unambiguously a fault tell (frozen MCU / dead board) — this
+#                closes the residual weakness of solid-at-idle, which could not
+#                distinguish "alive and idle" from "frozen with pin latched".
+#   SOLID      = charging or discharging (tracks the 30 s debounced
+#                is_charging / is_discharging sensors)
+#   FAST flash = FAULT (2 Hz; mirrors bank_state: stale bus, NaN, |I| > 350 A)
+#   Boot:        pin defaults LOW → LED dark until the first 250 ms tick, then
+#                idle-flash. Dark beyond ~10 s after power-up = commissioning
+#                fault tell (§4.4 of wiring doc — XIAO C3 has no power LED).
+# GPIO20 = XIAO D7 / U0RXD — free because logger baud_rate: 0 disables UART.
+# Draw: ~1.2 mA while lit ((3.3 V − ~2.1 V Vf) / 1 kΩ); ~0.6 mA average at idle
+# (50% duty). Flows through the shunt — the Coulomb counter sees it like the
+# rest of the board's self-draw.
+# ============================================================================
+output:
+  - platform: gpio
+    id: led_out
+    pin: GPIO20
+
 # Display auto-sleep. mode: restart resets the timer on each button press.
 script:
   - id: display_sleep_timer
@@ -564,6 +652,19 @@ globals:
     initial_value: '0.0'
     restore_value: no
 
+  # CV/absorption-time tracking (V1.19, transient). millis()-based; uint32_t
+  # subtraction is wrap-safe. start_ms != 0 marks an open CV segment;
+  # ms_accum sums all CV segments within one charge session (V-sag re-entry).
+  - id: absorption_start_ms
+    type: uint32_t
+    initial_value: '0'
+    restore_value: no
+
+  - id: absorption_ms_accum
+    type: uint32_t
+    initial_value: '0'
+    restore_value: no
+
   # Full-charge cycle summary (persisted)
   - id: last_cycle_ah_in
     type: float
@@ -579,6 +680,13 @@ globals:
     type: float
     initial_value: '0.0'
     restore_value: yes      # Coulombic efficiency Ah_out/Ah_in × 100% (≠ energy RTE)
+
+  - id: last_absorption_min
+    type: float
+    initial_value: '0.0'
+    restore_value: yes      # CV/absorption minutes, last completed full-charge session
+                            # (V1.19). Upward trend across months = charger-health /
+                            # capacity-fade early indicator.
 
   # Self-discharge reconciliation (persisted). Two clean anchors needed to measure U.
   - id: last_anchor_epoch
@@ -734,7 +842,7 @@ interval:
   # Apparent Ri (PROVISIONAL) — rest→discharge load steps only.
   # Ri = ΔV/ΔI; OCV term cancels across 1s. Only qualifying rest→discharge steps
   # (no charge/off edges — polarization asymmetry tracks usage, not aging).
-    - interval: 1s
+  - interval: 1s
     then:
       - lambda: |-
           float i_now = id(ina228_current).state;
@@ -776,6 +884,23 @@ interval:
           }
           id(ri_prev_i) = i_now;
           id(ri_prev_v) = v_now;
+
+  # Status-LED pattern driver (V1.19 semantics). 250 ms base tick:
+  # fast = toggle every tick (2 Hz); slow = 4 ticks on / 4 off (0.5 Hz); solid = on.
+  # FAULT predicate mirrors bank_state (single source of truth, published 5 s).
+  # Idle = SLOW flash (proof-of-life); charge/discharge = SOLID; FAULT = FAST.
+  - interval: 250ms
+    then:
+      - lambda: |-
+          static uint8_t tick = 0;
+          tick = (tick + 1) & 0x07;
+          bool fault  = id(bank_state).has_state() &&
+                        id(bank_state).state == "FAULT";
+          bool active = id(is_charging).state || id(is_discharging).state;
+          bool on = (tick < 4);                // slow flash: idle, no faults (proof-of-life)
+          if (fault)        on = (tick & 1);   // fast flash — FAULT
+          else if (active)  on = true;         // solid — charge/discharge in progress
+          if (on) id(led_out).turn_on(); else id(led_out).turn_off();
 
   # 60s health log — single-line diagnostic snapshot.
   - interval: 60s
@@ -1228,6 +1353,39 @@ sensor:
       return (v > 0.5f) ? v : NAN;
     update_interval: 60s
 
+  # CV/absorption time, last completed full-charge session (V1.19, persisted).
+  # Charger-health trend metric: a multi-month upward drift in absorption
+  # duration is an early indicator of capacity fade or a weak parallel string
+  # (the bank takes longer to taper at the CV setpoint). Single samples are
+  # noisy — depth-of-discharge before the charge dominates one-off values;
+  # the signal is the TREND at comparable DoD. NaN until first full cycle.
+  # Constant ~-30s offset vs true CV time (sensor debounce) — irrelevant for trend.
+  - platform: template
+    name: "CV Absorption Time"
+    unit_of_measurement: "min"
+    accuracy_decimals: 1
+    icon: "mdi:battery-clock"
+    entity_category: diagnostic
+    lambda: |-
+      float v = id(last_absorption_min);
+      return (v > 0.0f) ? v : NAN;
+    update_interval: 60s
+
+  # Live CV/absorption elapsed, current charge session (V1.19, transient).
+  # Sums closed segments + the open one (V-sag re-entry handled). NaN when no
+  # CV time has accrued this session; resets via the session-end handlers.
+  - platform: template
+    name: "CV Absorption Elapsed"
+    unit_of_measurement: "min"
+    accuracy_decimals: 1
+    icon: "mdi:progress-clock"
+    entity_category: diagnostic
+    lambda: |-
+      uint32_t ms = id(absorption_ms_accum);
+      if (id(absorption_start_ms) != 0u) ms += millis() - id(absorption_start_ms);
+      return (ms > 0u) ? (float) ms / 60000.0f : NAN;
+    update_interval: 60s
+
   # --------------------------------------------------------------------------
   # Discharge cycle health metrics — aging indicators (panel ⑥)
   # Both persisted in globals; NaN guard suppresses display before first full cycle.
@@ -1437,7 +1595,7 @@ text_sensor:
       if (v > ${plateau_min_v}f)              return std::string("Plateau");
       if (v > ${knee_min_v}f)                  return std::string("Knee");
       return                                          std::string("Cliff");
-    update_interval: 30s    // 30s debounce — bank voltage transitions are slow
+    update_interval: 30s    # 30s debounce — bank voltage transitions are slow
     on_value:
       - lambda: |-
           float i = id(ina228_current).state;
@@ -1490,12 +1648,16 @@ binary_sensor:
         - script.execute: display_sleep_timer
 
   # --------------------------------------------------------------------------
-  # GPIO20 — REMOVED in V1.15.
-  # V1.11 clamp is dead code on the V2 board: GPIO20 carries no net (true NC pad).
-  # Retained as a comment for audit trail; do not re-add for V2 hardware.
+  # GPIO20 history: V1.11 input clamp REMOVED in V1.15 (pin was a true NC pad
+  # on the V2 Rev 1 layout). As of V1.18 / PCB Rev 1.1 the pin is REUSED as the
+  # status-LED output (see `output:` block above). Do not re-add the clamp.
 
   # INA228 ALERT: GPIO5 (D3), active-low, R2 10kΩ pull-up on board.
-  # Armed at boot for BUSUL/BUSOL/SHNTOL/POL. ALATCH=1 — clears on DIAG_ALRT read.
+  # Armed at boot via limit registers: BUVL/BOVL/SOVL/SUVL/PWR_LIMIT.
+  # ALATCH=1 — pin latches until DIAG_ALRT is read (done in on_press below).
+  # Known limit: while a latched condition persists, the binary sensor stays
+  # pressed, so a second, different alert arriving during that window is not
+  # re-decoded until the first clears.
   - platform: gpio
     id: ina228_alert
     name: "INA228 Alert"
@@ -1530,22 +1692,30 @@ binary_sensor:
             return;
           }
 
-          // Decode — multiple bits can be set simultaneously
-          bool busul  = (diag >> 4) & 1;   // bus under-voltage
-          bool busol  = (diag >> 5) & 1;   // bus over-voltage
-          bool shntol = (diag >> 7) & 1;   // shunt over-current
-          bool pol    = (diag >> 3) & 1;   // power over-limit
-          bool mathof = (diag >> 9) & 1;   // arithmetic overflow (unexpected)
-          bool memstat = diag & 1;         // memory checksum error (chip fault)
+          // Decode — multiple bits can be set simultaneously.
+          // Bit map per INA228 datasheet (TI SLYS021) DIAG_ALRT: MEMSTAT=0, CNVRF=1, POL=2, BUSUL=3,
+          // BUSOL=4, SHNTUL=5, SHNTOL=6, TMPOL=7, MATHOF=9.
+          // (V1.18 fix: V1.16 positions were each one bit too high, and MEMSTAT
+          // semantics were inverted — MEMSTAT reads 1 in NORMAL operation.)
+          bool pol     = (diag >> 2) & 1;   // power over-limit (|P| > 1500 W)
+          bool busul   = (diag >> 3) & 1;   // bus under-voltage (< 12.20 V)
+          bool busol   = (diag >> 4) & 1;   // bus over-voltage (> 14.80 V)
+          bool shntul  = (diag >> 5) & 1;   // shunt under-voltage = DISCHARGE over-current
+          bool shntol  = (diag >> 6) & 1;   // shunt over-voltage  = CHARGE over-current
+          bool tmpol   = (diag >> 7) & 1;   // die over-temperature (TEMP_LIMIT default — not armed)
+          bool mathof  = (diag >> 9) & 1;   // arithmetic overflow (unexpected)
+          bool memerr  = !(diag & 1);       // MEMSTAT==0 → trim-memory checksum FAULT
 
-          char reason[80];
-          snprintf(reason, sizeof(reason), "%s%s%s%s%s%s",
+          char reason[96];
+          snprintf(reason, sizeof(reason), "%s%s%s%s%s%s%s%s",
             busul  ? "UNDER-V " : "",
             busol  ? "OVER-V "  : "",
-            shntol ? "OVER-I "  : "",
-            pol    ? "OVER-P "  : "",
+            shntul ? "OVER-I(DIS) " : "",
+            shntol ? "OVER-I(CHG) " : "",
+            pol    ? "OVER-P " : "",
+            tmpol  ? "OVER-T " : "",
             mathof ? "MATH-OF " : "",
-            memstat ? "MEM-ERR" : "");
+            memerr ? "MEM-ERR" : "");
 
           // Trim trailing space
           int len = strlen(reason);
@@ -1671,10 +1841,21 @@ binary_sensor:
                   id(total_full_charge_count)++;
                   // Reset cycle-level discharge tracker for next cycle
                   id(discharge_peak_a_raw) = 0.0f;
+                  // V1.19: finalize CV/absorption time for this session.
+                  // Sequencing guarantee: absorption_phase releases 30 s after current
+                  // stops (delayed_off 30s); is_charging releases at 60 s — so by the
+                  // time this branch runs, the last CV segment is already accumulated.
+                  // The open-segment close below is defensive only.
+                  if (id(absorption_start_ms) != 0u) {
+                    id(absorption_ms_accum) += millis() - id(absorption_start_ms);
+                    id(absorption_start_ms) = 0u;
+                  }
+                  id(last_absorption_min) = (float) id(absorption_ms_accum) / 60000.0f;
+                  id(absorption_ms_accum) = 0u;
                   ESP_LOGI("bank",
-                    "FULL CHARGE #%d | Ah_out=%.2f Ah_in=%.2f | CoulEff=%.1f%% | mean_V=%.3fV | peak_dis=%.1fA | V=%.3fV | chrg_peak=%.1fA",
+                    "FULL CHARGE #%d | Ah_out=%.2f Ah_in=%.2f | CoulEff=%.1f%% | mean_V=%.3fV | peak_dis=%.1fA | V=%.3fV | chrg_peak=%.1fA | CV=%.1f min",
                     id(total_full_charge_count), ah_out, ah_in, coul_eff, mean_v, peak_discharge,
-                    id(ina228_voltage).state, id(charge_peak_a_raw));
+                    id(ina228_voltage).state, id(charge_peak_a_raw), id(last_absorption_min));
 
                   // ---- Self-discharge reconciliation (V1.10 — OBSERVABILITY, logs only) ----
                   // U = unseen drain = (recon_coul_eff × ah_in) − ah_out  [DC Ah that left
@@ -1746,10 +1927,20 @@ binary_sensor:
                   // survive to falsely anchor a later, unrelated partial charge to 100%.
                   bool was_set = id(absorption_reached);
                   id(absorption_reached) = false;
+                  // V1.19: discard any accumulated CV time — a partial session is not a
+                  // valid charger-health sample (the trend metric is only meaningful
+                  // across COMPLETED absorption profiles). last_absorption_min untouched.
+                  if (id(absorption_start_ms) != 0u) {
+                    id(absorption_ms_accum) += millis() - id(absorption_start_ms);
+                    id(absorption_start_ms) = 0u;
+                  }
+                  float cv_discarded = (float) id(absorption_ms_accum) / 60000.0f;
+                  id(absorption_ms_accum) = 0u;
                   // Counters accumulate; SOC reflects actual partial charge returned. No anchor reset.
                   ESP_LOGI("bank",
-                    "Charge session ended (no full-charge anchor) | absorption_reached was %s, now cleared | V_end=%.3fV | Ah_in_cumulative=%.2f | Peak=%.1fA",
+                    "Charge session ended (no full-charge anchor) | absorption_reached was %s, now cleared | CV time discarded=%.1f min | V_end=%.3fV | Ah_in_cumulative=%.2f | Peak=%.1fA",
                     was_set ? "true" : "false",
+                    cv_discarded,
                     id(ina228_voltage).state,
                     id(ah_charged_cycle).state,
                     id(charge_peak_a_raw));
@@ -1798,7 +1989,7 @@ binary_sensor:
       return id(ina228_voltage).state < ${emergency_voltage}f &&
              id(ina228_current).state < ${discharge_threshold_a}f;
     filters:
-      - delayed_on: 10s    // Fast response — hardware protection imminent
+      - delayed_on: 10s    # Fast response — hardware protection imminent
     on_press:
       - lambda: |-
           ESP_LOGE("bank.alarm",
@@ -1877,17 +2068,28 @@ binary_sensor:
     on_press:
       - lambda: |-
           id(absorption_reached) = true;
+          // V1.19: open a CV-time segment. millis() never returns 0 here in
+          // practice (60 s delayed_on guarantees uptime >> 0), so 0 is safe
+          // as the "no open segment" sentinel.
+          id(absorption_start_ms) = millis();
           ESP_LOGI("bank",
-            "Absorption phase confirmed | V=%.3fV I=%.3fA | absorption_reached set",
+            "Absorption phase confirmed | V=%.3fV I=%.3fA | absorption_reached set, CV timer started",
             id(ina228_voltage).state, id(ina228_current).state);
     on_release:
       - lambda: |-
           // Absorption phase ended without the charger stopping (e.g., V sagged below
           // 14.2 V while charger still ran). Flag preserved — is_charging on_release
           // will still catch the full-charge event when the session ends.
+          // V1.19: close the CV segment into the session accumulator. If V recovers
+          // above 14.2 V, on_press opens a new segment — total CV time is the sum.
+          if (id(absorption_start_ms) != 0u) {
+            id(absorption_ms_accum) += millis() - id(absorption_start_ms);  // wrap-safe
+            id(absorption_start_ms) = 0u;
+          }
           ESP_LOGD("bank",
-            "Absorption phase sensor released | V=%.3fV | absorption_reached=%s",
-            id(ina228_voltage).state, id(absorption_reached) ? "true" : "false");
+            "Absorption phase sensor released | V=%.3fV | absorption_reached=%s | CV accum=%.1f min",
+            id(ina228_voltage).state, id(absorption_reached) ? "true" : "false",
+            (float) id(absorption_ms_accum) / 60000.0f);
 
   # Sensor health
   # INA228 Watchdog: >10s gap in bus_voltage on_value callbacks → FAULT.
@@ -1946,7 +2148,8 @@ binary_sensor:
 
 button:
   # Restart: 500ms flush before safe_reboot (platform: restart races log writes).
-  # LOST on reboot: in-progress outage Ah/Wh, absorption_reached, discharge_peak_a_raw.
+  # LOST on reboot: in-progress outage Ah/Wh, absorption_reached, discharge_peak_a_raw,
+  # in-progress CV-absorption timing (absorption_start_ms / absorption_ms_accum).
   # PRESERVED: lifetime totals, last-outage summary, Ri sample count.
   - platform: template
     name: "Restart"
