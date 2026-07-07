@@ -6,24 +6,23 @@ Technical reports and analysis documents for the LiFePO₄ battery monitoring st
 
 ## Current Version
 
-### LiFePO4_Report_2026-03-01.md
+### LiFePO4_Report_2026-03-31.md
 
-**[📄 Read the Full Report →](LiFePO4_Report_2026-03-01.md)**
+**[📄 Read the Full Report →](LiFePO4_Report_2026-03-31.md)**
 
 | Property | Value |
 |:---------|:------|
-| Data through | March 1, 2026 |
-| Published | March 1, 2026 |
-| Monitoring duration | 125+ days |
-| High-freq samples | 663,683 |
+| Data through | March 31, 2026 (hourly); April 2, 2026 (high-frequency) |
+| Published | April 5, 2026 |
+| Monitoring duration | 158 days (see notes on this figure below) |
+| High-freq samples | 758,338 |
 
 **Key findings:**
-- ✅ **Self-discharge: ~0%** — All loss from parasitic loads (validated vs. published data)
-- ✅ **BMS balancing observed** — ~80-90 sec cycles captured at 14.4V+
-- ✅ Parasitic draw measured: 12.5 mA (Drok ~10mA + Shelly ~2-6mA)
-- ✅ Charge event analyzed: Feb 22, 2026 (1.289 kWh, ~81 Ah)
-- ✅ 11+ months projected to 80% SOC
-- ✅ Architectural immunity maintained through charge/discharge cycle
+- ✅ **Stasis confirmed** — all four stasis criteria pass (drift +3.02 mV/day, noise −28.4% vs. pre-charge baseline, voltage range 50 mV, day 42 post-charge)
+- ✅ **Near-zero long-term drift** — 5-day MA-60 rate of −0.19 mV/day, indistinguishable from zero
+- ✅ **Best noise performance recorded** — MA-60 std down 28.4% (9.38 mV → 6.72 mV)
+- ✅ Resting voltage 13.247–13.251 V, within 19–23 mV of the Nov 4, 2025 stasis baseline
+- ⚠️ HF logging gap ~Mar 7–20, 2026 — only hourly averages available for that window
 
 ---
 
@@ -31,7 +30,9 @@ Technical reports and analysis documents for the LiFePO₄ battery monitoring st
 
 | Version | Date | Data Coverage | Key Changes |
 |:--------|:-----|:--------------|:------------|
-| **2026-03-01** | Mar 1, 2026 | Oct 29, 2025 – Mar 1, 2026 | Self-discharge analysis; BMS balancing; charge event; 125+ days |
+| **2026-03-31** | Apr 5, 2026 | Oct 29, 2025 – Mar 31/Apr 2, 2026 | Full stasis confirmed; 158-day study; HF gap Mar 7–20 noted |
+| 2026-03-06 | Mar 6, 2026 | Oct 29, 2025 – Mar 6, 2026 | Approaching stasis; 130+ day monitoring; drift −4.75 mV/day |
+| 2026-03-01 | Mar 1, 2026 | Oct 29, 2025 – Mar 1, 2026 | Self-discharge analysis; BMS balancing; charge event; 125+ days |
 | 2026-01-31 | Feb 1, 2026 | Oct 29, 2025 – Jan 31, 2026 | Extended to 94+ days; drift flattening; temperature analysis |
 | 2025-12-26 | Dec 27, 2025 | Oct 29, 2025 – Dec 26, 2025 | Added high-frequency data; Eco Mode analysis |
 | 2025-11-22 | Nov 23, 2025 | Oct 29, 2025 – Nov 22, 2025 | Initial stasis monitoring |
