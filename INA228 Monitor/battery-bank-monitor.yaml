@@ -347,7 +347,7 @@ logger:
 
 api:
   encryption:
-    key: "REPLACE_WITH_YOUR_32_BYTE_BASE64_API_KEY"
+    key: "zAmNyYPLhBnhOJXzc4ZpC1nOZcYTkaS+Fqbiwr/JLvQ="
   # reboot_timeout: 0s — continuous local readout takes priority over network recovery.
   # Crash-loop recovery via safe_mode. Set e.g. 4h instead of 0s if wedge-recovery preferred.
   reboot_timeout: 0s
