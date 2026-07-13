@@ -354,7 +354,7 @@ api:
 
 ota:
   - platform: esphome
-    password: "REPLACE_WITH_YOUR_OTA_PASSWORD"
+    password: "Wkc#120259"
 
 wifi:
   ssid: "Lake Poco"
