@@ -141,7 +141,7 @@
 #
 #   V1.15 — V2 board: button GPIO21→GPIO4 (D2). GPIO20 clamp removed (true NC).
 #
-#   V1.14 — Local OLED (Adafruit 938, SSD1306 128×64, I2C 0x3C) on bus_a.
+#   V1.14 — Local OLED (Adafruit 938, SSD1306 128×64, I2C 0x3D) on bus_a.
 #            Wake button GPIO4. 4 pages button-cycled. Off by default; sleeps
 #            after display_timeout (5min). turn_on/turn_off only (issue #1393).
 #            reboot_timeout: 0s on api + wifi (continuous local readout).
@@ -197,7 +197,7 @@ substitutions:
 
   # --- Battery & system parameters ------------------------------------------
   # Source: LiFePO4_Report_2026-03-06.md / discharge test Oct 2025
-  validated_capacity_ah:    "397"    # Ah; measured Oct 2025
+  validated_capacity_ah:    "397.0"  # Ah; measured Oct 2025 (decimal REQUIRED: lambdas append f suffix; 397f is ill-formed C++)
   validated_capacity_wh:    "5082"   # Wh; informational only (not referenced in any lambda)
 
   # --- Self-discharge model (default 0.0 = inert) ----------------------------
@@ -424,7 +424,7 @@ font:
     size: 10
 
 # ============================================================================
-# DISPLAY (V1.17) — Adafruit 938 SSD1306 128x64, I2C 0x3C, on bus_a (shared w/ INA228).
+# DISPLAY (V1.17) — Adafruit 938 SSD1306 128x64, I2C 0x3D, on bus_a (shared w/ INA228).
 # OFF by default (on_boot turns it off); woken by the GPIO4 button (see binary_sensor).
 # Sleep/wake via turn_on()/turn_off() ONLY — never setup() (ESPHome issue #1393).
 # Four pages, button-cycled (display.page.show_next). update_interval 1s is cheap:
@@ -435,7 +435,7 @@ display:
     model: "SSD1306 128x64"
     id: panel
     i2c_id: bus_a
-    address: 0x3C
+    address: 0x3D  # STEMMA QT 938 ships ADDR jumper OPEN = 0x3D (bridge jumper for 0x3C)
     update_interval: 1s
     pages:
       # ── Page ①: Main — SOC / V / I / W ─────────────────────────────────────
