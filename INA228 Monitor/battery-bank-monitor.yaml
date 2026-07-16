@@ -279,6 +279,8 @@ esphome:
             format: "Battery Bank Monitor V1.19 boot -- INA228 @ 0x40, DS18B20 on GPIO10"
         # Start panel dark — wakes on button press only. turn_off() not setup() (issue #1393).
         - lambda: 'id(panel).turn_off();'
+        # alert_reason shows "none" from boot (V1.21) — not "unknown" until first alert
+        - lambda: 'id(alert_reason).publish_state("none");'
         # INA228 ALERT register init — runs after component init (priority -200).
         # 200ms delay ensures INA228 is fully settled before arming; prevents a
         # brown-out reboot where the alert condition is already active from generating
@@ -438,152 +440,107 @@ display:
     address: 0x3D  # STEMMA QT 938 ships ADDR jumper OPEN = 0x3D (bridge jumper for 0x3C)
     update_interval: 1s
     pages:
-      # ── Page ①: Main — SOC / V / I / W ─────────────────────────────────────
-      # Layout (verified in simulator v6):
-      #   L1  font_soc  (24px)  y=0   "SOC: 73%"        centred on "SOC: 100%"
-      #   L2  font_body (12px)  y=28  "13.05 V"          centred on "13.05 V"
-      #   L3  font_body (12px)  y=42  "42.0A DISCHG"     centred on "200.0A DISCHG"
-      #   L4  font_body (12px)  y=55  "545 W"            centred on "2600 W"
-      # Gaps: L1→L2 = 6px (from L1 glyph bottom ~22), L2→L3 = 14px, L3→L4 = 13px.
+      # ── Layout v7 (normalized per operator review, 2026-07):
+      #    ALL rows font_body (12px) at 13px pitch, y = 0/13/26/39/52
+      #    (sizing/pitch carried from Page ③, which reviewed as correct);
+      #    left margin x=6 on every line (carried from Page ④).
+      #    Previous v6 layout clipped rows at y=54/55 (12px glyphs past 64px).
+      #    font_body is proportional Roboto 12px → keep strings <= 18 chars.
+      # ── Page ①: Main — SOC / V / I / W / state ─────────────────────────────
       - id: page_main
         lambda: |-
-          // L1 — SOC (font_soc 24px, y=0), centred on "SOC: 100%"
           float soc = id(soc_estimate).state;
-          int x_soc = 18;  // cx("SOC: 100%", 24) — centre anchor
-          if (isnan(soc)) it.print(x_soc, 0, id(font_soc), "SOC: --");
-          else            it.printf(x_soc, 0, id(font_soc), "SOC: %.0f%%", soc);
+          if (isnan(soc)) it.print(6, 0, id(font_body), "SOC: --");
+          else            it.printf(6, 0, id(font_body), "SOC: %.0f%%", soc);
 
-          // L2 — Voltage (font_body 12px, y=28), centred on "13.05 V"
           float v = id(ina228_voltage).state;
-          int x_v = 46;  // cx("13.05 V", 12)
-          if (isnan(v)) it.print(x_v, 28, id(font_body), "V: --");
-          else          it.printf(x_v, 28, id(font_body), "%.2f V", v);
+          if (isnan(v)) it.print(6, 13, id(font_body), "V: --");
+          else          it.printf(6, 13, id(font_body), "%.2f V", v);
 
-          // L3 — Current with direction word (font_body 12px, y=42),
-          //       centred on "200.0A DISCHG"
           float i = id(ina228_current).state;
-          int x_i = 14;  // cx("200.0A DISCHG", 12)
           if (isnan(i)) {
-            it.print(x_i, 42, id(font_body), "I: --");
+            it.print(6, 26, id(font_body), "I: --");
           } else if (i > ${charge_threshold_a}f) {
-            it.printf(x_i, 42, id(font_body), "%.1fA CHG", i);
+            it.printf(6, 26, id(font_body), "%.1fA CHG", i);
           } else if (i < ${discharge_threshold_a}f) {
-            it.printf(x_i, 42, id(font_body), "%.1fA DISCHG", -i);
+            it.printf(6, 26, id(font_body), "%.1fA DISCHG", -i);
           } else {
-            it.print(x_i, 42, id(font_body), "~0A IDLE");
+            it.print(6, 26, id(font_body), "~0A IDLE");
           }
 
-          // L4 — Power magnitude (font_body 12px, y=55), centred on "2600 W"
           float p = id(signed_power).state;
-          int x_p = 46;  // cx("2600 W", 12)
-          if (isnan(p)) it.print(x_p, 55, id(font_body), "-- W");
-          else          it.printf(x_p, 55, id(font_body), "%.0f W", fabsf(p));
+          if (isnan(p)) it.print(6, 39, id(font_body), "-- W");
+          else          it.printf(6, 39, id(font_body), "%.0f W", fabsf(p));
 
-      # ── Page ②: Runtime — time remaining + slope + knee/cliff ───────────────
-      # Layout (verified in simulator v6):
-      #   L1  font_hdr     (10px)  y=0   "RUNTIME @ LOAD"  centred
-      #   L2  font_runtime (28px)  y=10  "9.4 h"           centred on ">30d"
-      #   L3  font_body    (12px)  y=40  "slope: -1.3 mV/min"
-      #   L4  font_body    (12px)  y=54  "curve: stable" / knee / cliff
-      # Gaps: L1→L2 = 2px, L2→L3 = ~2px below glyph bottom (~38), L3→L4 = 14px.
+          if (id(bank_state).has_state())
+            it.printf(6, 52, id(font_body), "%s", id(bank_state).state.c_str());
+
+      # ── Page ②: Runtime — remaining + slope + curve + SOC cue ──────────────
       - id: page_runtime
         lambda: |-
-          // L1 — header (font_hdr 10px, y=0), centred
-          it.print(22, 0, id(font_hdr), "RUNTIME @ LOAD");
+          it.print(6, 0, id(font_body), "RUNTIME @ LOAD");
 
-          // L2 — runtime value (font_runtime 28px, y=10), centred on ">30d"
           float h = id(runtime_hours).state;
-          int x_rt = 47;  // cx(">30d", 28) — centre anchor for widest short string
-          if (isnan(h)) {
-            it.print(12, 14, id(font_body), "not discharging");
-          } else if (h >= 720.0f) {
-            it.print(x_rt, 10, id(font_runtime), ">30d");
-          } else if (h >= 48.0f) {
-            it.printf(x_rt, 10, id(font_runtime), "%.0f h", h);
-          } else {
-            it.printf(x_rt, 10, id(font_runtime), "%.1f h", h);
-          }
+          if (isnan(h))         it.print(6, 13, id(font_body), "not discharging");
+          else if (h >= 720.0f) it.print(6, 13, id(font_body), ">30 days");
+          else if (h >= 48.0f)  it.printf(6, 13, id(font_body), "%.0f h (%.1f d)", h, h / 24.0f);
+          else                  it.printf(6, 13, id(font_body), "%.1f h", h);
 
-          // L3 — slope (font_body 12px, y=40)
           float s = id(voltage_slope).state;
-          if (isnan(s)) it.print(8, 40, id(font_body), "slope: --");
-          else          it.printf(8, 40, id(font_body), "slope: %.1f mV/min", s);
+          if (isnan(s)) it.print(6, 26, id(font_body), "slope: --");
+          else          it.printf(6, 26, id(font_body), "slope: %.1f mV/min", s);
 
-          // L4 — knee/cliff flag (font_body 12px, y=54), centred on "**CLIFF IMMINENT**"
-          int x_flag = 4;  // cx("**CLIFF IMMINENT**", 12)
-          if (id(cliff_imminent).state)
-            it.print(x_flag, 54, id(font_body), "**CLIFF IMMINENT**");
-          else if (id(knee_approaching).state)
-            it.print(x_flag, 54, id(font_body), "*knee approaching*");
-          else
-            it.print(x_flag, 54, id(font_body), "curve: stable");
+          if (id(cliff_imminent).state)        it.print(6, 39, id(font_body), "**CLIFF IMMINENT**");
+          else if (id(knee_approaching).state) it.print(6, 39, id(font_body), "*knee approaching*");
+          else                                 it.print(6, 39, id(font_body), "curve: stable");
 
-      # ── Page ③: Health — state + fault status + temperature ─────────────────
-      # Layout (verified in simulator v6):
-      #   All font_body (12px), evenly spaced at 13px gaps across 64px.
-      #   L1  y= 0  "STATUS: DISCHARGING"   centred on "STATUS: DISCHARGING"
-      #   L2  y=13  "INA228 wd: ok"         centred on "INA228 wd: FAULT"
-      #   L3  y=26  "I-chan: ok"             centred on "I-chan: FAULT"
-      #   L4  y=39  "Temp sensor: ok"        centred on "Temp sensor: FAULT"
-      #   L5  y=52  "T: 64.4 F"             centred on "T: 999.9 F"
+          float soc = id(soc_estimate).state;
+          if (!isnan(soc)) it.printf(6, 52, id(font_body), "SOC %.0f%% stop@20%%", soc);
+
+      # ── Page ③: Health — state + fault status + temperature ────────────────
       - id: page_health
         lambda: |-
-          // L1 — STATUS + bank_state on one line (y=0)
-          int x_st = 3;   // cx("STATUS: DISCHARGING", 12)
           if (id(bank_state).has_state())
-            it.printf(x_st, 0, id(font_body), "STATUS: %s", id(bank_state).state.c_str());
+            it.printf(6, 0, id(font_body), "STATUS: %s", id(bank_state).state.c_str());
           else
-            it.print(x_st, 0, id(font_body), "STATUS: --");
+            it.print(6, 0, id(font_body), "STATUS: --");
 
-          // L2 — INA228 watchdog (y=13)
-          it.printf(18, 13, id(font_body), "INA228 wd: %s",
+          it.printf(6, 13, id(font_body), "INA228 wd: %s",
                     id(ina228_watchdog).state ? "FAULT" : "ok");
 
-          // L3 — Current channel (y=26)
-          it.printf(28, 26, id(font_body), "I-chan: %s",
+          it.printf(6, 26, id(font_body), "I-chan: %s",
                     id(current_channel_fault).state ? "FAULT" : "ok");
 
-          // L4 — Temp sensor (y=39)
-          it.printf(10, 39, id(font_body), "Temp sensor: %s",
+          it.printf(6, 39, id(font_body), "Temp sensor: %s",
                     isnan(id(battery_temp).state) ? "FAULT" : "ok");
 
-          // L5 — Battery temperature in °F (y=52)
+          // battery_temp already publishes deg F (sensor filter converts) —
+          // v6 bug: reapplied C->F here and showed 155.4F for a 68.5F reading.
           float t = id(battery_temp).state;
-          int x_t = 34;  // cx("T: 999.9 F", 12)
-          if (isnan(t)) it.print(x_t, 52, id(font_body), "T: -- F");
-          else          it.printf(x_t, 52, id(font_body), "T: %.1f F", t * 9.0f/5.0f + 32.0f);
+          if (isnan(t)) it.print(6, 52, id(font_body), "T: -- F");
+          else          it.printf(6, 52, id(font_body), "T: %.1f F", t);
 
-      # ── Page ④: Charge — absorption cue ─────────────────────────────────────
-      # Layout (verified in simulator v6):
-      #   L1  font_body (12px)  y= 0  "CHARGE: +34.5 A"   centred on "CHARGE: +200.0 A"
-      #   L3  font_hdr  (10px)  y=18  state line 1         centred on "absorption CONFIRMED"
-      #   L4  font_hdr  (10px)  y=31  state line 2         (+13px)
-      #   L5  font_hdr  (10px)  y=44  state line 3         (+13px)
+      # ── Page ④: Charge — absorption cue ────────────────────────────────────
       - id: page_charge
         lambda: |-
-          // L1 — header with current (font_body 12px, y=0)
           float i = id(ina228_current).state;
           bool charging = (!isnan(i) && i > ${charge_threshold_a}f);
-          int x_chg = 8;  // cx("CHARGE: +200.0 A", 12)
-          if (charging) it.printf(x_chg, 0, id(font_body), "CHARGE: +%.1f A", i);
-          else          it.print(x_chg, 0, id(font_body), "CHARGE: --");
+          if (charging) it.printf(6, 0, id(font_body), "CHARGE: +%.1f A", i);
+          else          it.print(6, 0, id(font_body), "CHARGE: --");
 
-          // L3/L4/L5 — state lines (font_hdr 10px, y=18/31/44)
-          //             centred on "absorption CONFIRMED" (widest string)
-          int x_s = 6;  // cx("absorption CONFIRMED", 10)
           bool absorbed = id(absorption_reached);
           if (absorbed) {
-            it.print(x_s, 18, id(font_hdr), "absorption CONFIRMED");
-            it.print(x_s, 31, id(font_hdr), "OK to switch charger");
-            it.print(x_s, 44, id(font_hdr), "off  SOC anchors 100%");
+            it.print(6, 13, id(font_body), "absorb CONFIRMED");
+            it.print(6, 26, id(font_body), "OK to stop charger");
+            it.print(6, 39, id(font_body), "SOC anchors 100%");
           } else if (charging) {
-            it.print(x_s, 18, id(font_hdr), "absorption: not yet");
-            it.print(x_s, 31, id(font_hdr), "hold >=14.2V 60s");
-            it.print(x_s, 44, id(font_hdr), "before switching off");
+            it.print(6, 13, id(font_body), "absorb: not yet");
+            it.print(6, 26, id(font_body), "hold >=14.2V 60s");
+            it.print(6, 39, id(font_body), "then stop charger");
           } else {
-            it.print(x_s, 18, id(font_hdr), "idle / discharging");
-            it.print(x_s, 31, id(font_hdr), "use Mark Full button");
-            it.print(x_s, 44, id(font_hdr), "if anchor missed");
+            it.print(6, 13, id(font_body), "idle / discharging");
+            it.print(6, 26, id(font_body), "Mark Full button");
+            it.print(6, 39, id(font_body), "if anchor missed");
           }
   # on_boot: start dark (the panel only lights on a button press)
   # (handled in esphome: on_boot below)
@@ -708,10 +665,13 @@ globals:
     restore_value: yes      # Persistent cycle count — lifetime health indicator
 
   # Outage tracking (persisted). Isolated from CORE — bugs here cannot affect readiness.
-  - id: outage_active_ms
+  - id: outage_elapsed_s
     type: uint32_t
     initial_value: '0'
-    restore_value: no
+    restore_value: yes      # V1.20 fix: duration now shares the persistence class of
+                            # Ah/Wh/peak — a mid-outage reboot no longer corrupts avg.
+                            # (Outage #2 defect: OTA mid-event zeroed the millis anchor,
+                            # no on_press re-fired, avg = full-event Wh / post-reboot h.)
   - id: outage_peak_w
     type: float
     initial_value: '0.0'
@@ -776,13 +736,21 @@ globals:
     restore_value: no
 
   # Apparent Ri prev-sample holders (PROVISIONAL, transient, NaN-seeded)
-  - id: ri_prev_v
+  - id: ri_rest_v
     type: float
     initial_value: 'NAN'
+    restore_value: no       # rolling rest-voltage baseline (|I| <= quiescent)
+  - id: ri_rest_ms
+    type: uint32_t
+    initial_value: '0'
+    restore_value: no       # when the rest baseline was last refreshed
+  - id: ri_trig_ms
+    type: uint32_t
+    initial_value: '0'      # step trigger time; 0 = no measurement pending
     restore_value: no
-  - id: ri_prev_i
+  - id: ri_trig_i
     type: float
-    initial_value: 'NAN'
+    initial_value: 'NAN'    # current at trigger — stability gate at maturity (V1.21)
     restore_value: no
   - id: ri_sample_count
     type: int
@@ -835,55 +803,92 @@ interval:
                 // discharge_power is the 1s-reported magnitude (0 when not discharging),
                 // so this is the sustained peak, not sub-second inrush (below INA228
                 // reporting cadence anyway) — which is what load-shedding planning needs.
+                id(outage_elapsed_s) += 5;  // outage wall-clock, 5 s ticks (persisted)
                 float pw = id(discharge_power).state;
                 if (!isnan(pw) && pw > id(outage_peak_w))
                   id(outage_peak_w) = pw;
 
-  # Apparent Ri (PROVISIONAL) — rest→discharge load steps only.
-  # Ri = ΔV/ΔI; OCV term cancels across 1s. Only qualifying rest→discharge steps
-  # (no charge/off edges — polarization asymmetry tracks usage, not aging).
+  # Apparent Ri (PROVISIONAL) — rest→discharge load steps, settled-step method (V1.20).
+  # V1.19 defect: single-tick ΔV/ΔI raced the INA228's SEQUENTIAL channel
+  # conversions (VBUS and VSHUNT average different ~0.5 s sub-windows of each
+  # 1.58 s cycle). A step landing mid-cycle produced a straddled V/I pair →
+  # Ri ~0 or negative → rejected by the sanity band → the one qualifying edge
+  # per event was consumed. Capture succeeded only when the step happened to
+  # fall between cycles (~coin flip) — hence sample_count == 0 after a
+  # textbook 80 A step.
+  # V1.20 method: hold a rolling rest baseline (refreshed while |I| <= quiescent);
+  # on a step to <= -ri_min_step_a, wait 5 s (>2 driver cycles, both channels
+  # fully post-step), then Ri = (V_rest - V_now) / (-I_now). OCV is static over
+  # 5 s, so the estimate is unbiased and conversion-phase-immune. One sample
+  # per rest→load event (baseline is invalidated after use).
   - interval: 1s
     then:
       - lambda: |-
           float i_now = id(ina228_current).state;
           float v_now = id(ina228_voltage).state;
 
-          // FAULT / stale-bus or NaN: drop the history so the next valid tick
-          // cannot compute a phantom step across the gap.
           bool stale = (millis() > 15000u) &&
                        ((millis() - id(last_ina228_update)) > 10000u);
           if (stale || isnan(i_now) || isnan(v_now)) {
-            id(ri_prev_i) = NAN;
-            id(ri_prev_v) = NAN;
+            id(ri_rest_v) = NAN;      // no phantom baselines across a gap
+            id(ri_trig_ms) = 0u;
             return;
           }
 
-          float i_prev = id(ri_prev_i);
-          float v_prev = id(ri_prev_v);
-          if (!isnan(i_prev) && !isnan(v_prev)) {
-            float di = i_now - i_prev;   // negative for a step into discharge (Option B)
-            float dv = v_now - v_prev;   // negative as voltage sags under the new load
-            // Qualify: before-state near rest AND a step deeper into discharge.
-            if (di <= -${ri_min_step_a}f && fabs(i_prev) <= ${ri_quiescent_a}f) {
-              float ri = (dv / di) * 1000.0f;   // mΩ; (−/−) → positive for a real resistive step
+          if (fabsf(i_now) <= ${ri_quiescent_a}f) {
+            // At rest: refresh the baseline; cancel any pending measurement
+            // (the load released before it settled — not a valid step).
+            id(ri_rest_v) = v_now;
+            id(ri_rest_ms) = millis();
+            id(ri_trig_ms) = 0u;
+            return;
+          }
+
+          if (id(ri_trig_ms) == 0u) {
+            // Loaded, nothing pending: arm only on a deep step from a FRESH rest
+            // baseline (< 10 s old — one driver cycle of slack past the step).
+            if (!isnan(id(ri_rest_v)) &&
+                (millis() - id(ri_rest_ms)) < 10000u &&
+                i_now <= -${ri_min_step_a}f) {
+              id(ri_trig_ms) = millis();
+              id(ri_trig_i) = i_now;
+            }
+            return;
+          }
+
+          // V1.21: dwell extended 5 s -> 45 s. At 5 s the voltage still slews
+          // ~20 mV/s (polarization developing), so samples carried ±20%
+          // conversion-phase scatter and read below the ohmic floor (the 1.82
+          // mOhm n=2 commissioning samples — discard). At 45 s dV/dt has
+          // flattened; expect repeatable ~3.3-3.5 mOhm for aging trends.
+          if ((millis() - id(ri_trig_ms)) >= 45000u) {
+            id(ri_trig_ms) = 0u;
+            float rest_v = id(ri_rest_v);
+            float trig_i = id(ri_trig_i);
+            id(ri_rest_v) = NAN;      // one sample per rest→load event
+            // Stability gate (V1.21): reject ramping loads — current at maturity
+            // must be within ±15% of the trigger current (heater inrush decay
+            // passes at ~2%; a dryer-style ramp or trip mid-dwell fails).
+            bool stable = !isnan(trig_i) &&
+                          fabsf(i_now - trig_i) <= 0.15f * fabsf(trig_i);
+            if (i_now <= -${ri_min_step_a}f && !isnan(rest_v) && stable) {
+              float ri = ((rest_v - v_now) / (-i_now)) * 1000.0f;   // mΩ
               if (ri >= ${ri_min_mohm}f && ri <= ${ri_max_mohm}f) {
                 float t = id(battery_temp).state;   // °F — tag for trend normalization
                 id(ri_sample_count) += 1;
                 id(apparent_ri).publish_state(ri);
-                id(apparent_ri_temp).publish_state(t);   // NaN-safe: HA shows unavailable if no temp
+                id(apparent_ri_temp).publish_state(t);
                 ESP_LOGI("bank.ri",
-                  "Apparent Ri=%.3f mΩ | dV=%.1fmV dI=%.1fA | I_prev=%.2fA->I_now=%.2fA | T=%.1f°F | n=%d",
-                  ri, dv * 1000.0f, di, i_prev, i_now,
+                  "Apparent Ri=%.3f mOhm (settled-step) | Vrest=%.4f Vload=%.4f I=%.2fA | T=%.1fF | n=%d",
+                  ri, rest_v, v_now, i_now,
                   isnan(t) ? -999.0f : t, id(ri_sample_count));
               } else {
-                ESP_LOGD("bank.ri",
-                  "Ri step rejected (out of band): %.3f mΩ | dV=%.1fmV dI=%.1fA",
-                  ri, dv * 1000.0f, di);
+                ESP_LOGW("bank.ri",
+                  "Ri settled-step rejected (out of band): %.3f mOhm | Vrest=%.4f Vload=%.4f I=%.2fA",
+                  ri, rest_v, v_now, i_now);
               }
             }
           }
-          id(ri_prev_i) = i_now;
-          id(ri_prev_v) = v_now;
 
   # Status-LED pattern driver (V1.19 semantics). 250 ms base tick:
   # fast = toggle every tick (2 Hz); slow = 4 ticks on / 4 off (0.5 Hz); solid = on.
@@ -1083,7 +1088,7 @@ sensor:
     name: "Battery Power"
     id: signed_power
     unit_of_measurement: "W"
-    accuracy_decimals: 1
+    accuracy_decimals: 3   # mW resolution: idle self-draw (~0.08 W) visible in HA
     device_class: power
     state_class: measurement
     lambda: |-
@@ -1092,7 +1097,7 @@ sensor:
       if (isnan(p) || isnan(i)) return NAN;
       if (i < ${discharge_threshold_a}f) return -p;   // Discharging: negate magnitude
       if (i > ${charge_threshold_a}f)    return  p;   // Charging: positive magnitude
-      return 0.0f;                                     // Standby: below threshold
+      return (i < 0.0f) ? -p : p;  // Standby: true signed micro-power (v7: was hard 0.0 — hid idle self-draw)
     update_interval: 1s
 
   # Ah/Wh cycle counters (reset at full charge) and lifetime counters (manual reset only).
@@ -1746,7 +1751,7 @@ binary_sensor:
           // Outage event start (V1.9): a sustained discharge on this backup bank is
           // an outage (or a deliberate test). Mark start time and zero the per-event
           // peak; the Ah/Wh integrations are reset by the action below.
-          id(outage_active_ms) = millis();
+          id(outage_elapsed_s) = 0u;
           id(outage_peak_w) = 0.0f;
           ESP_LOGI("bank",
             "Discharge session started | V=%.3fV | SOC~%.1f%% | Cycle Ah_out so far: %.2f",
@@ -1757,9 +1762,10 @@ binary_sensor:
       - sensor.integration.reset: outage_wh
     on_release:
       - lambda: |-
-          // Outage event end (V1.9): freeze the per-event summary for planning.
-          // Duration via millis() delta (uint32 wrap-safe; an outage is « 49 days).
-          float hours = (float)(millis() - id(outage_active_ms)) / 3600000.0f;
+          // Outage event end: freeze the per-event summary for planning.
+          // V1.20: duration from the persisted 5 s accumulator, not millis() delta —
+          // survives mid-outage reboot exactly like the Ah/Wh/peak it is paired with.
+          float hours = (float)id(outage_elapsed_s) / 3600.0f;
           float ah = id(outage_ah).state;
           float wh = id(outage_wh).state;
           if (isnan(ah)) ah = 0.0f;
@@ -2164,6 +2170,14 @@ button:
           App.safe_reboot();
 
   # Manual SOC anchor — press when confirmed 100% (missed full-charge event).
+  - platform: template
+    name: "Acknowledge Alert (Clear Reason)"
+    icon: "mdi:check-circle-outline"
+    entity_category: diagnostic
+    on_press:
+      - lambda: |-
+          ESP_LOGI("ina228_alert", "Alert reason acknowledged/cleared by operator");
+          id(alert_reason).publish_state("none");
   - platform: template
     name: "Mark as Fully Charged (Reset Cycle Counters)"
     entity_category: diagnostic
