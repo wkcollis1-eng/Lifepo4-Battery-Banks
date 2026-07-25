@@ -440,40 +440,36 @@ display:
     address: 0x3D  # STEMMA QT 938 ships ADDR jumper OPEN = 0x3D (bridge jumper for 0x3C)
     update_interval: 1s
     pages:
-      # ── Layout v7 (normalized per operator review, 2026-07):
-      #    ALL rows font_body (12px) at 13px pitch, y = 0/13/26/39/52
-      #    (sizing/pitch carried from Page ③, which reviewed as correct);
-      #    left margin x=6 on every line (carried from Page ④).
-      #    Previous v6 layout clipped rows at y=54/55 (12px glyphs past 64px).
-      #    font_body is proportional Roboto 12px → keep strings <= 18 chars.
-      # ── Page ①: Main — SOC / V / I / W / state ─────────────────────────────
+      # Layout v9 - for xxx.xA + xxxx.xW max
+      # y=0  (24px)  0-24   SOC
+      # y=26 (24px)  26-50  Voltage  2px gaps
+      # y=52 (12px)  52-64  Split column A / W - bottom flush, no clip
+      # x=6 left margin on all
       - id: page_main
         lambda: |-
           float soc = id(soc_estimate).state;
-          if (isnan(soc)) it.print(6, 0, id(font_body), "SOC: --");
-          else            it.printf(6, 0, id(font_body), "SOC: %.0f%%", soc);
+          if (isnan(soc)) it.print(6, 0, id(font_soc), "SOC: --");
+          else            it.printf(6, 0, id(font_soc), "SOC: %.0f%%", soc);
 
           float v = id(ina228_voltage).state;
-          if (isnan(v)) it.print(6, 13, id(font_body), "V: --");
-          else          it.printf(6, 13, id(font_body), "%.2f V", v);
+          if (isnan(v)) it.print(6, 26, id(font_soc), "V: --");
+          else          it.printf(6, 26, id(font_soc), "%.2f V", v);
 
           float i = id(ina228_current).state;
-          if (isnan(i)) {
-            it.print(6, 26, id(font_body), "I: --");
-          } else if (i > ${charge_threshold_a}f) {
-            it.printf(6, 26, id(font_body), "%.1fA CHG", i);
-          } else if (i < ${discharge_threshold_a}f) {
-            it.printf(6, 26, id(font_body), "%.1fA DISCHG", -i);
-          } else {
-            it.print(6, 26, id(font_body), "~0A IDLE");
-          }
-
           float p = id(signed_power).state;
-          if (isnan(p)) it.print(6, 39, id(font_body), "-- W");
-          else          it.printf(6, 39, id(font_body), "%.0f W", fabsf(p));
-
-          if (id(bank_state).has_state())
-            it.printf(6, 52, id(font_body), "%s", id(bank_state).state.c_str());
+          // Bottom line - split columns to fit 128px with max values
+          if (isnan(i) || isnan(p)) {
+            it.printf(6, 52, id(font_body), "%.1fA", 0.0);
+            it.printf(68, 52, id(font_body), "%.1fW", 0.0);
+            it.print(6, 52, id(font_body), "--A");
+            it.print(68, 52, id(font_body), "--W");
+          } else if ((i <= ${charge_threshold_a}f) && (i >= ${discharge_threshold_a}f)) {
+            it.print(6, 52, id(font_body), "~0A");
+            it.printf(68, 52, id(font_body), "%.1fW", fabsf(p));
+          } else {
+            it.printf(6, 52, id(font_body), "%.1fA", fabsf(i));
+            it.printf(68, 52, id(font_body), "%.1fW", fabsf(p));
+          }
 
       # ── Page ②: Runtime — remaining + slope + curve + SOC cue ──────────────
       - id: page_runtime
@@ -756,6 +752,22 @@ globals:
     type: int
     initial_value: '0'
     restore_value: yes
+  - id: last_ri_mohm
+    type: float
+    initial_value: 'NAN'
+    restore_value: yes      # V1.22: last valid Ri survives reboot/OTA (HA request)
+  - id: last_ri_temp_f
+    type: float
+    initial_value: 'NAN'
+    restore_value: yes      # temp tag of that sample, persisted with it
+  - id: hw_charge_anchor_ah
+    type: float
+    initial_value: 'NAN'
+    restore_value: yes      # V1.23: INA228 hardware CHARGE register value at the
+                            # last full-charge anchor. Register survives ESP
+                            # reboots (3V3 rail stays up) but zeroes on INA228
+                            # power removal — after a power loss the cycle delta
+                            # is invalid until the next anchor re-seeds it.
 
 
 interval:
@@ -876,6 +888,8 @@ interval:
               if (ri >= ${ri_min_mohm}f && ri <= ${ri_max_mohm}f) {
                 float t = id(battery_temp).state;   // °F — tag for trend normalization
                 id(ri_sample_count) += 1;
+                id(last_ri_mohm) = ri;      // persist: value restored after reboot/OTA
+                id(last_ri_temp_f) = t;
                 id(apparent_ri).publish_state(ri);
                 id(apparent_ri_temp).publish_state(t);
                 ESP_LOGI("bank.ri",
@@ -1032,12 +1046,18 @@ sensor:
     unit_of_measurement: "W"
     accuracy_decimals: 1
     lambda: |-
+      // V1.24: power = V x I from the AVERAGED SIGNED registers, not the chip
+      // POWER register. The POWER register rectifies per raw conversion
+      // (unsigned product each 4.12 ms sample, THEN averaged), so near-zero
+      // current it reads the rectified raw-noise floor (~1 W at this shunt) —
+      // averaging cannot cancel magnitudes. V x I of the 128-averaged signed
+      // registers is accurate at idle (~0.09 W) and identical under load.
       float i = id(ina228_current).state;
-      float p = id(ina228_power).state;
+      float v = id(ina228_voltage).state;
       if (millis() > 15000u && (millis() - id(last_ina228_update)) > 10000u) return 0.0f;
-      if (isnan(i) || isnan(p) || fabsf(i) > ${i_max_plausible_a}f) return 0.0f;
+      if (isnan(i) || isnan(v) || fabsf(i) > ${i_max_plausible_a}f) return 0.0f;
       if (i > ${discharge_threshold_a}f) return 0.0f;
-      return p;
+      return v * (-i);   // positive W while discharging (i negative)
     update_interval: 1s
 
   # Wh discharged this cycle — feeds mean_discharge_v = Wh/Ah (current-weighted mean V).
@@ -1075,29 +1095,31 @@ sensor:
     unit_of_measurement: "W"
     accuracy_decimals: 1
     lambda: |-
+      // V1.24: V x I product — see discharge_power rationale.
       float i = id(ina228_current).state;
-      float p = id(ina228_power).state;
+      float v = id(ina228_voltage).state;
       if (millis() > 15000u && (millis() - id(last_ina228_update)) > 10000u) return 0.0f;
-      if (isnan(i) || isnan(p) || fabsf(i) > ${i_max_plausible_a}f) return 0.0f;
+      if (isnan(i) || isnan(v) || fabsf(i) > ${i_max_plausible_a}f) return 0.0f;
       if (i < ${charge_threshold_a}f) return 0.0f;
-      return p;
+      return v * i;
     update_interval: 1s
 
-  # Signed power — POWER register magnitude × current sign. ±0.61mW LSB.
+  # Signed power — V1.24: V x I from averaged signed registers (accurate at idle,
+  # ~0.09 W self-draw). The chip POWER register rectifies per raw conversion and
+  # floors at ~1 W near zero current (see discharge_power note); it remains
+  # exposed as "INA228 Power (register)" for the energy-path caveat only.
   - platform: template
     name: "Battery Power"
     id: signed_power
     unit_of_measurement: "W"
-    accuracy_decimals: 3   # mW resolution: idle self-draw (~0.08 W) visible in HA
+    accuracy_decimals: 3   # mW resolution: idle self-draw (~0.09 W) visible in HA
     device_class: power
     state_class: measurement
     lambda: |-
-      float p = id(ina228_power).state;
+      float v = id(ina228_voltage).state;
       float i = id(ina228_current).state;
-      if (isnan(p) || isnan(i)) return NAN;
-      if (i < ${discharge_threshold_a}f) return -p;   // Discharging: negate magnitude
-      if (i > ${charge_threshold_a}f)    return  p;   // Charging: positive magnitude
-      return (i < 0.0f) ? -p : p;  // Standby: true signed micro-power (v7: was hard 0.0 — hid idle self-draw)
+      if (isnan(v) || isnan(i)) return NAN;
+      return v * i;   // sign convention carried by i (charge +, discharge −)
     update_interval: 1s
 
   # Ah/Wh cycle counters (reset at full charge) and lifetime counters (manual reset only).
@@ -1282,7 +1304,9 @@ sensor:
     icon: "mdi:trending-down"
     state_class: measurement
 
-  # Apparent Ri (PROVISIONAL) — event-published by 1s interval on qualifying steps.
+  # Apparent Ri — event-published on qualifying steps AND lambda-backed by the
+  # persisted last-sample globals (V1.22), so the value survives reboot/OTA
+  # instead of reverting to Unknown while its sample counter persisted.
   - platform: template
     name: "Apparent Ri"
     id: apparent_ri
@@ -1291,6 +1315,8 @@ sensor:
     icon: "mdi:omega"
     state_class: measurement
     entity_category: diagnostic
+    lambda: 'return id(last_ri_mohm);'   # NAN (Unknown) until first valid sample
+    update_interval: 60s
 
   - platform: template
     name: "Apparent Ri Pack Temp"
@@ -1301,6 +1327,75 @@ sensor:
     device_class: temperature
     state_class: measurement
     entity_category: diagnostic
+    lambda: 'return id(last_ri_temp_f);'
+    update_interval: 60s
+
+  # ── V1.23: INA228 hardware accumulators via RAW register reads ─────────────
+  # Independent integration-method cross-check for the coulomb ledger: silicon
+  # accumulates every 1.58 s conversion continuously; firmware integrates 2 s
+  # left-rectangle with 0.05 A deadbands. Divergence = software integration
+  # error (deadband + cadence), the term under the CE calculation.
+  # RAW reads on bus_a deliberately — configuring the driver's energy:/charge:
+  # sub-sensors would make it read DIAG_ALRT every cycle and destroy the ALERT
+  # latch ownership (see alert handler). Plain register reads touch no latch.
+  # Conversion per ESPHome ina2xx_base source: CURRENT_LSB = 200 A / 2^19 =
+  # 3.814697265625e-4 A (MUST track max_current in the ina2xx block);
+  # Charge[C] = signed40(REG 0x0A) x CURRENT_LSB; Energy[J] = 51.2 x
+  # CURRENT_LSB x unsigned40(REG 0x09). 40-bit span at this LSB = ±58,000 Ah:
+  # overflow is a non-issue.
+  - platform: template
+    name: "HW Net Charge (INA228)"
+    id: hw_charge_ah
+    unit_of_measurement: "Ah"
+    accuracy_decimals: 4
+    icon: "mdi:battery-sync"
+    state_class: measurement
+    entity_category: diagnostic
+    lambda: |-
+      uint8_t reg = 0x0A;
+      uint8_t b[5];
+      if (id(bus_a).write(0x40, &reg, 1, false) != i2c::ERROR_OK) return {};
+      if (id(bus_a).read(0x40, b, 5) != i2c::ERROR_OK) return {};
+      int64_t raw = ((int64_t) b[0] << 32) | ((int64_t) b[1] << 24) |
+                    ((int64_t) b[2] << 16) | ((int64_t) b[3] << 8) | (int64_t) b[4];
+      if (raw & (1LL << 39)) raw -= (1LL << 40);   // sign-extend 40-bit
+      return (float) ((double) raw * 3.814697265625e-4 / 3600.0);
+    update_interval: 60s
+
+  - platform: template
+    name: "HW Energy (INA228)"
+    id: hw_energy_wh
+    unit_of_measurement: "Wh"
+    accuracy_decimals: 2
+    icon: "mdi:lightning-bolt-circle"
+    state_class: measurement
+    entity_category: diagnostic
+    lambda: |-
+      uint8_t reg = 0x09;
+      uint8_t b[5];
+      if (id(bus_a).write(0x40, &reg, 1, false) != i2c::ERROR_OK) return {};
+      if (id(bus_a).read(0x40, b, 5) != i2c::ERROR_OK) return {};
+      uint64_t raw = ((uint64_t) b[0] << 32) | ((uint64_t) b[1] << 24) |
+                     ((uint64_t) b[2] << 16) | ((uint64_t) b[3] << 8) | (uint64_t) b[4];
+      return (float) (51.2 * 3.814697265625e-4 * (double) raw / 3600.0);
+    update_interval: 60s
+
+  # SW net (this cycle) minus HW net since last anchor. Expected small and
+  # stable (deadband/cadence term); NAN until an anchor has seeded the snapshot.
+  - platform: template
+    name: "Cycle Integration Delta (SW-HW)"
+    unit_of_measurement: "Ah"
+    accuracy_decimals: 3
+    icon: "mdi:scale-balance"
+    state_class: measurement
+    entity_category: diagnostic
+    lambda: |-
+      float hw = id(hw_charge_ah).state;
+      float a  = id(hw_charge_anchor_ah);
+      if (isnan(hw) || isnan(a)) return NAN;
+      float sw = id(ah_charged_cycle).state - id(ah_discharged_cycle).state;
+      return sw - (hw - a);
+    update_interval: 60s
 
   - platform: template
     name: "Apparent Ri Sample Count"
@@ -1863,6 +1958,27 @@ binary_sensor:
                     id(total_full_charge_count), ah_out, ah_in, coul_eff, mean_v, peak_discharge,
                     id(ina228_voltage).state, id(charge_peak_a_raw), id(last_absorption_min));
 
+                  // ---- V1.23: hardware-register confirming calculation ----
+                  // Silicon CHARGE accumulator vs software coulomb ledger for
+                  // the completed cycle, then re-seed the anchor snapshot.
+                  {
+                    float hw_now = id(hw_charge_ah).state;   // <=60 s stale; I~0 at anchor
+                    float hw_anchor = id(hw_charge_anchor_ah);
+                    if (!isnan(hw_now) && !isnan(hw_anchor)) {
+                      float sw_net = ah_in - ah_out;
+                      float hw_net = hw_now - hw_anchor;
+                      ESP_LOGI("bank.hwcheck",
+                        "CYCLE CONFIRM | SW net=%.3f Ah | HW net=%.3f Ah | delta=%.3f Ah (%.2f%% of throughput)",
+                        sw_net, hw_net, sw_net - hw_net,
+                        (ah_in + ah_out) > 1.0f ? 100.0f * (sw_net - hw_net) / (ah_in + ah_out) : 0.0f);
+                    } else {
+                      ESP_LOGI("bank.hwcheck",
+                        "CYCLE CONFIRM seeded at this anchor (hw=%.3f) — comparison from next cycle.",
+                        hw_now);
+                    }
+                    if (!isnan(hw_now)) id(hw_charge_anchor_ah) = hw_now;
+                  }
+
                   // ---- Self-discharge reconciliation (V1.10 — OBSERVABILITY, logs only) ----
                   // U = unseen drain = (recon_coul_eff × ah_in) − ah_out  [DC Ah that left
                   // the bank without crossing the shunt: intrinsic self-discharge + any
@@ -2171,6 +2287,19 @@ button:
 
   # Manual SOC anchor — press when confirmed 100% (missed full-charge event).
   - platform: template
+    name: "Reset Ri Statistics (clear samples)"
+    icon: "mdi:omega-off"
+    entity_category: diagnostic
+    on_press:
+      - lambda: |-
+          ESP_LOGI("bank.ri", "Ri statistics reset by operator (was n=%d, %.2f mOhm)",
+                   id(ri_sample_count), id(last_ri_mohm));
+          id(ri_sample_count) = 0;
+          id(last_ri_mohm) = NAN;
+          id(last_ri_temp_f) = NAN;
+          id(apparent_ri).publish_state(NAN);
+          id(apparent_ri_temp).publish_state(NAN);
+  - platform: template
     name: "Acknowledge Alert (Clear Reason)"
     icon: "mdi:check-circle-outline"
     entity_category: diagnostic
@@ -2185,6 +2314,9 @@ button:
       - lambda: |-
           // Manual anchor IS a full-charge event: clear any pending absorption flag and
           // reset the cycle-level discharge peak tracker, mirroring the automatic path.
+          // V1.23: re-seed the hardware-charge anchor snapshot (manual path).
+          if (!isnan(id(hw_charge_ah).state))
+            id(hw_charge_anchor_ah) = id(hw_charge_ah).state;
           id(absorption_reached) = false;
           id(discharge_peak_a_raw) = 0.0f;
       - sensor.integration.reset: ah_discharged_cycle
