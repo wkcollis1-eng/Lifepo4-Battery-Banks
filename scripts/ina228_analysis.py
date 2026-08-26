@@ -545,6 +545,121 @@ def crosscheck():
 
 
 # ---------------------------------------------------------------------------
+# 6. Bounding the internal term (self-discharge + BMS standby)
+# ---------------------------------------------------------------------------
+# Inputs and their 1-sigma uncertainties. The shunt offset dominates the budget
+# and is the reason this is a bound rather than a measurement.
+TEMPCO_MV_PER_F = (1.0, 0.3)  # system-level, from the Shelly-era study
+PLATEAU_SE = 1.0  # on the 6.0 mV/%SOC bank plateau slope
+SHUNT_OFFSET_MA = 2.4  # commissioning Tier 2: 0.9 uV at 375 uOhm
+
+
+def selfdischarge_bound(daily, n_draws=200_000, seed=7):
+    """Bound the SOC loss the shunt cannot see, over the clean late window.
+
+    The voltage path measures TOTAL SOC decline; the shunt measures charge
+    crossing the terminals. The difference is everything that lowers SOC without
+    crossing them - true self-discharge AND the internal BMS standby draw, which
+    sits between the cells and the terminals. That bundle is what a pack-level
+    datasheet calls "self-discharge", so it compares like-for-like.
+
+    Window is day 34-41 post-charge, where the relaxation tail has decayed below
+    0.005 mV/day and cannot contaminate the slope (see fig_ina228_relaxation).
+    """
+    d = daily[
+        (daily.index >= pd.Timestamp("2026-08-19", tz="UTC"))
+        & (daily["coverage_s"] > 80000)
+    ]
+    x = np.arange(len(d))
+    r_v = stats.linregress(x, d["v_mean"].to_numpy() * 1000)
+    r_t = stats.linregress(x, d["pack_F"].to_numpy())
+    dt_i = d["ah_net"].sum() * 3600 / d["coverage_s"].sum() * 1000  # mA, signed
+
+    rng = np.random.default_rng(seed)
+    slope = rng.normal(r_v.slope, r_v.stderr, n_draws)  # mV/day, negative
+    tempco = rng.normal(*TEMPCO_MV_PER_F, n_draws)
+    plateau = rng.normal(PLATEAU_MV_PER_PCT, PLATEAU_SE, n_draws)
+    shunt = rng.normal(abs(dt_i), SHUNT_OFFSET_MA, n_draws)
+
+    corrected = slope - r_t.slope * tempco  # remove the thermal component
+    total_mA = abs(corrected) / (24 / 1000 / CAPACITY_AH * 100 * plateau)
+    internal = total_mA - shunt  # what the shunt cannot see
+
+    def pct_month(ma_):
+        return ma_ * 24 / 1000 * 30.44 / CAPACITY_AH * 100
+
+    print(f"  window {d.index[0]:%Y-%m-%d} -> {d.index[-1]:%Y-%m-%d}  n={len(d)} days")
+    print(
+        f"  observed slope     {r_v.slope:+.4f} mV/day  se {r_v.stderr:.4f}  "
+        f"r2 {r_v.rvalue**2:.3f}"
+    )
+    print(f"  pack temp drift    {r_t.slope:+.4f} degF/day")
+    print(
+        f"  temp-corrected     {r_v.slope - r_t.slope * TEMPCO_MV_PER_F[0]:+.4f} mV/day"
+    )
+    print(f"  shunt drain        {abs(dt_i):.2f} mA")
+    for label, arr in (
+        ("total SOC loss (mA)", total_mA),
+        ("INTERNAL term (mA)", internal),
+    ):
+        q = np.percentile(arr, [2.5, 16, 50, 84, 97.5])
+        print(
+            f"  {label:22s} median {q[2]:+7.3f}   68% [{q[1]:+.2f},{q[3]:+.2f}]"
+            f"   95% [{q[0]:+.2f},{q[4]:+.2f}]"
+        )
+    ip = pct_month(internal)
+    print(
+        f"  INTERNAL %SOC/month    median {np.median(ip):+.3f}   "
+        f"95th pct {np.percentile(ip, 97.5):+.3f}"
+    )
+    print(
+        f"  P(>2 %/mo) = {(ip > 2).mean() * 100:.2f}%   "
+        f"P(>1 %/mo) = {(ip > 1).mean() * 100:.2f}%"
+    )
+    if np.median(internal) < 0:
+        print("  NOTE median is NEGATIVE - physically impossible for self-discharge,")
+        print("       which is the diagnostic that systematics exceed the signal.")
+        print("       Read the 95th percentile as a ceiling; nothing else.")
+
+    base = abs(r_v.slope - r_t.slope * TEMPCO_MV_PER_F[0]) / (
+        24 / 1000 / CAPACITY_AH * 100 * PLATEAU_MV_PER_PCT
+    ) - abs(dt_i)
+    print("  error budget (1-sigma swing in the internal term):")
+    for lab, sl, tc, pl, sh in (
+        (
+            "shunt offset +-2.4 mA",
+            r_v.slope,
+            TEMPCO_MV_PER_F[0],
+            PLATEAU_MV_PER_PCT,
+            abs(dt_i) + SHUNT_OFFSET_MA,
+        ),
+        (
+            "plateau +-1.0 mV/%",
+            r_v.slope,
+            TEMPCO_MV_PER_F[0],
+            PLATEAU_MV_PER_PCT + PLATEAU_SE,
+            abs(dt_i),
+        ),
+        (
+            "tempco +-0.3 mV/degF",
+            r_v.slope,
+            TEMPCO_MV_PER_F[0] + TEMPCO_MV_PER_F[1],
+            PLATEAU_MV_PER_PCT,
+            abs(dt_i),
+        ),
+        (
+            "regression se",
+            r_v.slope + r_v.stderr,
+            TEMPCO_MV_PER_F[0],
+            PLATEAU_MV_PER_PCT,
+            abs(dt_i),
+        ),
+    ):
+        v = abs(sl - r_t.slope * tc) / (24 / 1000 / CAPACITY_AH * 100 * pl) - sh
+        print(f"    {lab:24s} internal {v:+6.2f} mA   shift {v - base:+.2f}")
+    return internal
+
+
 def main():
     warnings.filterwarnings("ignore")
     daily, hourly, ma = load_ina()
@@ -707,6 +822,11 @@ def main():
         f"on the INA228 scale"
     )
     print(f"  INA228 measured on the final day: {daily['v_mean'].iloc[-1]:.4f} V")
+
+    print("\n" + "=" * 74)
+    print("INTERNAL TERM - SELF-DISCHARGE + BMS STANDBY - BOUNDED, NOT MEASURED")
+    print("=" * 74)
+    selfdischarge_bound(daily)
 
     print("\n" + "=" * 74)
     print("STORAGE STASIS, Apr 1 - Jul 4 2026 (Shelly daily minima)")

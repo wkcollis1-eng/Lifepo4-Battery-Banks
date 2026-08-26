@@ -533,10 +533,10 @@ it into a third exponential would be over-fitting a real physical process.
 
 | Attribute | Reference |
 |:----------|:----------|
-| **Claim** | No figure in this study measures true self-discharge |
-| **Data** | — (this is a negative claim about what the instrument can see) |
-| **Code** | — |
-| **Output** | — |
+| **Claim** | Self-discharge + BMS standby is bounded below 0.9 %SOC/month at 95%, and is not *measured* by anything in this study |
+| **Data** | `data/ina228/ina228_daily_*.csv` (late window only) |
+| **Code** | `ina228_analysis.py` -> `selfdischarge_bound()` |
+| **Output** | printed; no figure |
 | **Report Section** | 2026-08-26 report §7.7 |
 
 **Why the shunt cannot see it.** The DROK shunt sits in the negative cable

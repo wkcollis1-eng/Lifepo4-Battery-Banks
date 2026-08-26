@@ -35,7 +35,7 @@ Since July 2026 the bank has been instrumented by a purpose-built **INA228 monit
 | ⚡ **Quiescent Drain** | **7.4 ± 2.4 mA measured** | It is the monitor itself; the bank's own external load is nil |
 | ⏱️ **Storage Endurance** | **≈15 months** | To 80% SOC on the validated 397 Ah; band 11–22 |
 | 📉 **Stasis Drift** | **−0.303 mV/day** | 7-day OLS, se 0.008, p = 2.2×10⁻⁷ |
-| 🔋 **Self-Discharge** | **not yet measured** | Shunt sees only terminal current; full→full cycle scheduled |
+| 🔋 **Self-discharge + BMS** | **< 0.9 %/month (95%)** | A bound, not a measurement; full→full cycle scheduled |
 | 📊 **Voltage Noise Floor** | **0.131 mV** | Within-day sd, below the 195.3 µV bus LSB |
 | 🌡️ **Temperature Coefficient** | +1.0 mV/°F | System-level |
 | ⚠️ **SOC ledger blind spot** | 1.46 %SOC / 32 d | ±50 mA firmware deadband hides the 7.5 mA drain |

@@ -49,9 +49,15 @@ it is excluding. State of charge consequently reads 99.996% when the coulomb
 truth is ≈98.2%, and the error grows at ≈1.4 %SOC/month of storage with nothing
 on the dashboard to indicate it. See §6.
 
-**What this report does NOT establish: true self-discharge.** The shunt measures
-charge crossing the terminals; self-discharge happens inside the cells and does
-not. That measurement is scheduled — discharge below 80% SOC, then charge, and
+**What this report does NOT establish: true self-discharge — but it does bound
+it.** The shunt measures charge crossing the terminals; self-discharge, and the
+five internal BMS boards' standby draw, happen behind them and do not cross it.
+Differencing the voltage and coulomb paths over the one clean window puts that
+combined **internal term below 0.9 %SOC/month at 95% confidence** [M] — under the
+2–3 %/month commonly quoted for LiFePO₄, and a replication of this study's own
+Shelly-era finding by a second method. It is a ceiling, not a measurement: the
+median is negative, which is impossible, and the shunt offset is 90% of the error
+budget. See §7.7.1–7.7.2. That measurement is scheduled — discharge below 80% SOC, then charge, and
 reconcile the full→full cycle — and §6 is its prerequisite: run it with the
 present deadband and the monitor's own 0.177 Ah/day will be booked as
 self-discharge, an artefact of ≈1.3 %/month that would land inside the published
@@ -108,10 +114,15 @@ discriminate; §5.3 proposes replacements.
    commissioning value 95.78% — an accounting floor, not a measurement —
    unchanged for 41 days, and `cv_absorption_time` is likewise frozen at
    16.82 min. Both need a second full charge.
-9. **True self-discharge remains unmeasured, and §6 is in its way.** The shunt
-   sees only charge crossing the terminals. The scheduled measurement — discharge
-   below 80% SOC, then charge, then reconcile — will misattribute the monitor's
-   0.177 Ah/day to the cells unless the coulomb deadband is fixed first (§7.7).
+9. **True self-discharge is bounded, not measured, and §6 is in the way of
+   measuring it.** Differencing the two loss paths over the clean late window puts
+   the internal term — self-discharge **plus** the five BMS boards' standby draw,
+   both invisible to an external shunt — **below 0.9 %SOC/month at 95%**, with
+   `P(> 2 %/month) = 0.02%` [M]. That sits under the published LFP figure for the
+   reasons in §7.7.2, and **below this project's own commissioning estimate of
+   5 × BMS ≈ 4.9–9.8 mA (0.9–1.8 %/month)** — a tension the scheduled cycle
+   resolves. The scheduled measurement will misattribute the monitor's
+   0.177 Ah/day to the cells unless the deadband is fixed first.
 
 ---
 
@@ -759,12 +770,25 @@ them is the measured drain:
 > bases across reports is a bookkeeping hazard; everything here uses 397 Ah, and
 > the README is corrected to match.
 
-### 7.7 What this is NOT: self-discharge remains unmeasured
+### 7.7 What this is NOT: self-discharge is bounded, not measured
 
 **The shunt measures charge that leaves through the terminals. Self-discharge
 happens inside the cells and does not cross the shunt.** No quantity in this
 report is a measurement of it, and the operator's assessment is the correct one:
 true self-discharge has not been calculated yet.
+
+**What the shunt cannot see — name it precisely.** The voltage path measures
+*total* SOC decline; the shunt measures charge crossing the *terminals*. The
+difference is everything that lowers SOC without crossing them:
+
+1. true electrochemical self-discharge in the cells, and
+2. **the five internal BMS boards' standby draw** — which sits between the cells
+   and the terminals, inside each battery case, and is therefore just as
+   invisible to an external shunt as the electrochemistry is.
+
+Call that the **internal term**. It is exactly the bundle a pack-level datasheet
+quotes when it says "self-discharge," so it compares like-for-like with the
+published LFP figure — an important point for §7.7.2, where it comes out low.
 
 Two claims in earlier drafts of this report were weaker than they read, and are
 withdrawn here:
@@ -779,6 +803,93 @@ withdrawn here:
    Shelly-era 92-day study, on an instrument that could not resolve 0.3 mV/day.
    Nothing in the INA228 record confirms or refutes it.
 
+#### 7.7.1 A bound, from the two paths and a full error budget
+
+The internal term can be *bounded* even though it cannot be measured here, by
+differencing the two paths over the one clean window and propagating every
+uncertainty. Late window, Aug 19–25 (n = 7 full days, day 34–40; relaxation spent to
+< 0.005 mV/day):
+
+| Input | Value | Uncertainty | Source |
+| :--- | ---: | ---: | :--- |
+| Observed voltage slope | −0.3031 mV/day | ±0.0079 | 7-day OLS, r² = 0.998 |
+| Pack temperature drift | −0.0717 °F/day | — | DS18B20, same window |
+| Temperature coefficient | +1.0 mV/°F | ±0.3 | repo, system-level |
+| OCV plateau slope | 6.0 mV/%SOC | ±1.0 | two rested OCV points, 76–81% SOC |
+| Shunt-measured drain | 7.32 mA | ±2.4 | commissioning Tier-2 offset, 0.9 µV |
+
+**Temperature correction matters and is the same size as the effect.** Raw slope
+−0.3031 mV/day; the basement cooled 0.0717 °F/day over the window, which at
++1.0 mV/°F accounts for −0.0717 of it. Corrected: **−0.2314 mV/day**, i.e.
+6.38 mA of total loss against 7.32 mA measured at the shunt.
+
+Monte Carlo over all four inputs, 200,000 draws [D]:
+
+| Quantity | Median | 68% interval | 95% interval |
+| :--- | ---: | :---: | :---: |
+| Temperature-corrected slope | +0.231 mV/day | [0.209, 0.254] | [0.186, 0.276] |
+| Total SOC loss | 6.38 mA | [5.30, 7.82] | [4.46, 9.80] |
+| **Internal term** | **−0.80 mA** | [−3.47, +1.98] | [−6.02, +4.84] |
+| **Internal term, %SOC/month** | **−0.15** | — | **95th pct +0.89** |
+
+> **[M] The bound: the internal term is < 0.9 %SOC/month at 95% confidence.**
+> `P(> 2 %/month) = 0.02%`; `P(> 1 %/month) = 1.54%`. Reproduce with
+> `python scripts/ina228_analysis.py`.
+>
+> **And it is a bound, not a measurement — the median is negative.** A negative
+> self-discharge is physically impossible, so a central estimate below zero is
+> the diagnostic that the systematics exceed the signal. Read the 95th
+> percentile as a ceiling and nothing else. An earlier draft of this section
+> quoted the point estimate (≲0.2 %/month) as though it were the bound; that was
+> a misuse of the number and is corrected here.
+
+**Error budget — the shunt offset is ~90% of it** [D, 1σ swing in the internal term]:
+
+| Source | Swing |
+| :--- | ---: |
+| **Shunt offset ±2.4 mA** | **±2.40 mA** |
+| Plateau slope ±1.0 mV/% | ±0.91 mA |
+| Temperature coefficient ±0.3 mV/°F | ±0.59 mA |
+| Regression standard error | ±0.22 mA |
+
+The short-input offset re-measurement (§8.2 item 6) and the clamp calibration
+(item 5) would collapse the dominant term. **Those two cheap measurements are
+worth more to this question than any further months of monitoring.**
+
+#### 7.7.2 Why the bound sits below the published LFP figure
+
+< 0.9 %/month is well under the 2–3 %/month commonly quoted for LiFePO₄, and
+that deserves an explanation rather than a shrug. Three reasons the gap is
+plausible rather than an error:
+
+1. **Datasheet figures are conservative specifications, often at elevated
+   temperature.** Self-discharge roughly doubles per 10 °C. This bank sits at
+   68–70 °F (20–21 °C); published figures are commonly quoted at 25 °C or
+   derived from accelerated 45 °C storage tests.
+2. **Much of the quoted 2–3% is first-month settling**, not steady state. This
+   window is day 34–41 post-charge, with relaxation decayed to < 0.005 mV/day.
+3. **This replicates the study's own earlier result.** The Shelly-era 92-day
+   analysis concluded "~0% self-discharge; all loss from parasitic loads." That
+   was on a 10 mV instrument by a different method. **Two instruments, two
+   methods, same conclusion** is a stronger position than either alone — and it
+   is why §7.7's withdrawal of the "~0%" claim withdraws it as *unverified on
+   this instrument*, not as refuted.
+
+> **A tension inside this project's own numbers, recorded per R13.** The
+> commissioning report closed the cycle-1 CE ledger using **5 × BMS standby
+> ≈ 1.3–2.6 Ah over 11 days** — that is **4.9–9.8 mA, or 0.9–1.8 %SOC/month**
+> [I], and it lands **at or above the 95% ceiling derived here**. The two cannot
+> both be right.
+>
+> Candidate resolutions, none yet tested: the commissioning figure was an [I]
+> fitted to close a ledger gap rather than a measurement; or these BMS boards
+> sleep far deeper than the estimate assumed; or the bound here is too tight
+> because the shunt offset has been under-stated. **The scheduled full→full
+> cycle discriminates**, because it measures the internal term directly rather
+> than by difference.
+
+#### 7.7.3 The measurement that would settle it
+
 **The measurement the operator has scheduled is the right one**, and it is the
 designated next step: reach stasis (done), discharge the bank below 80% SOC,
 then charge it. A full→full cycle with a known depth of discharge lets the
@@ -786,8 +897,16 @@ firmware's V1.10 reconciliation compute the unaccounted charge
 
     U = recon_coul_eff × Ah_in − Ah_out
 
-which is the self-discharge, separated from the external drain the shunt already
-sees.
+which is the internal term — self-discharge plus BMS standby — separated from
+the external drain the shunt already sees.
+
+**It is a better measurement than §7.7.1's bound, not merely a longer one.** The
+difference method depends on the OCV plateau slope and the temperature
+coefficient, which together contribute ±1.1 mA of the ±2.7 mA budget. **A
+coulombic reconciliation uses neither.** It counts charge in and charge out, and
+the shunt offset largely cancels because it acts in opposite directions on the
+charge and discharge legs. That is why a single cycle will beat four more months
+of watching the voltage.
 
 > ### ⚠ Prerequisite: the deadband must be fixed *before* that cycle runs
 >

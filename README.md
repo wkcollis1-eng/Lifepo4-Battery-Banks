@@ -95,7 +95,7 @@ Since July 2026 the bank has been instrumented by a purpose-built **INA228 monit
 | ⚡ **Quiescent Drain** | **7.4 ± 2.4 mA measured** | ✅ | **New:** 41 d, 1.79 M samples. It is the monitor — the bank's own external load is nil |
 | ⏱️ **Storage Endurance** | **≈15 months to 80% SOC** | ✅ | On 397 Ah at the measured drain; band 11–22 months |
 | 📉 **Stasis Drift** | **−0.303 mV/day** | ✅ | 7-day OLS, se 0.008, p = 2.2×10⁻⁷ — now resolvable |
-| 🔋 **Self-Discharge** | **not yet measured** | 🔲 | Shunt sees only terminal current; needs the scheduled full→full cycle |
+| 🔋 **Self-discharge + BMS** | **< 0.9 %/month (95%)** | ⚠️ | A *bound*, not a measurement — shunt sees only terminal current. Full→full cycle scheduled |
 | 🔌 **Internal Resistance** | 3.73 mΩ (2-min DC-IR) | ✅ | Aging baseline, 69 °F, ~80% SOC |
 | ⚡ **Inverter Efficiency** | 87–94% (provisional) | ⚠️ | Window-alignment limited; definitive run outstanding |
 | 🔌 **Charger AC→DC** | 95.7% ± 2.5% | ✅ | LiTime 80 A, Kill-A-Watt ledger |
@@ -238,10 +238,24 @@ which a clamp-meter calibration would.
 
 ### 2c. Self-discharge is NOT what this measures
 
-The shunt sees charge crossing the terminals. Self-discharge happens inside the
-cells and does not cross it. **No figure in this study is a measurement of true
-self-discharge**; the "~0%" carried in earlier releases is inherited from the
-Shelly-era study, on an instrument that could not resolve 0.3 mV/day.
+The shunt sees charge crossing the terminals. Self-discharge — and the five
+internal BMS boards' standby draw — happen behind them and do not cross it.
+**No figure in this study is a *measurement* of true self-discharge**; the "~0%"
+carried in earlier releases is inherited from the Shelly-era study, on an
+instrument that could not resolve 0.3 mV/day.
+
+What this release does add is a **bound**. Differencing the voltage path (total
+SOC decline) against the coulomb path (terminal current) over the one clean
+window, with all four uncertainties propagated, puts the combined internal term
+**below 0.9 %SOC/month at 95% confidence**, `P(> 2 %/month) = 0.02%`. That is
+under the 2–3 %/month commonly quoted for LiFePO₄ — plausibly, because datasheet
+figures are conservative and often taken at higher temperature, because most of
+the quoted figure is first-month settling, and because it replicates this
+study's own earlier result by a second method.
+
+It remains a ceiling and not a measurement: the median comes out *negative*,
+which self-discharge cannot be, and the shunt offset alone is ~90% of the error
+budget.
 
 The measurement is scheduled: reach stasis (done), discharge below 80% SOC, then
 charge, and reconcile the full→full cycle. **Its prerequisite is the deadband fix

@@ -25,9 +25,10 @@ Technical reports and analysis documents for the LiFePO₄ battery monitoring st
 - ✅ **Stasis confirmed, and the drift inside it is now resolvable** — −0.3031 mV/day
   over 7 days (se 0.0079, p = 2.2×10⁻⁷). Prior reports could only say
   "indistinguishable from zero," which was a statement about the Shelly.
-- ⚠️ **True self-discharge is still unmeasured** — the shunt sees only terminal
-  current. The two loss paths are consistent but their difference is smaller than
-  either's uncertainty. Full→full reconciliation cycle scheduled.
+- ⚠️ **Self-discharge + BMS standby bounded below 0.9 %/month (95%)**, not
+  measured — the shunt sees only terminal current, so both terms are behind it.
+  `P(> 2 %/month) = 0.02%`. Under the published LFP figure, and under this
+  project's own commissioning estimate for 5 × BMS. Full→full cycle scheduled.
 - ✅ **The bank returns to its own baseline after ten months** — 13.3005 V measured
   against a Nov 2025 baseline of 13.301 V restated on the same scale.
 - ✅ **Apr 5 → Jul 14 gap closed** — 95 days of storage stasis at
