@@ -114,10 +114,26 @@ Spread = Max - Min
 
 | Term | Definition |
 |:-----|:-----------|
-| **Effective draw** | Parasitic current inferred from voltage drift during stasis (constant-load model) |
+| **Effective draw** | Parasitic current *inferred* from voltage drift during stasis (constant-load model). Shelly era only |
+| **Quiescent drain** | Parasitic current *measured* on the shunt, time-weighted, no charger and no deliberate load. INA228 era |
 | **System draw** | Actual instantaneous current, which varies with telemetry bursts (Wi-Fi, polling cycles) |
 
-The effective draw (~13–20 mA) is lower than peak system draw because it averages over duty cycles.
+The effective draw was estimated at ~13–20 mA. The **measured quiescent drain is 7.4 ± 2.4 mA** (41 days, 1.79 M samples), so the inferred band was 42–63% high — and the measured current is the INA228 monitor itself, not a bank property. See [report §7](../reports/LiFePO4_Report_2026-08-26.md).
+
+> **The ± is not statistical.** The 41-day mean is tight; its accuracy is bounded by this chip's commissioning-measured 0.9 µV ≡ 2.4 mA shunt offset, which averaging cannot reduce. Quote two significant figures, not three.
+
+> **Why the inference ran high.** Drift-to-current on a flat OCV plateau divides a small voltage change by a small slope, so both the numerator's noise and the slope's own uncertainty are amplified. The bank's plateau is 6.0 mV per %SOC, and the Shelly quantised at 10 mV — nearly two full %SOC per code. **Any current derived that way is a bound, not a measurement**, and should be reported as one.
+
+### 2.4.1 Time-weighted vs sample-weighted means
+
+Home Assistant writes to InfluxDB **on state change, not on a sample clock**. A mean taken over samples therefore over-weights busy periods, because they generate more writes per second than quiet ones. Every current mean in the INA228-era analysis is time-weighted:
+
+```python
+dt = t.diff().shift(-1).dt.total_seconds().fillna(0).clip(0, 10)  # 10 s stale guard
+mA = (current * dt).sum() / dt.sum() * 1000
+```
+
+The published aggregates carry both: use `i_timemean_mA` or `ah_net`, not `i_mean_A`.
 
 ---
 
