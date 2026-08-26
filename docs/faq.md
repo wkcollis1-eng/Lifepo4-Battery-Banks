@@ -73,16 +73,21 @@ For example, with ~3-second median cadence:
 
 **Time-based rolling** (`rolling('60s')`) ensures consistent smoothing regardless of sampling irregularity. This is critical for fair comparison across different time periods.
 
-### How accurate is the parasitic draw estimate?
+### How accurate is the parasitic draw figure?
 
-The 13–20 mA range is **inferred** from voltage drift, not directly measured. This introduces several uncertainties:
+**It is now measured, not inferred: 7.4 ± 2.4 mA**, time-weighted over 41 quiescent days and 1.79 M samples at 2 s on a 375 µΩ shunt, 99.93% integrated coverage.
 
-1. **OCV-SOC relationship** — LiFePO₄ has a very flat voltage curve in the mid-SOC range, making voltage-to-SOC conversion imprecise
-2. **Temperature effects** — Voltage varies with temperature (~1 mV/°F observed)
-3. **Equilibration time** — Voltage continues to stabilize for hours after current changes
-4. **System draw variability** — Actual draw varies with Wi-Fi polling, sensor activity, etc.
+**And it is the monitor.** The Shelly and the DROK panel meter are retired and the inverter is off, so the INA228 monitor — powered from the busbars, its return through the shunt — is the only load on the bus. 99 mW at 13.35 V is what a Wi-Fi-associated XIAO ESP32-C3 behind an 87% buck should draw. **The bank's own external parasitic load is effectively nil.** See [report §7](../reports/LiFePO4_Report_2026-08-26.md).
 
-**The highest-value improvement** would be direct bus-current measurement with a calibrated shunt, which would collapse this uncertainty.
+The earlier answer here gave 13–20 mA inferred from voltage drift, and listed direct bus-current measurement as the highest-value improvement. That measurement was made in July 2026, and the inferred band turned out to be **42–63% high** — a useful calibration on how much to trust drift-derived currents on a flat OCV curve.
+
+**What still limits the measured figure:**
+
+1. **Instrument offset** — the INA228's shunt-channel offset measured 0.9 µV ≡ 2.4 mA at commissioning. The 41-day mean is robust against that, but day-to-day structure at the 1–3 mA scale is not established as physical.
+2. **One season, one SOC** — 68–70 °F pack, ~100% SOC. No cold-storage figure exists.
+3. **It is a property of the load set, not of the bank** — the drain stepped by +2.9 mA on 2026-08-04 with no established cause, and the retired Shelly was part of the older figure.
+
+**The highest-value improvement now** is shunt calibration against a clamp meter at ~115 A, which would take the DROK's ±1% tolerance to ~0.1% of reference.
 
 ### Why are there multiple drift rates reported?
 

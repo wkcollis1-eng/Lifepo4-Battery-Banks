@@ -7,6 +7,123 @@ and this project uses date-based versioning (`YYYY-MM-DD`) based on data cutoff 
 
 ---
 
+## [2026-08-26] — 2026-08-26
+
+First report of the INA228 instrumentation era. The Shelly Plus Uni was retired
+2026-07-16; the bank has been on a purpose-built INA228 monitor (375 µΩ shunt,
+2 s cadence, voltage **and** current) since 2026-07-14.
+
+### Added
+- `reports/LiFePO4_Report_2026-08-26.md` — INA228-era technical report
+- `data/ina228/` — the new published data tier, rebuilt from InfluxDB rather than
+  the HA recorder (infinite retention vs a 14-day purge):
+  - `ina228_hourly_*.csv` (1,052 rows) and `ina228_daily_*.csv` (44 rows) — V/I/P
+    aggregates, net Ah/Wh, pack and die temperature, integration coverage
+  - `stasis_ma60_*.csv` (55,691 rows) — 1-minute MA-60s voltage means
+  - `coulomb_ledger_hourly.csv` (968 rows) — hardware vs software vs independent
+  - `shelly_ina228_crosscheck.csv` (817 rows) — the paired two-instrument overlap
+  - `events/*.csv` (32,486 rows) — **full 2 s resolution** for the charge and the
+    three discharge legs
+- `data/shelly_daily_min_2026-04-01_2026-07-16.csv` (107 rows) — **closes the
+  Apr 5 → Jul 14 gap**; the published record is now continuous Oct 29 2025 →
+  Aug 26 2026
+- `data/high_freq_voltage/voltage_data_2026-06-17_to_2026-07-16.csv` (8,343 rows)
+  — the final Shelly HF file, which supplies the cross-calibration overlap
+- `scripts/ina228_export.py` — rebuilds every `data/ina228/` file from InfluxDB
+  over any window; read-only credentials, `SELECT` only
+- `scripts/ina228_analysis.py` — reproduces every figure and headline number in
+  the new report **from repository files alone**, with no host access
+- `scripts/update_monthly_metrics.py` — rebuilds `monthly_metrics.csv` across
+  both instrument eras
+- Seven figures: `fig_ina228_relaxation`, `_noise_floor`, `_parasitic`,
+  `_coulomb_ledger`, `_charge_profile`, `_discharge_legs`, `_ten_month_timeline`,
+  plus `fig_shelly_ina228_offset`
+
+### Changed
+- `data/monthly_metrics.csv` — new **`instrument`** column (`shelly` /
+  `shelly->ina228` / `ina228`); the two instruments do not share a scale, so the
+  era belongs with the row rather than in a reader's head. March 2026 recomputed
+  over the full month (the prior row covered Mar 2–6 only); April–August added
+- `README.md`, `data/README.md`, `reports/README.md`, `scripts/README.md` — two-era
+  structure, the cross-calibration warning, and the new files
+- Storage-viability claim rewritten: **7.49 mA measured** replaces "~13–20 mA
+  inferred from stasis behaviour," and endurance is restated on the validated
+  397 Ah rather than the 500 Ah nameplate
+
+### Key Findings
+- **Parasitic drain measured, not inferred: 7.49 mA** over 41 quiescent days
+  (−7.188 Ah, 1.811% of 397 Ah, 1.38 %/month), 1.79 M samples at 99.93% coverage.
+  The study's stated highest-value next step is complete. The prior inferred band
+  was 42–63% high
+- **Stasis drift is now resolvable at −0.3031 mV/day** (7-day OLS, se 0.0079,
+  p = 2.2×10⁻⁷). Prior reports' "indistinguishable from zero" was a statement
+  about the Shelly's 10 mV quantisation, not about the bank
+- **Two independent loss paths agree to 11%** — voltage −1.54 %SOC/month via the
+  OCV plateau slope, coulomb −1.38 %SOC/month
+- **The bank returns to its own baseline after ten months and a full cycle** —
+  13.3005 V measured, against a Nov 2025 baseline of 13.301 V restated on the
+  INA228 scale
+- **Post-charge relaxation resolved:** τ₁ = 2.16 h, τ₂ = 3.12 d, asymptote
+  13.3042 V (n = 55,691 minute means, residual sd 5.6 mV). 99% relaxation at
+  ≈14 days — a different process from the ≈30 min post-*load* rest rule
+- **Noise floor fell 2.7 decades** — within-day voltage sd 60.25 mV → 0.131 mV
+- **95-day storage stasis (Apr 1 – Jul 4) at +0.0074 ± 0.0655 mV/day, p = 0.91**
+- **The quiescent drain is the monitor itself.** Operator confirmed 2026-08-26:
+  Shelly retired, DROK panel meter retired, inverter connected but off, INA228
+  monitor powered from the busbars — so in the low-side topology its return runs
+  through the shunt and its own consumption is inside the measurement. 7.4 mA at
+  13.35 V is 99 mW, against ~7.1 mA predicted for a Wi-Fi-associated XIAO
+  ESP32-C3 behind an 87% buck. **The bank's own external parasitic load is
+  effectively nil**, and the firmware header's "Monitor ~100 mA" is 14× high
+- **The 2026-08-04 +2.9 mA step is an instrument offset shift, not a load.** The
+  operator rewired the bank that afternoon to eliminate stacked lugs, with
+  nothing added or removed. No load on the bus could consume 50% more — the
+  monitor is the only one, it did not reboot, the firmware did not change — while
+  joints in the shunt's own current path were unbolted and re-landed. At 375 µΩ
+  the step is 1.08 µV, the same order as the chip's 0.9 µV commissioning offset.
+  Two analyses that looked decisive and were not are recorded in report §7.4: the
+  data-feed "blip" is indistinguishable from the 82 routine Wi-Fi dropouts in the
+  window, and the voltage record cannot separate a load step from an offset step
+  at day 19 post-charge because the relaxation tail dominates there
+
+### Fixed
+- Endurance figures were mixing capacity bases across reports: the README's
+  "~11+ months to 80% SOC" applied the old 12.5 mA draw to the **500 Ah
+  nameplate**, while the discharge test validated **397 Ah**. All endurance
+  figures now use 397 Ah, and both draws are stated on that one basis
+- `monthly_metrics.csv` March 2026 row described the month but covered five days
+  of it
+
+### Known Issues
+- **The firmware coulomb ledger cannot see the quiescent drain.** Over the same
+  32 continuous days: INA228 hardware CHARGE register −5.8222 Ah, independent
+  integration −5.8019 Ah (0.35% apart), firmware ledger **−0.0149 Ah**. The
+  ±0.05 A integration deadband is 6.7× larger than the 7.5 mA it excludes, so SOC
+  reads 99.996% when the coulomb truth is ≈98.2% and drifts ≈1.4 %SOC per month
+  of storage. Remedies proposed in report §6.5; **no firmware change made here**
+- **The detector for this has never run.** `Cycle Integration Delta (SW−HW)`
+  returns NaN until a full-charge anchor seeds its snapshot, and the hardware
+  accumulators it reads were added after the only anchor this system has
+  recorded. It has no InfluxDB series at all
+- **True self-discharge is still unmeasured**, and the deadband above is in its
+  way. The shunt sees only charge crossing the terminals; self-discharge is
+  internal to the cells. The scheduled measurement — discharge below 80% SOC,
+  then charge, then reconcile the full→full cycle — will misattribute the
+  monitor's 0.177 Ah/day to the cells unless the ledger is fixed first: over a
+  60-day storage leg that is 10.6 Ah = 2.7% of 397 Ah ≡ ≈1.3 %/month, inside the
+  published LFP range and therefore an artefact that would read as a
+  confirmation. Two earlier claims are withdrawn — "two loss paths agree to 11%,
+  bounding self-discharge" (both uncertainties exceed the gap) and
+  "self-discharge ~0%" (inherited from the Shelly era, never re-established)
+- **Cycle-2 coulombic efficiency still unavailable.** One anchor has ever fired;
+  `last_coulombic_efficiency` has read the commissioning floor 95.78% and
+  `cv_absorption_time` 16.82 min, unchanged for 41 days. Needs a second full charge
+- **Three firmware copies have diverged.** The device runs ≥V1.23 (it publishes
+  `HW Net Charge (INA228)`); the repository YAML holds V1.20–V1.24 code under a
+  V1.19 header; `H:/esphome/ina228-bringup.yaml` holds no V1.20+ code at all
+
+---
+
 ## [2026-03-16] — 2026-03-16
 
 ### Added

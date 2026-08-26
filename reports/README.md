@@ -6,9 +6,44 @@ Technical reports and analysis documents for the LiFePO₄ battery monitoring st
 
 ## Current Version
 
-### LiFePO4_Report_2026-03-31.md
+### LiFePO4_Report_2026-08-26.md
 
-**[📄 Read the Full Report →](LiFePO4_Report_2026-03-31.md)**
+**[📄 Read the Full Report →](LiFePO4_Report_2026-08-26.md)**
+
+| Property | Value |
+|:---------|:------|
+| Data through | August 26, 2026 |
+| Published | August 26, 2026 |
+| Published record | Oct 29, 2025 – Aug 26, 2026 (301 days) |
+| Instrument | INA228 + 375 µΩ shunt (Shelly Plus Uni retired 2026-07-16) |
+| Samples | 1,790,710 current @ 2 s, 42.2 days integrated, 99.93% coverage |
+
+**Key findings:**
+- ✅ **Quiescent drain measured, not inferred** — **7.4 ± 2.4 mA** over 41 quiescent
+  days. With the Shelly and DROK meter retired and the inverter off, it is the
+  INA228 monitor itself; the bank's own external load is nil.
+- ✅ **Stasis confirmed, and the drift inside it is now resolvable** — −0.3031 mV/day
+  over 7 days (se 0.0079, p = 2.2×10⁻⁷). Prior reports could only say
+  "indistinguishable from zero," which was a statement about the Shelly.
+- ⚠️ **True self-discharge is still unmeasured** — the shunt sees only terminal
+  current. The two loss paths are consistent but their difference is smaller than
+  either's uncertainty. Full→full reconciliation cycle scheduled.
+- ✅ **The bank returns to its own baseline after ten months** — 13.3005 V measured
+  against a Nov 2025 baseline of 13.301 V restated on the same scale.
+- ✅ **Apr 5 → Jul 14 gap closed** — 95 days of storage stasis at
+  +0.0074 ± 0.0655 mV/day (p = 0.91).
+- ⚠️ **The firmware coulomb ledger cannot see the drain** — silicon −5.8222 Ah,
+  independent integration −5.8019 Ah, firmware −0.0149 Ah over the same ~32 days.
+  SOC reads 99.996% when the truth is ≈98.2%. See §6.
+- ✅ **The 2026-08-04 +2.9 mA step resolved to an instrument offset shift** — the
+  bank was rewired that afternoon to eliminate stacked lugs, with no load added.
+  At 375 µΩ the step is 1.08 µV, the same order as the chip's 0.9 µV offset.
+
+---
+
+### Previous: LiFePO4_Report_2026-03-31.md
+
+**[📄 Read →](LiFePO4_Report_2026-03-31.md)** — the last Shelly-era report.
 
 | Property | Value |
 |:---------|:------|
@@ -17,12 +52,15 @@ Technical reports and analysis documents for the LiFePO₄ battery monitoring st
 | Monitoring duration | 158 days (see notes on this figure below) |
 | High-freq samples | 758,338 |
 
-**Key findings:**
-- ✅ **Stasis confirmed** — all four stasis criteria pass (drift +3.02 mV/day, noise −28.4% vs. pre-charge baseline, voltage range 50 mV, day 42 post-charge)
-- ✅ **Near-zero long-term drift** — 5-day MA-60 rate of −0.19 mV/day, indistinguishable from zero
-- ✅ **Best noise performance recorded** — MA-60 std down 28.4% (9.38 mV → 6.72 mV)
-- ✅ Resting voltage 13.247–13.251 V, within 19–23 mV of the Nov 4, 2025 stasis baseline
-- ⚠️ HF logging gap ~Mar 7–20, 2026 — only hourly averages available for that window
+- ✅ Stasis confirmed — all four criteria pass at day 42 post-charge
+- ✅ MA-60 std down 28.4% (9.38 mV → 6.72 mV)
+- ⚠️ HF logging gap ~Mar 7–20, 2026
+
+> [!NOTE]
+> **Voltages in this and every earlier report are on the Shelly scale.** The INA228
+> cross-calibration (2026-08-26 report §1.2) measured the Shelly reading
+> **30.6 mV low** (n = 148 gated pairs). Add 30.6 mV before comparing any
+> pre-July-2026 voltage with an INA228-era one.
 
 ---
 
@@ -30,7 +68,8 @@ Technical reports and analysis documents for the LiFePO₄ battery monitoring st
 
 | Version | Date | Data Coverage | Key Changes |
 |:--------|:-----|:--------------|:------------|
-| **2026-03-31** | Apr 5, 2026 | Oct 29, 2025 – Mar 31/Apr 2, 2026 | Full stasis confirmed; 158-day study; HF gap Mar 7–20 noted |
+| **2026-08-26** | Aug 26, 2026 | Oct 29, 2025 – Aug 26, 2026 | INA228 era; direct parasitic measurement; instrument cross-calibration; coulomb-ledger deadband finding; Apr–Jul gap closed |
+| 2026-03-31 | Apr 5, 2026 | Oct 29, 2025 – Mar 31/Apr 2, 2026 | Full stasis confirmed; 158-day study; HF gap Mar 7–20 noted |
 | 2026-03-06 | Mar 6, 2026 | Oct 29, 2025 – Mar 6, 2026 | Approaching stasis; 130+ day monitoring; drift −4.75 mV/day |
 | 2026-03-01 | Mar 1, 2026 | Oct 29, 2025 – Mar 1, 2026 | Self-discharge analysis; BMS balancing; charge event; 125+ days |
 | 2026-01-31 | Feb 1, 2026 | Oct 29, 2025 – Jan 31, 2026 | Extended to 94+ days; drift flattening; temperature analysis |
@@ -89,7 +128,7 @@ When citing a specific report version:
   month        = {March},
   version      = {2026-03-01},
   institution  = {Independent Research},
-  url          = {https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/blob/main/reports/LiFePO4_Report_2026-03-01.md}
+  url          = {https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks/blob/main/reports/LiFePO4_Report_2026-08-26.md}
 }
 ```
 

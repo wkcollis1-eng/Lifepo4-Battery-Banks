@@ -1,7 +1,12 @@
-month,study_day_end,mean_voltage_v,min_voltage_v,max_voltage_v,mean_spread_mv,drift_rate_mv_day,drift_r2,hf_samples,hourly_records,charge_events,regime,notes
-2025-10,3,13.5077,13.27,14.56,49.00,-7.29,0.018,0,60,0,PRE_ECO+CHARGE,"Oct 29 study start; includes initial top-up charge period; only 3 days"
-2025-11,33,13.3126,12.61,14.57,24.50,-7.26,0.289,0,674,1,PRE_ECO,"Nov 4 post-charge stasis begins (13.27V baseline); includes charge/discharge"
-2025-12,64,13.2567,13.20,13.30,30.24,-0.94,0.889,126,744,0,PRE_ECO+ECO_BOUNDARY,"Dec 23 15:40 Eco Mode enabled (-9 mV instrumentation shift); stasis deepening"
-2026-01,95,13.2364,13.19,13.28,45.98,-0.16,0.136,323841,744,0,POST_ECO,"HF monitoring begins Jan 5; drift near-flat; EMI spikes Jan 14/20/23 (excluded)"
-2026-02,123,13.2530,13.18,14.51,47.62,3.72,0.312,333070,672,1,POST_ECO+CHARGE,"Feb 22 charge event (1.289 kWh AC; ~81 Ah; 309 mV rise to 14.51V); positive drift reflects charge"
-2026-03,128,13.2598,13.22,13.28,39.25,-1.25,0.320,55172,120,0,POST_ECO+POST_CHARGE,"Mar 2-6 only; post-charge relaxation; approaching stasis (drift -4.75 mV/day as of Mar 6)"
+month,study_day_end,instrument,mean_voltage_v,min_voltage_v,max_voltage_v,mean_spread_mv,drift_rate_mv_day,drift_r2,hf_samples,hourly_records,charge_events,regime,notes
+2025-10,3,shelly,13.5077,13.27,14.56,49.0,-7.29,0.018,0,60,0,PRE_ECO+CHARGE,Oct 29 study start; includes initial top-up charge period; only 3 days
+2025-11,33,shelly,13.3126,12.61,14.57,24.5,-7.26,0.289,0,674,1,PRE_ECO,Nov 4 post-charge stasis begins (13.27V baseline); includes charge/discharge
+2025-12,64,shelly,13.2567,13.2,13.3,30.24,-0.94,0.889,126,744,0,PRE_ECO+ECO_BOUNDARY,Dec 23 15:40 Eco Mode enabled (-9 mV instrumentation shift); stasis deepening
+2026-01,95,shelly,13.2364,13.19,13.28,45.98,-0.16,0.136,323841,744,0,POST_ECO,HF monitoring begins Jan 5; drift near-flat; EMI spikes Jan 14/20/23 (excluded)
+2026-02,123,shelly,13.253,13.18,14.51,47.62,3.72,0.312,333070,672,1,POST_ECO+CHARGE,Feb 22 charge event (1.289 kWh AC; ~81 Ah; 309 mV rise to 14.51V); positive drift reflects charge
+2026-03,154,shelly,13.2464,13.19,13.28,35.34,-0.54,0.293,74288,742,0,POST_ECO+POST_CHARGE,Full month now published (prior row covered Mar 2-6 only). Post-charge stasis sustained; hourly Min=Max from Mar 27 (10 mV quantisation floor)
+2026-04,184,shelly,13.237,13.23,13.24,,0.154,0.084,0,0,0,STORAGE_STASIS,Daily minima only (no hourly export). Deep storage stasis; drift below the Shelly detection limit
+2026-05,215,shelly,13.2365,13.21,13.24,,-0.286,0.106,0,0,0,STORAGE_STASIS,Daily minima only (no hourly export). Deep storage stasis; drift below the Shelly detection limit
+2026-06,245,shelly,13.2373,13.21,13.27,,0.93,0.295,3360,0,0,STORAGE_STASIS,Daily minima only (no hourly export). Deep storage stasis; drift below the Shelly detection limit
+2026-07,276,shelly->ina228,13.4185,12.5678,14.5842,234.46,,,696660,0,3,INSTRUMENT_CHANGE+COMMISSIONING,"Shelly retired Jul 16. Jul 5 and Jul 11 charges (Shelly-observed); Jul 14-16 INA228 commissioning campaign: 110.65 Ah discharged, 115.38 Ah recharged, first full-charge anchor Jul 16 19:50 UTC. Voltage columns are INA228 from Jul 14; add 30.6 mV to earlier Shelly values to compare"
+2026-08,301,ina228,13.3055,13.3006,13.3129,0.82,-0.45,0.979,1058721,0,0,INA228+STASIS,Deep stasis. Quiescent drain measured directly at 7.49 mA (41-day mean); within-day voltage sd 0.131 mV on Aug 26. Aug 4 ~18:30 UTC: +2.9 mA unexplained step in drain (see report S7). Through Aug 26 only

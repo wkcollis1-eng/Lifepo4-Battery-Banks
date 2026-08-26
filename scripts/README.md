@@ -21,7 +21,38 @@ Analysis code for the LiFePO₄ battery monitoring study.
 
 | File | Description | Language |
 |:-----|:------------|:---------|
-| `lifepo4_analysis.py` | Main analysis pipeline | Python 3.8+ |
+| `ina228_export.py` | Build the published INA228 datasets from InfluxDB | Python 3.9+ |
+| `ina228_analysis.py` | INA228-era figures and headline numbers, from repo data only | Python 3.9+ |
+| `update_monthly_metrics.py` | Rebuild `data/monthly_metrics.csv` across both instrument eras | Python 3.9+ |
+| `lifepo4_analysis.py` | Shelly-era analysis pipeline | Python 3.8+ |
+| `parse_shelly_export.py` | Parse raw Shelly HA exports | Python 3.8+ |
+| `update_voltage_chart.py` | Regenerate `voltage_chart.html` | Python 3.8+ |
+| `smoke_test.py` | CI sanity checks | Python 3.8+ |
+
+### INA228 era
+
+`ina228_analysis.py` reads **only files that ship in this repository**, so every
+figure and number in the 2026-08-26 report is reproducible with no access to the
+Home Assistant host:
+
+```bash
+python scripts/ina228_analysis.py        # figures -> figures/, numbers -> stdout
+```
+
+`ina228_export.py` is the one script that needs the host. It reads InfluxDB
+credentials from the HA `secrets.yaml` (environment variables win) and only ever
+issues `SELECT` — use a read-only Influx user:
+
+```bash
+HA_CONFIG=H:/ python scripts/ina228_export.py
+```
+
+> [!NOTE]
+> The raw 2 s series is ~130 MB and is not versioned. The export publishes hourly
+> and daily aggregates, 1-minute MA-60s means for the stasis window (gzipped), the
+> three-way coulomb ledger, the two-instrument cross-check, and full 2 s
+> resolution for the four charge/discharge event windows — see
+> [`data/README.md`](../data/README.md).
 
 ---
 

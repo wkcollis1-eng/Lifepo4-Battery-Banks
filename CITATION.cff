@@ -9,8 +9,8 @@ repository-code: "https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks"
 url: "https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks"
 doi: "10.5281/zenodo.14538065"
 license: CC-BY-4.0
-version: "2026-01-31"
-date-released: "2026-02-01"
+version: "2026-08-26"
+date-released: "2026-08-26"
 keywords:
   - LiFePO4
   - battery
@@ -21,6 +21,10 @@ keywords:
   - architectural immunity
   - home-assistant
   - shelly
+  - ina228
+  - coulomb counting
+  - shunt measurement
+  - esphome
   - open data
   - reproducible research
   - time series analysis
@@ -28,7 +32,13 @@ abstract: >-
   Long-term monitoring study of a DIY 12V 500Ah LiFePO₄ battery bank
   demonstrating "architectural immunity" — the principle that parallel-connected
   mixed-brand cells achieve monolithic behavior through topology rather than
-  cell matching. This dataset includes 94+ days of continuous voltage monitoring,
-  ~328,000 high-frequency samples, temperature correlation analysis, and
-  storage viability projections. The study validates 99.3% usable capacity
-  (397 Ah) and projects 7–10 months to 80% SOC under typical parasitic loads.
+  cell matching. The dataset spans 301 days across two instruments: a Shelly
+  Plus Uni voltmeter (Oct 2025 – Jul 2026, voltage only, 10 mV quantisation) and,
+  from July 2026, a purpose-built INA228 monitor on a 375 uOhm shunt sampling
+  voltage and current every 2 seconds. It includes ~767,000 Shelly high-frequency
+  samples, 1.79 million INA228 current samples, temperature correlation, full
+  charge and discharge characterisation, and a paired cross-calibration of the two
+  instruments. The study validates 99.3% usable capacity (397 Ah) and reports a
+  directly measured quiescent drain of 7.49 mA, giving 14.5 months to 80% SOC —
+  replacing the 7–10 month projection that earlier releases inferred from voltage
+  drift alone.
