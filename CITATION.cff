@@ -39,6 +39,10 @@ abstract: >-
   samples, 1.79 million INA228 current samples, temperature correlation, full
   charge and discharge characterisation, and a paired cross-calibration of the two
   instruments. The study validates 99.3% usable capacity (397 Ah) and reports a
-  directly measured quiescent drain of 7.49 mA, giving 14.5 months to 80% SOC —
-  replacing the 7–10 month projection that earlier releases inferred from voltage
-  drift alone.
+  directly measured quiescent drain of 7.4 mA — which, with the Shelly and DROK
+  meter retired and the inverter off, is the monitor's own consumption — giving
+  approximately 15 months to 80% SOC and replacing the 7-10 month projection that
+  earlier releases inferred from voltage drift alone. Self-discharge plus internal
+  BMS standby, neither of which crosses an external shunt, is bounded below
+  0.9 %SOC per month at 95% confidence rather than measured; a full-to-full
+  coulombic reconciliation is the designated next step.

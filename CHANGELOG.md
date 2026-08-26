@@ -105,6 +105,14 @@ First report of the INA228 instrumentation era. The Shelly Plus Uni was retired
   returns NaN until a full-charge anchor seeds its snapshot, and the hardware
   accumulators it reads were added after the only anchor this system has
   recorded. It has no InfluxDB series at all
+- **Self-discharge + BMS standby is now bounded below 0.9 %SOC/month at 95%**
+  (`P(> 2 %/month) = 0.02%`), by differencing the voltage and coulomb paths over
+  the clean late window with all four uncertainties propagated. It is a ceiling,
+  not a measurement: the median is negative, which is physically impossible, and
+  the shunt offset is ~90% of the error budget. The bound sits under the 2-3
+  %/month usually quoted for LiFePO4 and under this project's own commissioning
+  estimate of 5 x BMS standby (4.9-9.8 mA = 0.9-1.8 %/month) - a tension the
+  scheduled cycle resolves. Reproduce with `scripts/ina228_analysis.py`
 - **True self-discharge is still unmeasured**, and the deadband above is in its
   way. The shunt sees only charge crossing the terminals; self-discharge is
   internal to the cells. The scheduled measurement — discharge below 80% SOC,
