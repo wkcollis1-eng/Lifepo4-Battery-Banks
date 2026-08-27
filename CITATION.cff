@@ -9,8 +9,8 @@ repository-code: "https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks"
 url: "https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks"
 doi: "10.5281/zenodo.14538065"
 license: CC-BY-4.0
-version: "2026-08-26"
-date-released: "2026-08-26"
+version: "2026-08-27"
+date-released: "2026-08-27"
 keywords:
   - LiFePO4
   - battery
@@ -45,4 +45,9 @@ abstract: >-
   earlier releases inferred from voltage drift alone. Self-discharge plus internal
   BMS standby, neither of which crosses an external shunt, is bounded below
   0.9 %SOC per month at 95% confidence rather than measured; a full-to-full
-  coulombic reconciliation is the designated next step.
+  coulombic reconciliation is the designated next step. The dataset also
+  documents the bank's only unplanned discharge: an 11.08-hour grid outage on
+  2026-07-04 during which the bank never came within 340 mV of its first
+  alarm, and which ended when the inverter's fuses failed on a coincident
+  fridge-inrush and coffee-maker load of 3328 W against a 1500 W nameplate -
+  a coincidence the 16-CT submeter shows recurring on 34 of 45 days.
