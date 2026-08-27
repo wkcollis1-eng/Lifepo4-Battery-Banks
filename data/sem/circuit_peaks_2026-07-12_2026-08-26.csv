@@ -1,0 +1,5 @@
+circuit,entity_id,n_samples,peak_W,running_median_W,inrush_ratio
+fridge,sem_fridge_power,1379612,2365.2,107.5,22.0
+coffee,sem_counter_2_power,471386,1754.6,1038.8,1.7
+furnace,sem_furnace_power,1250702,869.5,13.3,65.4
+hwh_recirc,hwh_current_consumption,281983,200.9,8.4,23.9

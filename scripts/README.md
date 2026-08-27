@@ -24,6 +24,8 @@ Analysis code for the LiFePO₄ battery monitoring study.
 | `ina228_export.py` | Build the published INA228 datasets from InfluxDB | Python 3.9+ |
 | `ina228_analysis.py` | INA228-era figures and headline numbers, from repo data only | Python 3.9+ |
 | `update_monthly_metrics.py` | Rebuild `data/monthly_metrics.csv` across both instrument eras | Python 3.9+ |
+| `sem_export.py` | Build the SEM outage / coincident-peak datasets from InfluxDB | Python 3.9+ |
+| `outage_analysis.py` | Reproduce the 2026-07-04 outage and coincident-peak figures | Python 3.9+ |
 | `lifepo4_analysis.py` | Shelly-era analysis pipeline | Python 3.8+ |
 | `parse_shelly_export.py` | Parse raw Shelly HA exports | Python 3.8+ |
 | `update_voltage_chart.py` | Regenerate `voltage_chart.html` | Python 3.8+ |

@@ -33,6 +33,13 @@ Technical reports and analysis documents for the LiFePO₄ battery monitoring st
   against a Nov 2025 baseline of 13.301 V restated on the same scale.
 - ✅ **Apr 5 → Jul 14 gap closed** — 95 days of storage stasis at
   +0.0074 ± 0.0655 mV/day (p = 0.91).
+- ✅ **The study's only unplanned outage documented** — 2026-07-04, the bank
+  carried the house **11.08 h** and never came within **340 mV** of its first
+  alarm. Three instruments agree on the timeline.
+- ⚠️ **The inverter was the failure point, and it recurs** — fridge inrush 22×
+  running, coincident with the coffee maker gives **3328 W against a 1500 W
+  nameplate**, on **34 of 45 days**. July 5 was a scheduled event the grid
+  normally absorbs.
 - ⚠️ **The firmware coulomb ledger cannot see the drain** — silicon −5.8222 Ah,
   independent integration −5.8019 Ah, firmware −0.0149 Ah over the same ~32 days.
   SOC reads 99.996% when the truth is ≈98.2%. See §6.
