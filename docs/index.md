@@ -38,7 +38,9 @@ Since July 2026 the bank has been instrumented by a purpose-built **INA228 monit
 | 🔋 **Self-discharge + BMS** | **< 0.9 %/month (95%)** | A bound, not a measurement; full→full cycle scheduled |
 | 📊 **Voltage Noise Floor** | **0.131 mV** | Within-day sd, below the 195.3 µV bus LSB |
 | 🌡️ **Temperature Coefficient** | +1.0 mV/°F | System-level |
-| ⚠️ **SOC ledger blind spot** | 1.46 %SOC / 32 d | ±50 mA firmware deadband hides the 7.5 mA drain |
+| ⚠️ **SOC ledger blind spot** | 1.46 %SOC / 32 d | ±50 mA firmware deadband hides the 7.4 mA drain |
+| 🔌 **Real outage survived** | **11.08 h** | 2026-07-04, 340 mV clear of the first alarm |
+| ⚠️ **Coincident peak** | **3328 W vs 1500 W inverter** | Fridge inrush 22× + coffee maker, 34 of 45 days |
 
 > **Two instruments, one scale.** The Shelly Plus Uni was retired 2026-07-16 and reads
 > **30.6 mV low** against the INA228 (n = 148 gated pairs). Add 30.6 mV to any

@@ -43,6 +43,31 @@ This folder contains the raw and processed datasets for the LiFePO₄ battery mo
 | `ina228/shelly_ina228_crosscheck.csv` | Paired two-instrument samples | 817 | Jul 14 – Jul 16, 2026 |
 | `ina228/events/*.csv[.gz]` | **Full 2 s resolution**, four charge/discharge windows | 32,486 | Jul 15 – Jul 16, 2026 |
 
+### SEM meter (16-CT whole-home, live 2 s feed from 2026-07-12)
+
+| File | Description | Records | Coverage |
+|:-----|:------------|--------:|:---------|
+| `sem/sem_whole_home_hourly_2026-07-03_2026-07-07.csv` | Service-entrance CTs across the 2026-07-04 outage | 91 | Jul 3 – Jul 7, 2026 |
+| `sem/circuit_peaks_2026-07-12_2026-08-26.csv` | Per-circuit peak, running median, inrush ratio | 4 | Jul 12 – Aug 26, 2026 |
+| `sem/coincident_peaks_2026-07-12_2026-08-26.csv` | Every 2 s sample where fridge+coffee exceeded the 1500 W inverter nameplate | 361 | Jul 12 – Aug 26, 2026 |
+| `sem/events/fridge_coffee_worst_2026-08-24.csv` | The worst coincidence at full 2 s resolution | 162 | 2026-08-24 06:40–06:46 ET |
+
+> [!IMPORTANT]
+> **The SEM's own coverage has a hole, and it matters.** Hourly backfill only
+> from Jun 27 to Jul 1 07:00; then **nothing at all until 2026-07-12 11:02**,
+> when the live 2 s MQTT feed began. **The 2026-07-04 outage falls inside that
+> 11-day blackout**, so no circuit-level data exists for it — only
+> `sem_whole_home_power`, whose hourly backfill survived.
+
+> [!WARNING]
+> **`sem_whole_home_power` reads 0.0 W during an outage, and that is correct.**
+> It is `ch16 + ch17` = main_a + main_b, the **service-entrance** CTs. With the
+> main open and the panel backfed through the generator interlock, no current
+> crosses them. Do not read it as a sensor failure — it brackets the outage.
+> The **branch** CTs sit downstream of the interlock and keep reading, which is
+> why `sensor.backup_essentials_load` is the right sensor for "what is on the
+> bank" (first data 2026-08-23).
+
 ### Shelly era (retired 2026-07-16)
 
 | File | Description | Records | Coverage |

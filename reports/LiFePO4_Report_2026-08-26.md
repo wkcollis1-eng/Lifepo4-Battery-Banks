@@ -63,6 +63,13 @@ present deadband and the monitor's own 0.177 Ah/day will be booked as
 self-discharge, an artefact of ≈1.3 %/month that would land inside the published
 LFP range and read as a confirmation. See §7.7.
 
+**The bank's one real test is now documented.** On 2026-07-04 the grid failed and
+the bank carried the house for **11.08 hours**, never coming within **340 mV** of
+its first alarm. It ended when the inverter's fuses blew as the coffee maker
+started against a running fridge — a coincident **3328 W** against a 1500 W
+nameplate, which the SEM shows recurs on **34 days out of 45**. The bank was never
+the weak link. See §4A and §4B.
+
 **Status: STASIS — every criterion passes, most of them by one to two orders of
 magnitude.** The old thresholds were written for a 10 mV instrument and no longer
 discriminate; §5.3 proposes replacements.
@@ -91,7 +98,17 @@ discriminate; §5.3 proposes replacements.
    the firmware did not change. What did change is joints in the shunt's own
    current path. The step is +2.88 mA ≡ **1.08 µV** at this shunt, the same order
    as its 0.9 µV commissioning offset (§7.3).
-3. **The coulomb ledger is blind below 50 mA** (§6). Three independent
+3. **The study's only unplanned outage is documented for the first time.** The
+   grid failed 2026-07-04 20:50:38; the bank picked up the house at 21:48:58 and
+   carried it **11.08 hours**, working band 12.98–13.19 V, never closer than
+   **340 mV** to the 12.40 V Warning [M]. Three instruments agree on the timeline
+   (§4A).
+4. **The inverter, not the bank, was the failure point — and it recurs.** Fridge
+   inrush is **22×** running (2365 W peak); coincident with the coffee maker the
+   measured maximum is **3328 W = 2.22× the 1500 W nameplate**, on **34 of 45
+   days**, 58% of it between 05:00 and 07:59 [M]. The July 5 failure was a
+   scheduled event that the grid normally absorbs (§4B).
+5. **The coulomb ledger is blind below 50 mA** (§6). Three independent
    accountants over the same ~32 days: silicon −5.8222 Ah, independent
    integration −5.8019 Ah, firmware −0.0149 Ah.
 4. **The detector designed to catch exactly this has never run.** The firmware
@@ -247,6 +264,10 @@ The raw 2 s series is ~130 MB and is not versioned. Four tiers ship instead:
 | `data/ina228/coulomb_ledger_hourly.csv` | 968 | the three-way ledger of §6 |
 | `data/ina228/shelly_ina228_crosscheck.csv` | 817 | the paired cross-calibration of §1.2 |
 | `data/ina228/events/*.csv[.gz]` | 32,486 | **full 2 s resolution**, four event windows |
+| `data/sem/coincident_peaks_*.csv` | 361 | every 2 s sample where fridge+coffee exceeded nameplate |
+| `data/sem/circuit_peaks_*.csv` | 4 | per-circuit peak / running / inrush |
+| `data/sem/sem_whole_home_hourly_*.csv` | 91 | the outage, from the service-entrance CTs |
+| `data/sem/events/fridge_coffee_worst_*.csv` | 162 | the worst coincidence at 2 s |
 
 `scripts/ina228_export.py` rebuilds all of them from InfluxDB over any window;
 `scripts/ina228_analysis.py` reproduces every figure and number in this report
@@ -337,6 +358,182 @@ inverter-overload trips.*
 > SUVL margin computed from it is an upper bound on the true margin.** The
 > hardware SUVL comparator runs per-conversion and is the actual fast-transient
 > guard; it did not fire, which bounds the true peak below 250 A.
+
+---
+
+## 4A. The 2026-07-04/05 Outage — the study's only unplanned discharge
+
+Everything in §4 is a *deliberate* discharge, run by the operator with a
+stopwatch. Nine days before the INA228 went live, the bank did the thing it was
+built for, unrehearsed, for eleven hours. That event is not in any previous
+report and belongs at the centre of this one.
+
+It also ended by destroying the inverter, which is §4B.
+
+### 4A.1 What happened
+
+| Time (ET) | Event | Source |
+| :--- | :--- | :--- |
+| 2026-07-04 20:50:38 | Grid fails | UPS `on_battery` → ON |
+| 21:48:58 | **Bank picks up the house** — 13.28 → 13.11 V in 15 s (−170 mV) | Shelly |
+| 23:25 | ~294 W of additional load appears (−75 mV step) | Shelly |
+| 2026-07-05 02:03–02:12 | Erratic sag, bottoming at 12.74 V | Shelly |
+| ~06:00–07:00 | **Inverter fuses blow**; unit replaced | Operator |
+| ~08:23 | Grid restored via the generator-lockout transfer | UPS `on_battery` → OFF |
+| 08:53:56 | Charger starts | Shelly |
+| 11:35:20 | Charge peaks at 14.53 V | Shelly |
+
+**The bank carried the house for 11.08 hours** (665 min), from load-on to
+charger-on.
+
+![The outage](../figures/fig_outage_2026-07-04.png)
+*Figure 5 — The full event on the Shelly's trace. The line is broken across the
+5.07 h telemetry gap deliberately: joining it would draw a flat, well-behaved
+segment where there is in fact no data at all.*
+
+### 4A.2 It was never in difficulty
+
+| Threshold | Setting | Worst approach | Margin |
+| :--- | ---: | ---: | ---: |
+| Voltage Warning | 12.40 V | 12.74 V | **+340 mV** |
+| Critical / BUVL | 12.20 V | 12.74 V | **+540 mV** |
+| EMERGENCY | 11.80 V | 12.74 V | **+940 mV** |
+
+Sustained working band under load: **12.98–13.19 V** (p5–p95, n=187). The 12.74 V
+minimum is a single transient inside the 02:03–02:12 episode, not a sustained
+level. **No alarm was approached at any point in eleven hours.**
+
+### 4A.3 Three instruments, one timeline
+
+Nothing here rests on a single sensor:
+
+| Cross-check | Result |
+| :--- | :--- |
+| Grid loss (UPS) 20:50:38 vs bank load-on (Shelly) 21:48:58 | **58 min apart** — the operator's account was "grid down an hour or so before I went to the panel" |
+| SEM `whole_home_power` | **0.0 W for six consecutive hourly buckets**, 21:00 Jul 4 → 02:00 Jul 5 |
+| HA recorder gap (Shelly) 03:20:23→08:24:18 | Matches the SEM's own 6 h hourly gap — the host was down, not the sensors |
+
+**The SEM's 0.0 W is correct behaviour, not a fault.** `sem_whole_home_power` is
+`ch16 + ch17` — main_a + main_b, the *service-entrance* CTs. With the main open
+and the panel backfed through the generator interlock, no current crosses them.
+
+> **Consequence for the next outage, and it is actionable.** Whole-home will read
+> 0 W during **every** outage, by construction. The branch CTs sit downstream of
+> the interlock and *would* keep reading, which is why
+> `sensor.backup_essentials_load` is the sensor to trust — and it exists now
+> (first data 2026-08-23). This outage predates it.
+
+### 4A.4 Energy — and why this outage is the argument for the whole upgrade
+
+The right estimator is ΔOCV rested-to-rested, **not** the voltage depression under
+load, which mixes IR drop, SOC decline, and the Shelly's own 24–34 mV
+load-dependent sense-tap error.
+
+| | |
+| :--- | ---: |
+| Rested before | 13.2741 V (sd 5.8 mV, n=221) |
+| Rested after (30 min, still relaxing +0.075 mV/min) | 13.13–13.16 V |
+| ΔOCV | 119–144 mV |
+| **Energy delivered** | **79–95 Ah, 1.03–1.25 kWh** [D] |
+| Mean load at the bank | ~103 W [D] |
+
+**[D] Limits, and they are severe.** The 6.0 mV/%SOC plateau slope was measured
+at 76–81% SOC and applied across ~100 → 80%, where the curve is steeper, so the
+Ah is likely overstated. The post-outage rest was cut short at 30 min by the
+charger when 95% relaxation needs 34. The Shelly quantises at 10 mV = **6.6 Ah
+per code**. And a 5.07-hour hole sits in the middle of the event.
+
+> **The INA228 would have returned this figure directly, to 0.15%, with no model
+> at all** — the agreement demonstrated in §3 between its accumulators and an
+> independent integration. A real outage, nine days before the instrument that
+> could have measured it went live, is the cleanest possible statement of what
+> voltage-only monitoring cannot do.
+
+---
+
+## 4B. The Coincident-Peak Failure Mode
+
+The outage ended when the inverter's fuses blew as the coffee maker started
+against a running fridge. **That is not bad luck. It is a near-daily event that
+the grid absorbs invisibly and a 1500 W inverter cannot.**
+
+### 4B.1 The circuits, measured
+
+The SEM's live 2 s feed began 2026-07-12 — a week *after* the outage, so no
+circuit-level data exists for the event itself. But the same loads have been
+measured continuously since, 45 days:
+
+| Circuit | Samples | Peak | Running median | Inrush |
+| :--- | ---: | ---: | ---: | ---: |
+| **Fridge** | 1,379,612 | **2365.2 W** | 107.5 W | **22.0×** |
+| **Coffee maker** | 471,386 | **1754.6 W** | 1038.8 W | 1.7× (resistive) |
+| Furnace | 1,250,702 | 869.5 W | 13.3 W | 65.4× |
+| HWH recirc | 281,983 | 200.9 W | 8.4 W | 23.9× |
+
+### 4B.2 The coincidence
+
+Aligned on a common 2 s grid, 735,124 samples:
+
+| | |
+| :--- | ---: |
+| Max fridge alone | 2331.1 W |
+| Max coffee alone | 1754.6 W |
+| **Max simultaneous fridge + coffee** | **3328.2 W** (2026-08-24 06:43:08 ET) |
+| Giandel nameplate | 1500 W |
+| **Ratio** | **2.22×** [D] |
+
+At the DC bus, that is **274–297 A** at 12.9 V (inverter η 87–94%) — which
+**exceeds the INA228's SUVL hardware limit of −250 A**. A repeat during an outage
+would latch that alert.
+
+![Coincident peaks](../figures/fig_coincident_peaks.png)
+*Figure 6 — Left: the worst coincidence at 2 s resolution. The coffee maker
+cycles at ~1070 W; a single fridge inrush takes the sum to 3328 W for about two
+seconds. Right: when exceedances happen.*
+
+### 4B.3 It happens most days, at the same hour
+
+| Threshold | 2 s samples over 45 days |
+| :--- | ---: |
+| > 1500 W (nameplate) | **361, on 34 distinct days** |
+| > 2000 W | 52 |
+| > 2500 W | 5 |
+| > 3000 W | 3 |
+
+**58% of exceedances fall between 05:00 and 07:59**, and all five samples above
+2500 W are in 05:00–06:59. The operator's account of the failure — "when we
+started the coffee maker ~6-7am" — lands exactly in that window.
+
+> **The dashboard already carried the warning.** Its peak-hold card is labelled
+> *"Individual peaks — taken at different moments, do NOT add these,"* with the
+> fridge annotated *"inrush ~18× running"* (measured: 22×). July 5 is the case
+> where they did coincide. Naively adding the separate peaks gives 4086 W; the
+> real coincident maximum is 3328 W. **Both are far over nameplate.**
+
+### 4B.4 What this means
+
+1. **The inverter is the weak link, not the bank.** The bank sat 340 mV clear of
+   its first alarm for eleven hours. The inverter died on a two-second transient.
+2. **Sizing must use the coincident peak, not the running load.** Essentials
+   running total is a few hundred watts; the coincident peak is 3.3 kW.
+   `sensor.backup_essentials_peak_watts` — labelled on the dashboard as
+   *"ALL ESSENTIALS, SIMULTANEOUS — the sizing number"* — exists because of this
+   event and is measuring the right quantity.
+3. **Operationally, the cheapest fix is procedural:** shed the coffee circuit
+   during an outage. The alternative is an inverter sized for ≥3.5 kW surge.
+4. **This generalises.** Any 1500 W inverter backing a fridge plus one resistive
+   kitchen load has the same exposure. The failure is invisible on grid power
+   and only appears in the unattended moment the system exists for.
+
+> **Provenance break, recorded per R16.** The inverter tested at commissioning
+> (2026-07-13/16) is a **different physical unit** from the one the Shelly-era
+> study measured. Every pre-2026-07-05 inverter figure — including **"90.3% @
+> 440 W"** — belongs to a unit that no longer exists and is labelled by unit
+> from this report forward, not carried forward as a bank property. The
+> commissioning report's 87–94% provisional efficiency, and its **two
+> inverter-overload trips**, describe a replacement roughly eight days old — and
+> those trips now read as this same failure mode surfacing again under a
+> deliberate 1 kW + dryer test, rather than as break-in behaviour.
 
 ---
 

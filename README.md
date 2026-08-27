@@ -78,6 +78,7 @@ Since July 2026 the bank has been instrumented by a purpose-built **INA228 monit
 | Charge Event Analysis | ✅ Complete | Feb 22, 2026 | 1.289 kWh, 81 Ah charged |
 | Self-Discharge Analysis (Shelly era) | ⚠️ Superseded | 92 days | "~0%" was inherited from a 10 mV instrument; not re-established on the INA228 |
 | Storage Stasis | ✅ Complete | 95 days | Apr–Jul 2026; drift +0.007 ± 0.066 mV/day (p = 0.91) |
+| **Real outage** | ✅ Documented | 11.08 h | 2026-07-04; bank fine, **inverter failed** |
 | **INA228 Commissioning** | ✅ Complete | Jul 13–16, 2026 | 8 defects found and closed; all acceptance criteria met |
 | **Direct Current Measurement** | ✅ **Complete** | **41 days** | **7.4 mA measured — was the study's #1 open item** |
 | **Charge/Discharge at 2 s** | ✅ Complete | Jul 2026 | 115.4 Ah charge, 110.7 Ah campaign, 130 A peak |
@@ -105,6 +106,8 @@ Since July 2026 the bank has been instrumented by a purpose-built **INA228 monit
 | ⚖️ **BMS Balancing** | ~80–90 s cycles | ✅ | 183 mV pk-pk above 14.4 V, now countable |
 | 🌡️ **Temperature Sensitivity** | +1.0 ± 0.3 mV/°F | ✅ | System-level (pack + measurement chain) |
 | ⚠️ **SOC ledger blind spot** | 1.46 %SOC unbooked / 32 d | ⚠️ | ±50 mA firmware deadband hides the 7.4 mA drain — [see §6](reports/LiFePO4_Report_2026-08-26.md) |
+| 🔌 **Real outage survived** | **11.08 h**, 340 mV margin | ✅ | 2026-07-04; bank never approached an alarm |
+| ⚠️ **Coincident peak vs inverter** | **3328 W vs 1500 W** | ⚠️ | Fridge inrush 22× + coffee maker; on 34 of 45 days |
 
 > [!IMPORTANT]
 > **Two instruments, one scale.** The Shelly Plus Uni was retired 2026-07-16 and

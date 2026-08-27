@@ -7,6 +7,72 @@ and this project uses date-based versioning (`YYYY-MM-DD`) based on data cutoff 
 
 ---
 
+## [2026-08-27] — 2026-08-27
+
+Adds the study's only unplanned outage, and the failure mode that ended it.
+Both were missing from the 2026-08-26 release: the outage predates the INA228
+record, and its cause was only established by asking the operator.
+
+### Added
+- Report §4A — **the 2026-07-04/05 outage**. Grid failed 20:50:38; the bank
+  picked up the house at 21:48:58 and carried it **11.08 h** (665 min) until the
+  charger started 08:53:56. Working band 12.98–13.19 V; worst excursion 12.74 V,
+  a single transient. **Never within 340 mV of the 12.40 V Warning**, 540 mV of
+  Critical, 940 mV of Emergency
+- Report §4B — **the coincident-peak failure mode**. Fridge inrush is 22×
+  running (2365 W peak vs 107.5 W); coincident with the coffee maker the measured
+  maximum is **3328 W = 2.22× the Giandel's 1500 W nameplate**, which at the DC
+  bus is 274–297 A and exceeds the INA228's SUVL −250 A limit. It happens on
+  **34 of 45 days**, 58% of it between 05:00 and 07:59
+- `data/sem/` — the SEM datasets behind both: hourly whole-home across the
+  outage, per-circuit peak/running/inrush, all 361 over-nameplate 2 s samples,
+  and the worst coincidence at full 2 s resolution
+- `scripts/sem_export.py` and `scripts/outage_analysis.py` — export and a
+  repo-only reproduction of every figure and number in §4A and §4B
+- Figures `fig_outage_2026-07-04.png`, `fig_coincident_peaks.png`
+
+### Key Findings
+- **The bank was never the weak link.** It sat 340 mV clear of its first alarm
+  for eleven hours. The inverter died on a two-second transient
+- **The July 5 failure was not bad luck.** The same coincidence recurs on most
+  days; the grid absorbs it invisibly and a 1500 W inverter cannot. It became a
+  failure only because it happened at 06:00 on the one morning the bank was
+  carrying the house — the unattended moment the system exists for
+- **Three instruments agree on the timeline.** UPS `on_battery`, the Shelly, and
+  the SEM. Grid loss to bank load-on is 58 min, matching the operator's account
+- **Sizing must use the coincident peak, not the running load.** Essentials
+  running total is a few hundred watts; the coincident peak is 3.3 kW
+
+### Changed
+- **Inverter figures are now labelled by unit.** The inverter tested at
+  commissioning is a *different physical unit* from the one the Shelly-era study
+  measured — the original blew its fuses on 2026-07-05 and was replaced. Every
+  pre-2026-07-05 inverter figure, including **"90.3% @ 440 W"**, belongs to a
+  unit that no longer exists. The commissioning report's 87–94% provisional
+  efficiency and its two inverter-overload trips describe a replacement roughly
+  eight days old, and those trips now read as this same failure mode surfacing
+  again rather than as break-in behaviour
+
+### Known Issues
+- **The energy delivered during the outage is only bounded: 79–95 Ah,
+  1.03–1.25 kWh, ~103 W mean** [D]. The plateau slope is extrapolated, the
+  post-outage rest was cut short at 30 min by the charger, the Shelly quantises
+  at 6.6 Ah per code, and a **5.07 h telemetry gap** sits mid-event with the
+  inverter failure inside it. The INA228 would have returned this directly to
+  0.15%. The outage is the clearest statement in this study of what voltage-only
+  monitoring cannot do
+- **`sem_whole_home_power` reads 0 W during every outage, by construction** — it
+  is main_a + main_b, the service-entrance CTs, and the panel is backfed through
+  the generator interlock. Correct behaviour, not a fault. The branch CTs do keep
+  reading, so `sensor.backup_essentials_load` is the sensor to trust next time;
+  it first has data 2026-08-23 and postdates this event
+- **The SEM had an 11-day blackout, 2026-07-01 → 2026-07-12**, which is why no
+  circuit-level data exists for the outage. `binary_sensor.watchdog_sem_stale`
+  has its first-ever row on 2026-07-21 — the detector postdates the gap it would
+  have caught
+
+---
+
 ## [2026-08-26] — 2026-08-26
 
 First report of the INA228 instrumentation era. The Shelly Plus Uni was retired
