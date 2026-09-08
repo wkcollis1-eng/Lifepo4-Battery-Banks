@@ -3,7 +3,7 @@
 **Data through:** March 6, 2026
 **Published:** March 6, 2026
 **Version:** 2026-03-06
-**DOI:** [10.5281/zenodo.14538065](https://doi.org/10.5281/zenodo.14538065)
+**DOI:** [10.5281/zenodo.18232628](https://doi.org/10.5281/zenodo.18232628)
 
 ---
 
@@ -288,5 +288,5 @@ The +28.4 mV voltage increase (pre-charge to current) is consistent with:
 ---
 
 **Repository:** https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks
-**DOI:** 10.5281/zenodo.14538065
+**DOI:** 10.5281/zenodo.18232628
 **License:** CC BY 4.0 (data) / MIT (code)

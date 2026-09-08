@@ -3,7 +3,7 @@
 **Data through:** March 1, 2026
 **Published:** March 1, 2026
 **Version:** 2026-03-01
-**DOI:** [10.5281/zenodo.14538065](https://doi.org/10.5281/zenodo.14538065)
+**DOI:** [10.5281/zenodo.18232628](https://doi.org/10.5281/zenodo.18232628)
 
 ---
 
@@ -485,5 +485,5 @@ The two-factor regression shows an artificially high temperature coefficient due
 ---
 
 **Repository:** https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks
-**DOI:** 10.5281/zenodo.14538065
+**DOI:** 10.5281/zenodo.18232628
 **License:** CC BY 4.0 (data) / MIT (code)

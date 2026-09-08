@@ -3,7 +3,7 @@
 **Data through:** January 31, 2026
 **Published:** February 1, 2026
 **Version:** 2026-01-31
-**DOI:** [10.5281/zenodo.14538065](https://doi.org/10.5281/zenodo.14538065)
+**DOI:** [10.5281/zenodo.18452542](https://doi.org/10.5281/zenodo.18452542)
 
 ---
 
@@ -309,7 +309,7 @@ These findings support the viability of mixed-brand parallel LiFePO₄ configura
 
 All data and code are available at:
 **Repository:** https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks
-**DOI:** 10.5281/zenodo.14538065
+**DOI:** 10.5281/zenodo.18452542
 **License:** CC BY 4.0 (data) / MIT (code)
 
 ---

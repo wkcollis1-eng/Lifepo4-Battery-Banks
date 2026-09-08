@@ -3,7 +3,7 @@
 **Data through:** August 26, 2026
 **Published:** August 26, 2026
 **Version:** 2026-08-26
-**DOI:** [10.5281/zenodo.14538065](https://doi.org/10.5281/zenodo.14538065)
+**DOI:** [10.5281/zenodo.18232628](https://doi.org/10.5281/zenodo.18232628)
 
 ---
 
@@ -1334,5 +1334,5 @@ table, with no host access required.
 ---
 
 **Repository:** <https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks>
-**DOI:** 10.5281/zenodo.14538065
+**DOI:** 10.5281/zenodo.18232628
 **License:** CC BY 4.0 (data) / MIT (code)

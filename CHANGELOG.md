@@ -382,7 +382,7 @@ When citing a specific version of this dataset, include the version date:
   year         = {2026},
   version      = {2026-01-31},
   publisher    = {GitHub},
-  doi          = {10.5281/zenodo.14538065},
+  doi          = {10.5281/zenodo.18452542},
   url          = {https://github.com/wkcollis1-eng/Lifepo4-Battery-Banks}
 }
 ```
