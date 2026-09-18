@@ -89,7 +89,10 @@
 #            (a) BRIDGE, don't just invalidate. HW Net Charge / HW Energy now
 #                report register + a persisted offset and save their last value
 #                in 10 mAh / 0.1 Wh steps (~21 + ~28 flash writes/day at idle
-#                [D], host harness counted 21/28). A
+#                [D], host harness counted 21/28).
+#                R13 2026-09-18: the 28 is wrong - ENERGY accumulates gross
+#                |P|, measured +1.124 Wh/h at idle [M: 24.8 h, n=1489], so
+#                ~270/day [D]. See the globals note. A
 #                boot that CONFIRMS an INA228 reset (TEMP_LIMIT sentinel gone
 #                AND CHARGE within 0.5 Ah of 0) sets the offset to the saved
 #                value: the series continues and the HW anchor stays valid.
@@ -975,6 +978,11 @@ globals:
   # bridged. *_saved = last reported value, persisted in steps (not every read)
   # so flash writes stay ~21 + ~28/day at idle (charge, energy) [D: 8.66 mA ->
   # 10 mAh per 69 min; 0.114 W -> 0.1 Wh per 53 min; host harness counted 21/28].
+  # R13 2026-09-18: the energy figure is wrong. ENERGY accumulates gross |P|, not
+  # the net 0.114 W the harness modelled; it rose 1.124 Wh/h at idle [M: HA
+  # history, 24.8 h to 09-18 19:48Z, n=1489] -> ~270 saves/day [D: 1.124 x 24
+  # / 0.1]. Each is capped at one save per 60 s read. NVS is 0x70000 = 112 pages
+  # [S: generated partitions.csv], so neither rate is a wear concern.
   - id: hw_charge_offset_ah
     type: float
     initial_value: '0.0'
