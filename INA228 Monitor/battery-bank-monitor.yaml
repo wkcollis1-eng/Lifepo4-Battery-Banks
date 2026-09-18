@@ -1,5 +1,5 @@
 # ============================================================================
-# Battery Bank Monitor V1.25 — PRODUCTION Configuration
+# Battery Bank Monitor V1.26 — PRODUCTION Configuration
 #   CORE (backup readiness — must be correct): V/I/T acquisition, stale-bus FAULT
 #     watchdog, 3-tier low-voltage alarms + overvoltage guard, bank_state machine,
 #     runtime-remaining, and SOC (Coulomb counter anchored at full charge).
@@ -83,6 +83,30 @@
 #   float_voltage 13.26 V, no BP-65, no survival sleep.
 #
 # Changelog:
+#   V1.26 — HW counters survive a monitor power loss (Bill, 2026-09-18, after
+#            rewiring twice dropped the INA228: CHARGE restarted from 0 at
+#            2026-07-17 19:05Z and 2026-08-31 20:50Z [M]). OBSERVABILITY only.
+#            (a) BRIDGE, don't just invalidate. HW Net Charge / HW Energy now
+#                report register + a persisted offset and save their last value
+#                in 10 mAh / 0.1 Wh steps (~21 + ~28 flash writes/day at idle
+#                [D], host harness counted 21/28). A
+#                boot that CONFIRMS an INA228 reset (TEMP_LIMIT sentinel gone
+#                AND CHARGE within 0.5 Ah of 0) sets the offset to the saved
+#                value: the series continues and the HW anchor stays valid.
+#                Sentinel gone but CHARGE still counting = first boot on
+#                sentinel firmware, not a reset (V1.25 would have invalidated).
+#                Unreadable chip or nothing saved: invalidate, as V1.25.
+#                Lost either way: charge that moved while the monitor was off
+#                (neither ledger can see it) and HW charge since the last save:
+#                <= 10 mAh (save step) + ~2 min of flow (60 s read + 60 s flash
+#                commit) = ~10.3 mAh at idle [D: 10 + 8.66 mA x 120 s / 3600],
+#                1.0 Ah at a 30 A load [D: 30 x 120 / 3600].
+#                CYCLE CONFIRM prints how many resets the cycle bridged.
+#            (b) discharge_peak_a_raw persisted: a power loss between a
+#                discharge and its recharge zeroed the cycle peak.
+#            Verified on the host: boot check + HW lambdas extracted verbatim
+#            and run against a simulated INA228 register file, both directions.
+#
 #   V1.25 — Pre-discharge-test review 2026-09-18, cross-checked against
 #            ups-monitor V1.20. OBSERVABILITY ONLY: V/I acquisition, alarms,
 #            bank_state, SOC and runtime are untouched. The Ri lambda of both
@@ -333,13 +357,13 @@ esphome:
   comment: ${device_description}
   project:
     name: "wkcollis1.battery-bank-monitor"
-    version: "1.25"
+    version: "1.26"
   on_boot:
     - priority: -200
       then:
         - logger.log:
             level: INFO
-            format: "Battery Bank Monitor V1.25 boot -- INA228 @ 0x40, DS18B20 on GPIO10"
+            format: "Battery Bank Monitor V1.26 boot -- INA228 @ 0x40, DS18B20 on GPIO10"
         # Start panel dark — wakes on button press only. turn_off() not setup() (issue #1393).
         - lambda: 'id(panel).turn_off();'
         # alert_reason shows "none" from boot (V1.21) — not "unknown" until first alert
@@ -380,21 +404,58 @@ esphome:
             // next boot: anything else = the chip was reset since = anchor invalid.
             // A failed read is treated as a reset: an Unknown delta is honest, a
             // delta against a restarted register is not.
+            // V1.26: a CONFIRMED reset is BRIDGED instead (Bill, 2026-09-18: keep
+            // the HW data through a monitor power loss). hw_charge_ah/hw_energy_wh
+            // report register + a persisted offset and persist their last value;
+            // on a reset the offset becomes that saved value, so the counters carry
+            // on from where they stopped and the anchor stays valid. "Confirmed" =
+            // sentinel gone AND CHARGE near 0; a sentinel gone with CHARGE still
+            // counting is the first boot on sentinel firmware (never written — no
+            // reset). Unreadable, or nothing saved to bridge from: invalidate, as
+            // V1.25. Neither ledger sees charge that moved while the monitor was
+            // off, or HW charge since the last save: <= 10 mAh (save step) + ~2 min
+            // of flow (60 s read + 60 s flash commit) — ~10.3 mAh at idle
+            // [D: 10 + 8.66 mA x 120 s / 3600], 1.0 Ah at 30 A [D: 30 x 120 / 3600].
             {
               uint8_t reg = 0x10;
               uint8_t b[2] = {0, 0};
               bool ok = (id(bus_a).write(0x40, &reg, 1, false) == i2c::ERROR_OK) &&
                         (id(bus_a).read(0x40, b, 2) == i2c::ERROR_OK);
               uint16_t tl = ((uint16_t) b[0] << 8) | b[1];
+              // V1.26: raw CHARGE through the sensor's own read (one copy of the
+              // conversion). hw_anchor_checked is still false: reads, no publish.
+              id(hw_charge_ah).update();
+              float raw_ah = id(hw_charge_raw_ah);
               if (ok && tl == 0x7FFE) {
                 ESP_LOGI("bank.hwcheck",
                   "INA228 kept power across this boot (TEMP_LIMIT sentinel intact) - HW anchor %s",
                   isnan(id(hw_charge_anchor_ah)) ? "not yet seeded" : "still valid");
+              } else if (!ok || isnan(raw_ah)) {
+                ESP_LOGW("bank.hwcheck",
+                  "INA228 reset check could not run (TEMP_LIMIT read %s, CHARGE read %s) - HW anchor %s; SW-HW delta Unknown until the next full-charge anchor",
+                  ok ? "ok" : "FAILED", isnan(raw_ah) ? "FAILED" : "ok",
+                  isnan(id(hw_charge_anchor_ah)) ? "was not seeded" : "INVALIDATED");
+                id(hw_charge_anchor_ah) = NAN;
+              } else if (fabsf(raw_ah) > 0.5f) {
+                // 0.5 Ah: a restarted register cannot reach it before this check.
+                // Power-up to here is ~1-3 s [I]; 3 s even at the 350 A plausibility
+                // limit is 0.29 Ah [D: 350 x 3 / 3600].
+                ESP_LOGI("bank.hwcheck",
+                  "TEMP_LIMIT=0x%04X but CHARGE kept counting (%.3f Ah): no INA228 reset - first boot writing the sentinel; HW anchor %s",
+                  tl, raw_ah, isnan(id(hw_charge_anchor_ah)) ? "not yet seeded" : "still valid");
+              } else if (!isnan(id(hw_charge_saved_ah))) {
+                id(hw_charge_offset_ah) = id(hw_charge_saved_ah);
+                if (!isnan(id(hw_energy_saved_wh)))
+                  id(hw_energy_offset_wh) = id(hw_energy_saved_wh);
+                id(hw_bridge_count) += 1;
+                ESP_LOGW("bank.hwcheck",
+                  "INA228 power-on reset (TEMP_LIMIT=0x%04X, CHARGE=%.4f Ah): counters BRIDGED from the last saved %.3f Ah / %.1f Wh - HW anchor %s (bridge #%d this cycle)",
+                  tl, raw_ah, id(hw_charge_saved_ah), id(hw_energy_saved_wh),
+                  isnan(id(hw_charge_anchor_ah)) ? "not yet seeded" : "KEPT", id(hw_bridge_count));
               } else {
                 ESP_LOGW("bank.hwcheck",
-                  "INA228 power-on reset detected (TEMP_LIMIT=0x%04X%s): CHARGE restarted from 0 - HW anchor %s; SW-HW delta Unknown until the next full-charge anchor",
-                  tl, ok ? "" : ", READ FAILED",
-                  isnan(id(hw_charge_anchor_ah)) ? "was not seeded" : "INVALIDATED");
+                  "INA228 power-on reset (TEMP_LIMIT=0x%04X, CHARGE=%.4f Ah) and no saved value to bridge from - HW anchor %s; SW-HW delta Unknown until the next full-charge anchor",
+                  tl, raw_ah, isnan(id(hw_charge_anchor_ah)) ? "was not seeded" : "INVALIDATED");
                 id(hw_charge_anchor_ah) = NAN;
               }
               id(hw_anchor_checked) = true;
@@ -815,7 +876,10 @@ globals:
   - id: discharge_peak_a_raw
     type: float
     initial_value: '0.0'
-    restore_value: no
+    restore_value: yes      # V1.26: was no — a power loss between a discharge and
+                            # its recharge (e.g. rewiring) zeroed the cycle peak, and
+                            # the anchor then published no Last Discharge Peak. Only
+                            # written when a new peak is found, so flash-cheap.
 
   # Discharge cycle summary (persisted)
   - id: last_discharge_peak_a
@@ -899,10 +963,42 @@ globals:
                             # is invalid until the next anchor re-seeds it.
                             # V1.25: on_boot now DETECTS that power loss (TEMP_LIMIT
                             # sentinel) and sets this back to NAN.
+                            # V1.26: ...only when it cannot BRIDGE the reset (no
+                            # saved value, or the check could not read the chip).
   - id: hw_anchor_checked
     type: bool
     initial_value: 'false'  # V1.25: true once this boot's INA228 power-on-reset
     restore_value: no       # check has run; the SW-HW delta reads Unknown before it
+                            # V1.26: the HW sensors also publish nothing before it
+  # V1.26: bridging the HW counters across an INA228 power-on reset (on_boot).
+  # Reported value = register + offset; the offset moves only when a reset is
+  # bridged. *_saved = last reported value, persisted in steps (not every read)
+  # so flash writes stay ~21 + ~28/day at idle (charge, energy) [D: 8.66 mA ->
+  # 10 mAh per 69 min; 0.114 W -> 0.1 Wh per 53 min; host harness counted 21/28].
+  - id: hw_charge_offset_ah
+    type: float
+    initial_value: '0.0'
+    restore_value: yes
+  - id: hw_charge_saved_ah
+    type: float
+    initial_value: 'NAN'    # NAN = nothing to bridge from (first boot on V1.26)
+    restore_value: yes
+  - id: hw_energy_offset_wh
+    type: float
+    initial_value: '0.0'
+    restore_value: yes
+  - id: hw_energy_saved_wh
+    type: float
+    initial_value: 'NAN'
+    restore_value: yes
+  - id: hw_charge_raw_ah
+    type: float
+    initial_value: 'NAN'    # raw CHARGE register Ah as last read (the boot check's
+    restore_value: no       # "near 0" test); NAN after a failed read
+  - id: hw_bridge_count
+    type: int
+    initial_value: '0'      # resets bridged since the last full-charge anchor —
+    restore_value: yes      # printed in CYCLE CONFIRM, cleared at every anchor
 
 
 interval:
@@ -1528,6 +1624,8 @@ sensor:
   # Charge[C] = signed40(REG 0x0A) x CURRENT_LSB; Energy[J] = 51.2 x
   # CURRENT_LSB x unsigned40(REG 0x09). 40-bit span at this LSB = ±58,000 Ah:
   # overflow is a non-issue.
+  # V1.26: both report register + a persisted offset, so a bridged INA228
+  # power-on reset (on_boot) continues the series instead of restarting at 0.
   - platform: template
     name: "HW Net Charge (INA228)"
     id: hw_charge_ah
@@ -1539,12 +1637,20 @@ sensor:
     lambda: |-
       uint8_t reg = 0x0A;
       uint8_t b[5];
+      id(hw_charge_raw_ah) = NAN;   // V1.26: NAN unless this read succeeds
       if (id(bus_a).write(0x40, &reg, 1, false) != i2c::ERROR_OK) return {};
       if (id(bus_a).read(0x40, b, 5) != i2c::ERROR_OK) return {};
       int64_t raw = ((int64_t) b[0] << 32) | ((int64_t) b[1] << 24) |
                     ((int64_t) b[2] << 16) | ((int64_t) b[3] << 8) | (int64_t) b[4];
       if (raw & (1LL << 39)) raw -= (1LL << 40);   // sign-extend 40-bit
-      return (float) ((double) raw * 3.814697265625e-4 / 3600.0);
+      id(hw_charge_raw_ah) = (float) ((double) raw * 3.814697265625e-4 / 3600.0);
+      // V1.26: nothing is published (or saved) until this boot's reset check
+      // has decided the offset — on_boot calls update() before that, to read.
+      if (!id(hw_anchor_checked)) return {};
+      float ah = id(hw_charge_raw_ah) + id(hw_charge_offset_ah);   // bridged
+      if (isnan(id(hw_charge_saved_ah)) || fabsf(ah - id(hw_charge_saved_ah)) >= 0.01f)
+        id(hw_charge_saved_ah) = ah;   // persisted in 10 mAh steps
+      return ah;
     update_interval: 60s
     # V1.25: the delta is computed HERE, at the instant of the register read.
     # On its own 60 s poller it could sit up to 60 s from this read — up to
@@ -1567,7 +1673,12 @@ sensor:
       if (id(bus_a).read(0x40, b, 5) != i2c::ERROR_OK) return {};
       uint64_t raw = ((uint64_t) b[0] << 32) | ((uint64_t) b[1] << 24) |
                      ((uint64_t) b[2] << 16) | ((uint64_t) b[3] << 8) | (uint64_t) b[4];
-      return (float) (51.2 * 3.814697265625e-4 * (double) raw / 3600.0);
+      if (!id(hw_anchor_checked)) return {};   // V1.26: see hw_charge_ah
+      float wh = (float) (51.2 * 3.814697265625e-4 * (double) raw / 3600.0)
+                 + id(hw_energy_offset_wh);      // V1.26: bridged
+      if (isnan(id(hw_energy_saved_wh)) || fabsf(wh - id(hw_energy_saved_wh)) >= 0.1f)
+        id(hw_energy_saved_wh) = wh;   // persisted in 0.1 Wh steps
+      return wh;
     update_interval: 60s
 
   # SW net (this cycle) minus HW net since last anchor. Expected small and
@@ -2161,15 +2272,17 @@ binary_sensor:
                       float sw_net = ah_in - ah_out;
                       float hw_net = hw_now - hw_anchor;
                       ESP_LOGI("bank.hwcheck",
-                        "CYCLE CONFIRM | SW net=%.3f Ah | HW net=%.3f Ah | delta=%.3f Ah (%.2f%% of throughput)",
+                        "CYCLE CONFIRM | SW net=%.3f Ah | HW net=%.3f Ah | delta=%.3f Ah (%.2f%% of throughput) | INA228 resets bridged this cycle: %d",
                         sw_net, hw_net, sw_net - hw_net,
-                        (ah_in + ah_out) > 1.0f ? 100.0f * (sw_net - hw_net) / (ah_in + ah_out) : 0.0f);
+                        (ah_in + ah_out) > 1.0f ? 100.0f * (sw_net - hw_net) / (ah_in + ah_out) : 0.0f,
+                        id(hw_bridge_count));   // V1.26: a bridged cycle carries the bridge error
                     } else {
                       ESP_LOGI("bank.hwcheck",
                         "CYCLE CONFIRM seeded at this anchor (hw=%.3f) — comparison from next cycle.",
                         hw_now);
                     }
                     if (!isnan(hw_now)) id(hw_charge_anchor_ah) = hw_now;
+                    id(hw_bridge_count) = 0;   // V1.26: count is per anchor-to-anchor cycle
                   }
 
                   // ---- Self-discharge reconciliation (V1.10 — OBSERVABILITY, logs only) ----
@@ -2473,6 +2586,8 @@ button:
   # LOST on reboot: in-progress outage Ah/Wh, absorption_reached, discharge_peak_a_raw,
   # in-progress CV-absorption timing (absorption_start_ms / absorption_ms_accum).
   # PRESERVED: lifetime totals, last-outage summary, Ri sample count.
+  # V1.26: discharge_peak_a_raw is now PRESERVED too (restore_value: yes), and
+  # HW Net Charge / HW Energy continue across an INA228 reset (bridged, on_boot).
   - platform: template
     name: "Restart"
     id: btn_restart
@@ -2517,6 +2632,7 @@ button:
           // V1.23: re-seed the hardware-charge anchor snapshot (manual path).
           if (!isnan(id(hw_charge_ah).state))
             id(hw_charge_anchor_ah) = id(hw_charge_ah).state;
+          id(hw_bridge_count) = 0;   // V1.26: new anchor-to-anchor cycle
           id(absorption_reached) = false;
           id(discharge_peak_a_raw) = 0.0f;
           // V1.25: break the self-discharge bracket. This button resets the cycle
