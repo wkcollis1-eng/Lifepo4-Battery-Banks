@@ -1,5 +1,5 @@
 # ============================================================================
-# Battery Bank Monitor V1.19 — PRODUCTION Configuration
+# Battery Bank Monitor V1.25 — PRODUCTION Configuration
 #   CORE (backup readiness — must be correct): V/I/T acquisition, stale-bus FAULT
 #     watchdog, 3-tier low-voltage alarms + overvoltage guard, bank_state machine,
 #     runtime-remaining, and SOC (Coulomb counter anchored at full charge).
@@ -83,6 +83,58 @@
 #   float_voltage 13.26 V, no BP-65, no survival sleep.
 #
 # Changelog:
+#   V1.25 — Pre-discharge-test review 2026-09-18, cross-checked against
+#            ups-monitor V1.20. OBSERVABILITY ONLY: V/I acquisition, alarms,
+#            bank_state, SOC and runtime are untouched. The Ri lambda of both
+#            builds was compiled on the host and replayed on the only 3 heavy-
+#            load events on record (2026-07-16) plus 9 synthetic faults [M]:
+#            deployed V1.24 read 3.142 mOhm at 17:42 and LOST two synthetic
+#            steps that should publish, with no log; V1.25 reads 3.041 mOhm at all
+#            10 tick phases, captures both, and logs every non-capture.
+#            (a) Ri WINDOWED GATE (ups-monitor V1.20 / Open Item 20 port). V1.21
+#                tested the 45 s sample against the ARM sample — the first poll
+#                past -25 A, normally a straddled 1.58 s window. At 17:42 the arm
+#                read -70.83 A against -79.93 A at 45 s and passed by 1.45 A [M];
+#                a 40 %-loaded first window, or a +12 % drift, lost the sample [M].
+#                Now 5-20 s vs 30-45 s means gate it and Ri uses the 30-45 s
+#                means — the UPS's windows, so the two series compare. 17:42
+#                moves 3.142 -> 3.041 (-3.2 %): an earlier point on the
+#                polarization curve (mean ~37.5 s, not 45 s), not an error.
+#            (b) Ri = dV/dI. V1.8-V1.24 divided by -I_load: low by I_rest/I_load
+#                whenever the rest point carried current (up to 5 A, e.g.
+#                inverter idle). Linear cell, R0 2.200, rest -4 A: V1.24 2.090,
+#                V1.25 2.2000 [M, harness]. It also makes a straddled rest sample
+#                harmless — V and I dip by the same fraction (17:42: -0.40 A,
+#                13.3107 V [M]). The UPS V1.18a rest-baseline guard is NOT ported:
+#                it fixes V moving before I on separately throttled channels; here
+#                both come from one driver read of one conversion window [M].
+#            (c) Every Ri non-capture logs: reject, abort, and "not armed". A
+#                STAGED load (14:22: rest -> -10.4 A for ~10 s -> -40 A) left the
+#                rest reading 12 s old and was skipped in silence [M, replay].
+#            (d) SW-HW DELTA computed at the HW register read (hw_charge_ah
+#                on_value), not on its own 60 s poller: up to 1.33 Ah of timing
+#                skew at 80 A [D: 80 A x 60 s / 3600].
+#            (e) HW ANCHOR invalidated on INA228 power-on reset (TEMP_LIMIT
+#                sentinel checked at boot). Not hypothetical: CHARGE restarted
+#                from 0 at 2026-07-17 19:05Z and 2026-08-31 20:50Z, both reboots
+#                on UNCHANGED firmware; the 09-07 OTA reboot kept it [M]. Had the
+#                anchor been seeded, either would have left the delta and CYCLE
+#                CONFIRM silently wrong.
+#            (f) RECON: recon_min_ah_in 20 -> 1 Ah, and only brackets >=
+#                recon_min_days (14 d) write the two entities. Since the 07-16
+#                anchor the HW register has seen ~12.0 Ah leave the bank that
+#                the SW ledger never booked [D: 0.04 + 8.15 + 3.72 Ah across the
+#                two restarts, plus ~0.12 Ah before V1.23 at the same rate], so
+#                the top-up that closes that 64-day bracket needs ~12 Ah plus the
+#                internal term — likely under 20 Ah, and discarded. A 1-2 day
+#                test bracket scaled x15-30 to %/month would have overwritten the
+#                display [D].
+#            (g) MANUAL ANCHOR breaks the recon bracket (last_anchor_epoch = 0):
+#                it reset the counters U reads without moving the epoch.
+#            (h) Version strings 1.19 -> 1.25. Header, project version and boot
+#                log were never bumped past V1.19; V1.20-V1.24 are recorded
+#                inline where they changed code.
+#
 #   V1.19 — CV/absorption-time telemetry + LED pattern swap + R4 value change:
 #            • CV ABSORPTION TIME per charge session (charger-health trend
 #              metric — absorption duration creeping upward across months is an
@@ -211,7 +263,16 @@ substitutions:
   # Logged as recommended self_discharge_pct_per_month. Writes nothing to SOC.
   # Quality is duration-driven, not size-driven — trust long brackets.
   recon_coul_eff:           "0.99"   # coulombic efficiency (Ah_out/Ah_in)
-  recon_min_ah_in:          "20.0"   # Ah; skip reconciliation below this charge size
+  recon_min_ah_in:          "1.0"    # Ah; skip reconciliation below this charge size.
+                                     # V1.25: was 20.0, which discarded the best bracket
+                                     # there is — long idle, closed by a SMALL top-up
+                                     # (see V1.25 (d)). 1 Ah only drops a charger start
+                                     # on an already-full bank: at the >= 5.0 mA drain
+                                     # the shunt books off-ledger [M, report 08-26], any
+                                     # bracket over 8.3 d clears it [D: 1.0 Ah / 5.0 mA].
+  recon_min_days:           "14.0"   # d; brackets shorter than this are LOGGED ONLY —
+                                     # never written to the two recon entities (V1.25).
+                                     # Same 14 d as the LOW-CONFIDENCE label (one constant).
 
   # --- Voltage thresholds ----------------------------------------------------
   # absorption_voltage and float_voltage: reference only — not used in any lambda.
@@ -272,13 +333,13 @@ esphome:
   comment: ${device_description}
   project:
     name: "wkcollis1.battery-bank-monitor"
-    version: "1.19"
+    version: "1.25"
   on_boot:
     - priority: -200
       then:
         - logger.log:
             level: INFO
-            format: "Battery Bank Monitor V1.19 boot -- INA228 @ 0x40, DS18B20 on GPIO10"
+            format: "Battery Bank Monitor V1.25 boot -- INA228 @ 0x40, DS18B20 on GPIO10"
         # Start panel dark — wakes on button press only. turn_off() not setup() (issue #1393).
         - lambda: 'id(panel).turn_off();'
         # alert_reason shows "none" from boot (V1.21) — not "unknown" until first alert
@@ -307,6 +368,38 @@ esphome:
               if (id(bus_a).write(0x40, buf, 3) != i2c::ERROR_OK)
                 ESP_LOGW("alert_init", "%s write failed", tag);
             };
+
+            // V1.25: INA228 power-on-reset detector for the HW charge anchor.
+            // CHARGE (0x0A) survives an ESP-only reboot (3V3 stays up) but restarts
+            // from 0 whenever the INA228 itself loses power; hw_charge_anchor_ah is
+            // in ESP flash and did not know. TEMP_LIMIT (0x10) is written by NOTHING
+            // but this lambda (ESPHome 2026.8.2 ina2xx_base.cpp: no write to 0x10 —
+            // checked) and resets to 7FFFh [S: TI SLYS021A §7.6.1.17, p29; the p17
+            // summary table says 0xFFFF — the sentinel differs from both]. We write
+            // 0x7FFE (255.98 C, never-trip like the default) and read it back at the
+            // next boot: anything else = the chip was reset since = anchor invalid.
+            // A failed read is treated as a reset: an Unknown delta is honest, a
+            // delta against a restarted register is not.
+            {
+              uint8_t reg = 0x10;
+              uint8_t b[2] = {0, 0};
+              bool ok = (id(bus_a).write(0x40, &reg, 1, false) == i2c::ERROR_OK) &&
+                        (id(bus_a).read(0x40, b, 2) == i2c::ERROR_OK);
+              uint16_t tl = ((uint16_t) b[0] << 8) | b[1];
+              if (ok && tl == 0x7FFE) {
+                ESP_LOGI("bank.hwcheck",
+                  "INA228 kept power across this boot (TEMP_LIMIT sentinel intact) - HW anchor %s",
+                  isnan(id(hw_charge_anchor_ah)) ? "not yet seeded" : "still valid");
+              } else {
+                ESP_LOGW("bank.hwcheck",
+                  "INA228 power-on reset detected (TEMP_LIMIT=0x%04X%s): CHARGE restarted from 0 - HW anchor %s; SW-HW delta Unknown until the next full-charge anchor",
+                  tl, ok ? "" : ", READ FAILED",
+                  isnan(id(hw_charge_anchor_ah)) ? "was not seeded" : "INVALIDATED");
+                id(hw_charge_anchor_ah) = NAN;
+              }
+              id(hw_anchor_checked) = true;
+            }
+            wr16(0x10, 0x7FFE, "TEMP_LIMIT");   // V1.25: POR sentinel (see above)
 
             // Limit registers first, then DIAG_ALRT to arm — all big-endian MSB first.
             // BUVL (0x0F): bus under-voltage — 12.20 V / 3.125 mV = 3904 = 0x0F40
@@ -757,6 +850,32 @@ globals:
   - id: ri_trig_i
     type: float
     initial_value: 'NAN'    # current at trigger — stability gate at maturity (V1.21)
+    restore_value: no       # V1.25: log-only (the gate now uses ri_trig_isum/n)
+  - id: ri_rest_i
+    type: float
+    initial_value: 'NAN'    # V1.25: current of the rest point — Ri = dV/dI, and the
+    restore_value: no       # rest point may carry up to ri_quiescent_a (5 A)
+  # V1.25 windowed gate (ported from ups-monitor V1.20): sums over 5-20 s (gate
+  # reference) and 30-45 s (gate test + Ri evaluation) after arming. Transient.
+  - id: ri_trig_isum
+    type: float
+    initial_value: '0.0'
+    restore_value: no
+  - id: ri_trig_n
+    type: int
+    initial_value: '0'
+    restore_value: no
+  - id: ri_eval_vsum
+    type: float
+    initial_value: '0.0'
+    restore_value: no
+  - id: ri_eval_isum
+    type: float
+    initial_value: '0.0'
+    restore_value: no
+  - id: ri_eval_n
+    type: int
+    initial_value: '0'
     restore_value: no
   - id: ri_sample_count
     type: int
@@ -778,6 +897,12 @@ globals:
                             # reboots (3V3 rail stays up) but zeroes on INA228
                             # power removal — after a power loss the cycle delta
                             # is invalid until the next anchor re-seeds it.
+                            # V1.25: on_boot now DETECTS that power loss (TEMP_LIMIT
+                            # sentinel) and sets this back to NAN.
+  - id: hw_anchor_checked
+    type: bool
+    initial_value: 'false'  # V1.25: true once this boot's INA228 power-on-reset
+    restore_value: no       # check has run; the SW-HW delta reads Unknown before it
 
 
 interval:
@@ -843,6 +968,9 @@ interval:
   # fully post-step), then Ri = (V_rest - V_now) / (-I_now). OCV is static over
   # 5 s, so the estimate is unbiased and conversion-phase-immune. One sample
   # per rest→load event (baseline is invalidated after use).
+  # V1.25: 45 s dwell kept; gate and evaluation now on 5-20 s / 30-45 s means
+  # (same windows as ups-monitor V1.20, so the two devices' Ri series are
+  # comparable), Ri = dV/dI, and every reject/abort is logged. Detail inline.
   - interval: 1s
     then:
       - lambda: |-
@@ -860,7 +988,13 @@ interval:
           if (fabsf(i_now) <= ${ri_quiescent_a}f) {
             // At rest: refresh the baseline; cancel any pending measurement
             // (the load released before it settled — not a valid step).
+            // V1.25: an abort is logged — it was silent through V1.24.
+            if (id(ri_trig_ms) != 0u)
+              ESP_LOGW("bank.ri",
+                "Ri settled-step aborted: back at rest %.1f s after arming (I=%.2fA) - no sample for this event",
+                (millis() - id(ri_trig_ms)) / 1000.0f, i_now);
             id(ri_rest_v) = v_now;
+            id(ri_rest_i) = i_now;    // V1.25: the rest POINT (V, I) — see dV/dI below
             id(ri_rest_ms) = millis();
             id(ri_trig_ms) = 0u;
             return;
@@ -874,6 +1008,18 @@ interval:
                 i_now <= -${ri_min_step_a}f) {
               id(ri_trig_ms) = millis();
               id(ri_trig_i) = i_now;
+              // V1.25: fresh gate windows for this arm.
+              id(ri_trig_isum) = 0.0f; id(ri_trig_n) = 0;
+              id(ri_eval_vsum) = 0.0f; id(ri_eval_isum) = 0.0f; id(ri_eval_n) = 0;
+            } else if (!isnan(id(ri_rest_v)) && i_now <= -${ri_min_step_a}f) {
+              // V1.25: a deep load arrived but the rest reading is >= 10 s old — a
+              // STAGED load (2026-07-16 14:22: rest -> -10.4 A for ~10 s -> -40 A;
+              // the baseline was 12 s old [M]). Not a clean step; say so ONCE
+              // (baseline consumed) instead of skipping silently as through V1.24.
+              ESP_LOGW("bank.ri",
+                "Ri step not armed: last rest reading %.1f s before this %.1f A load (staged/ramped load?) - no sample for this event",
+                (millis() - id(ri_rest_ms)) / 1000.0f, i_now);
+              id(ri_rest_v) = NAN;
             }
             return;
           }
@@ -883,34 +1029,63 @@ interval:
           // conversion-phase scatter and read below the ohmic floor (the 1.82
           // mOhm n=2 commissioning samples — discard). At 45 s dV/dt has
           // flattened; expect repeatable ~3.3-3.5 mOhm for aging trends.
-          if ((millis() - id(ri_trig_ms)) >= 45000u) {
+          // V1.25 (ported from ups-monitor V1.20, Open Item 20): WINDOWED gate.
+          // V1.21 tested the 45 s sample against the ARM sample, and the arm
+          // sample is the first poll past -25 A — normally a 1.58 s averaging
+          // window the step landed inside. 2026-07-16 17:42: arm -70.83 A vs
+          // -79.93 A at 45 s; it passed by 1.45 A [M]. Any arm under 69.6 A of an
+          // 80 A step fails [D: 80 / 1.15], and that path logged nothing.
+          // Now: mean I over 5-20 s after arming is the reference, mean over
+          // 30-45 s is the test, and Ri uses the 30-45 s means of V and I.
+          uint32_t el = millis() - id(ri_trig_ms);
+          if (el >= 5000u && el < 20000u) {
+            id(ri_trig_isum) += i_now; id(ri_trig_n)++;
+          }
+          if (el >= 30000u && el < 45000u) {
+            id(ri_eval_vsum) += v_now; id(ri_eval_isum) += i_now; id(ri_eval_n)++;
+          }
+          if (el >= 45000u) {
             id(ri_trig_ms) = 0u;
             float rest_v = id(ri_rest_v);
-            float trig_i = id(ri_trig_i);
+            float rest_i = id(ri_rest_i);
             id(ri_rest_v) = NAN;      // one sample per rest→load event
+            float ref_i = id(ri_trig_n) > 0 ? id(ri_trig_isum) / id(ri_trig_n) : NAN;
+            float i_ev  = id(ri_eval_n) > 0 ? id(ri_eval_isum) / id(ri_eval_n) : NAN;
+            float v_ev  = id(ri_eval_n) > 0 ? id(ri_eval_vsum) / id(ri_eval_n) : NAN;
             // Stability gate (V1.21): reject ramping loads — current at maturity
             // must be within ±15% of the trigger current (heater inrush decay
             // passes at ~2%; a dryer-style ramp or trip mid-dwell fails).
-            bool stable = !isnan(trig_i) &&
-                          fabsf(i_now - trig_i) <= 0.15f * fabsf(trig_i);
-            if (i_now <= -${ri_min_step_a}f && !isnan(rest_v) && stable) {
-              float ri = ((rest_v - v_now) / (-i_now)) * 1000.0f;   // mΩ
-              if (ri >= ${ri_min_mohm}f && ri <= ${ri_max_mohm}f) {
-                float t = id(battery_temp).state;   // °F — tag for trend normalization
-                id(ri_sample_count) += 1;
-                id(last_ri_mohm) = ri;      // persist: value restored after reboot/OTA
-                id(last_ri_temp_f) = t;
-                id(apparent_ri).publish_state(ri);
-                id(apparent_ri_temp).publish_state(t);
-                ESP_LOGI("bank.ri",
-                  "Apparent Ri=%.3f mOhm (settled-step) | Vrest=%.4f Vload=%.4f I=%.2fA | T=%.1fF | n=%d",
-                  ri, rest_v, v_now, i_now,
-                  isnan(t) ? -999.0f : t, id(ri_sample_count));
-              } else {
-                ESP_LOGW("bank.ri",
-                  "Ri settled-step rejected (out of band): %.3f mOhm | Vrest=%.4f Vload=%.4f I=%.2fA",
-                  ri, rest_v, v_now, i_now);
-              }
+            // V1.25: "maturity" is now the 30-45 s mean and "trigger" the 5-20 s
+            // mean (17:42: -79.48 A vs -80.06 A = 0.7 % [D], on the M series).
+            bool stable = !isnan(ref_i) && !isnan(i_ev) &&
+                          fabsf(i_ev - ref_i) <= 0.15f * fabsf(ref_i);
+            if (!(i_ev <= -${ri_min_step_a}f && !isnan(rest_v) && !isnan(rest_i) && stable)) {
+              ESP_LOGW("bank.ri",
+                "Ri settled-step rejected (unstable/unloaded): arm I=%.2fA | 5-20 s mean %.2fA (n=%d) | 30-45 s mean %.2fA (n=%d) | Vrest=%.4f",
+                id(ri_trig_i), ref_i, id(ri_trig_n), i_ev, id(ri_eval_n), rest_v);
+              return;
+            }
+            // V1.25: Ri = dV/dI between the rest point and the loaded point —
+            // was dV/(-I_load), low by I_rest/I_load whenever the rest point
+            // carried current (inverter idle; up to 5 A). This also makes a
+            // straddled rest sample harmless: its V and I dip by the SAME
+            // fraction (17:42: -0.40 A / 13.3107 V [M]), a point on the load line.
+            float ri = ((rest_v - v_ev) / (rest_i - i_ev)) * 1000.0f;   // mΩ
+            if (ri >= ${ri_min_mohm}f && ri <= ${ri_max_mohm}f) {
+              float t = id(battery_temp).state;   // °F — tag for trend normalization
+              id(ri_sample_count) += 1;
+              id(last_ri_mohm) = ri;      // persist: value restored after reboot/OTA
+              id(last_ri_temp_f) = t;
+              id(apparent_ri).publish_state(ri);
+              id(apparent_ri_temp).publish_state(t);
+              ESP_LOGI("bank.ri",
+                "Apparent Ri=%.3f mOhm (settled-step, 30-45 s means) | Vrest=%.4f Irest=%.2fA | Vload=%.4f Iload=%.2fA | T=%.1fF | n=%d",
+                ri, rest_v, rest_i, v_ev, i_ev,
+                isnan(t) ? -999.0f : t, id(ri_sample_count));
+            } else {
+              ESP_LOGW("bank.ri",
+                "Ri settled-step rejected (out of band): %.3f mOhm | Vrest=%.4f Irest=%.2fA | Vload=%.4f Iload=%.2fA",
+                ri, rest_v, rest_i, v_ev, i_ev);
             }
           }
 
@@ -1371,6 +1546,11 @@ sensor:
       if (raw & (1LL << 39)) raw -= (1LL << 40);   // sign-extend 40-bit
       return (float) ((double) raw * 3.814697265625e-4 / 3600.0);
     update_interval: 60s
+    # V1.25: the delta is computed HERE, at the instant of the register read.
+    # On its own 60 s poller it could sit up to 60 s from this read — up to
+    # 1.33 Ah of pure timing skew at 80 A [D: 80 A × 60 s / 3600].
+    on_value:
+      - component.update: cycle_integration_delta
 
   - platform: template
     name: "HW Energy (INA228)"
@@ -1394,18 +1574,21 @@ sensor:
   # stable (deadband/cadence term); NAN until an anchor has seeded the snapshot.
   - platform: template
     name: "Cycle Integration Delta (SW-HW)"
+    id: cycle_integration_delta
     unit_of_measurement: "Ah"
     accuracy_decimals: 3
     icon: "mdi:scale-balance"
     state_class: measurement
     entity_category: diagnostic
     lambda: |-
+      // V1.25: Unknown until this boot's INA228 power-on-reset check has run.
+      if (!id(hw_anchor_checked)) return NAN;
       float hw = id(hw_charge_ah).state;
       float a  = id(hw_charge_anchor_ah);
       if (isnan(hw) || isnan(a)) return NAN;
       float sw = id(ah_charged_cycle).state - id(ah_discharged_cycle).state;
       return sw - (hw - a);
-    update_interval: 60s
+    update_interval: never   # V1.25: driven by hw_charge_ah on_value (see there)
 
   - platform: template
     name: "Apparent Ri Sample Count"
@@ -2018,10 +2201,17 @@ binary_sensor:
                       float rate = (days > 0.5f)
                         ? (U / ${validated_capacity_ah}f) * 100.0f * (30.4375f / days)
                         : 0.0f;
-                      id(last_unseen_drain_ah)     = U;
-                      id(last_recommended_sd_rate) = rate;
+                      // V1.25: only brackets >= recon_min_days reach the entities.
+                      // A 2-day discharge-test bracket scaled x15 to "%/month" would
+                      // otherwise overwrite a 60-day idle measurement on the display
+                      // with nothing but the coulombic-efficiency error [D].
+                      bool publish = (days >= ${recon_min_days}f);
+                      if (publish) {
+                        id(last_unseen_drain_ah)     = U;
+                        id(last_recommended_sd_rate) = rate;
+                      }
                       const char* quality =
-                        (days < 14.0f) ? "LOW-CONFIDENCE (short interval)" :
+                        (!publish) ? "LOW-CONFIDENCE (short interval) - LOGGED ONLY, entities keep the previous bracket" :
                         (fabsf(U) < 2.0f*sigma) ? "NOISE-LIMITED (U within 2sigma)" : "OK";
                       ESP_LOGI("bank.recon",
                         "RECON | U=%.2f Ah (±%.2f 1sigma) over %.1f d | suggest self_discharge_pct_per_month = %.2f | quality: %s",
@@ -2033,7 +2223,7 @@ binary_sensor:
                       ESP_LOGI("bank.recon",
                         "Reconciliation seeded at first clean anchor; need a second to measure U.");
                     } else if (ah_in < ${recon_min_ah_in}f) {
-                      ESP_LOGD("bank.recon",
+                      ESP_LOGI("bank.recon",   // V1.25: was LOGD — invisible at level INFO
                         "Recon U skipped: ah_in %.1f < gate %.1f Ah (epoch still advanced).",
                         ah_in, ${recon_min_ah_in}f);
                     } else {
@@ -2329,6 +2519,15 @@ button:
             id(hw_charge_anchor_ah) = id(hw_charge_ah).state;
           id(absorption_reached) = false;
           id(discharge_peak_a_raw) = 0.0f;
+          // V1.25: break the self-discharge bracket. This button resets the cycle
+          // counters U is computed from but never moved last_anchor_epoch, so the
+          // next clean anchor divided THIS cycle's Ah by days since the PREVIOUS
+          // clean anchor. A manual anchor is not absorption-confirmed, so it cannot
+          // start a clean bracket either: zero = the next clean anchor re-seeds.
+          if (id(last_anchor_epoch) != 0u)
+            ESP_LOGW("bank.recon",
+              "Manual anchor: self-discharge bracket broken - next clean full charge re-seeds, the one after measures");
+          id(last_anchor_epoch) = 0u;
       - sensor.integration.reset: ah_discharged_cycle
       - sensor.integration.reset: ah_charged_cycle
       - sensor.integration.reset: wh_discharged_cycle
