@@ -123,6 +123,8 @@ struct Bus {
 typedef int esp_err_t;
 #define ESP_OK 0
 typedef enum { WIFI_PS_NONE, WIFI_PS_MIN_MODEM, WIFI_PS_MAX_MODEM } wifi_ps_type_t;
-static wifi_ps_type_t g_ps = WIFI_PS_MIN_MODEM;
+// power_save_mode: none -> esp_wifi_set_ps(WIFI_PS_NONE) at STA_START [S: ESPHome 2026.9.0
+// wifi_component_esp_idf.cpp:318-332, 809] (was MIN_MODEM here, from the B1 prediction)
+static wifi_ps_type_t g_ps = WIFI_PS_NONE;
 esp_err_t esp_wifi_get_ps(wifi_ps_type_t *type) { *type = g_ps; return ESP_OK; }
 esp_err_t esp_wifi_get_max_tx_power(int8_t *power) { *power = 44; return ESP_OK; }

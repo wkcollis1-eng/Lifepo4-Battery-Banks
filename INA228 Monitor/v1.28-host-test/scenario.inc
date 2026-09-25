@@ -297,7 +297,9 @@ int main() {
     soc_estimate->update();
     CHECK(soc_anchor_src_.v == 2 && !brk_clean_.v && std::fabs(soc() - 100.0f) < 0.001f, "manual anchor: %s", soc_source->state.c_str());
     WIFI_RB();
-    CHECK(wifi_ps_readback->state.find("MIN_MODEM") == 0 && std::fabs(wifi_txp_readback->state - 11.0f) < 0.01f, "Wi-Fi readback: %s, %.2f dBm", wifi_ps_readback->state.c_str(), wifi_txp_readback->state);
+    CHECK(wifi_ps_readback->state == "NONE" && std::fabs(wifi_txp_readback->state - 11.0f) < 0.01f, "Wi-Fi readback: %s, %.2f dBm (power_save_mode: none)", wifi_ps_readback->state.c_str(), wifi_txp_readback->state);
+    g_ps = WIFI_PS_MIN_MODEM; WIFI_RB(); g_ps = WIFI_PS_NONE;
+    CHECK(wifi_ps_readback->state.find("MIN_MODEM") == 0, "Wi-Fi readback names modem sleep: %s", wifi_ps_readback->state.c_str());
     int nan_count = 0;
     for (auto &f : ALL_TEMPLATES) { auto r = f(); if (r.has_value() && std::isnan(*r)) nan_count++; }
     CHECK(true, "all %zu V1.28-touched templates ran (%d returned NAN, e.g. no clean RECON yet)", ALL_TEMPLATES.size(), nan_count);
