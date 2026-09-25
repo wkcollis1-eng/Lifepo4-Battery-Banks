@@ -1525,3 +1525,89 @@ Physical work is Bill's call (R14); V1.28 waits on his go (R12).
 - a photo of where TB1 GND lands
 - a photo of the DS18B20 mount and cable run
 - §8.2 items 1–4, still open
+
+### 10.7 Bill's call and the V1.28 content (2026-09-25)
+
+**Decision (Bill).** B1 is reading (i): the XIAO runs in modem sleep.
+
+- The DS18B20 updates correctly.
+- There are no shorts and no sign of a poor connection.
+- The power-save readback below is a free confirmation, not a gate.
+- The planned full recharge will measure actual Ah/Wh against the monitor's
+  draw.
+
+**Noise, firmware only:**
+
+1. **`wifi: output_power: 11dB`** (TB-2).
+   - Expect the 11 dBm window's figures: 2-s sd 1.84 mA, E 0.231 W, 0 %
+     positive readings, and Q in the quiet state [M].
+2. **INA228 timing:**
+   `adc_time: {bus_voltage: 2074us, shunt_voltage: 4120us, temperature: 50us}`
+   and `adc_averaging: 256` (TB-5).
+   - The cycle is 1.598 s, so the 2 s poll stays > the cycle.
+   - With item 1 the 2-s sd should be ~1.35 mA
+     [I: 1.84 × 0.735; the two were not tested together].
+3. **Keep as they are** [M]:
+   - the default loop interval (a 1 ms loop is worse, TB-4)
+   - Wi-Fi always on (off is worse, TB-1)
+   - AVG ≥ 64 (TB-3)
+   - the display dark by default (the black frame doesn't help, TB-4)
+4. **Leave `power_save_mode` unchanged and add the `esp_wifi_get_ps()`
+   readback** (§10.4).
+   - Do not force true `WIFI_PS_NONE`. It would add
+     (74 − 24) × 3.3 / (η × 13.30) = 12–16 mA of real drain, or
+     2.3–2.9 %/mo, for no noise benefit that item 1 doesn't already give.
+
+**SOC:**
+
+5. **CHARGE-based SOC with the anchor**, with B2 (a)–(c), the B3 ladder, O1
+   and O2 (review §3, §5).
+   - B2(a)'s SHUNT_CAL readback expects 3750 at 400 A.
+   - Also read back ADC_CONFIG and expect 0xFDC5. A POR restores FB68h, so
+     this is a second reset detector for one more 2-byte read.
+6. **`max_current: 400 A`** (§6.2 item 3), with one substitution driving the
+   LSB literal.
+   - The new LSB is 0.763 mA, still finer than the ADC's own 0.833 mA step
+     (312.5 nV / 375 µΩ). Nothing is lost.
+7. **`I_off`** (§6.2 item 1): default 0, published with its source.
+   - Set it from the recharge bracket (item 8).
+   - Expected: at most the INA228 offset (≤ ±2.67 mA) plus the quiet-state
+     DC residual, and the inverter's off draw if that is not wanted in SOC.
+8. **Bracket counters from CHARGE (no deadband):**
+   - Ah out and Ah in since the anchor, sign-split per 60-s poll.
+   - Wh out and Wh in as Σ ΔQ × V_bus per poll.
+   - The mean idle drain since the anchor.
+   - Feed the existing Last Unseen Drain and Recommended Self-Discharge Rate
+     from these instead of the deadbanded ledger.
+   - **Not HW Energy.** The ENERGY register accumulates |P| per conversion,
+     so at idle it counts noise:
+     - quiet: 0.231 − 0.140 W = +0.09 W ≈ +2.2 Wh/day
+     - noisy: +0.34 W ≈ +8.3 Wh/day
+     [D: real power = 10.5 or 8.7 mA × 13.30 V]
+9. **RECON σ:** add the offset term (§6.2 item 5). Add the 1.3–2.6 mA
+   between-state DC error if the noise gauge shows the quiet state was lost.
+
+**Observability:**
+
+10. **A noise-state gauge**: the idle ENERGY rate, labelled quiet
+    (≤ 0.25 W) or noisy (≥ 0.40 W). Going noisy moves Q by +1.3 to +2.6 mA.
+11. **The power-save and TX-power readbacks** as diagnostic text sensors.
+12. **Comment fixes** (§6.2 item 8).
+    - Line 79, "Monitor ~100 mA" → ~25 mA at 3.3 V in modem sleep, ≈ 7–8 mA
+      at the bank.
+    - The `reset_on_boot` comment is now load-bearing.
+
+**Left out:**
+
+- the black-frame stopgap
+- any Wi-Fi-off mode
+- a shorter loop interval
+- AVG < 64
+- Wh from the ENERGY register
+
+**The recharge bracket's resolution** is (anchor repeatability) / (bracket
+hours).
+
+- For example, ±0.5 Ah over 30 days (720 h) is ±0.7 mA [I: the anchor's
+  repeatability is not yet measured].
+- A longer idle bracket resolves `I_off` better.
