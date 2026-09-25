@@ -9,12 +9,18 @@ changed (R13 items 11–17 in §7):
   white frame does the same, a black frame does nothing, and radio-off and a
   1 ms loop make it worse. Linear antenna pickup (B) fits none of that.
 - **TB-1 refutes the static-offset reading of B1.** Radio off moved the shunt
-  reading +2.3 mA, not the ≥ 13.9 mA an offset reading needs. The "true SOC
+  reading +2.3 mA, not the ≥ 11.4 mA an offset reading needs. The "true SOC
   ~88–90 %" figure is withdrawn.
-- **B1 is now "the ESP draws far less than its datasheet" or "the monitor's
-  return bypasses the shunt".** TB-4's white-vs-lit pair leans toward bypass.
-  One DMM reading (P-1) or a 100 Ω preload (P-5) decides. If the datasheet
-  draw holds, the two readings differ by ~10 SOC points.
+- **B1 is now one of two readings:**
+  - (i) the XIAO is in modem sleep despite `power_save_mode: none`, or
+  - (ii) the monitor's return bypasses the shunt.
+- **Rev 4.1** adds Seeed's measured XIAO draw (74 mA connected with no sleep,
+  24 mA in modem sleep) and Adafruit's OLED figure (~20 mA average).
+  - The shunt saw ≤ ~20 % of the radio's current and ≤ ~⅓ of the panel's.
+  - That leans toward (ii). It is an inference, not yet a measurement.
+- **What decides it:** a firmware readback of the Wi-Fi power-save mode, a
+  DMM reading (P-1) or a 100 Ω preload (P-5). The two readings differ by
+  ~9–12 SOC points.
 - **V1.28:** add `output_power: 11dB`. 0xFDC5 is confirmed. The black-frame
   stopgap is dropped.
 
@@ -861,7 +867,7 @@ integrates as if it were drain. The P-4, §6.4 and stopgap fixes remove it.
 |---|---|---|
 | today, SW ledger, quiet | 1.34 %/mo low against the measured drain | turnover |
 | V1.28 as designed, if B1 is an offset | 2.8–3.7 %/mo high. **Refuted by TB-1 (§10.4)** | §4 |
-| V1.28, if the monitor's return bypasses the shunt (§10.4 reading ii) | 4.3–5.0 %/mo high at the datasheet draw; P-1 gives the real figure | §10.4 |
+| V1.28, if the monitor's return bypasses the shunt (§10.4 reading ii) | 3.8–5.0 %/mo high at the Seeed/datasheet draw; P-1 gives the real figure | §10.4 |
 | V1.28 + `output_power: 11dB`, if the ESP draws little (§10.4 reading i) | ≤ 0.48 %/mo from the between-state DC error, less once it stays in one state; + invisible | §10.4 |
 | V1.28, if B1 closes | ≤ 0.49 %/mo + wander + noisy DC ≤ 0.16 %/mo + invisible | review §4, §3 |
 | V1.28 + P-1 zero | ~0.1 %/mo + ±0.28 %/mo wander + noisy DC + invisible | [D] |
@@ -894,7 +900,8 @@ integrates as if it were drain. The P-4, §6.4 and stopgap fixes remove it.
 
 11. **§0.2 and §4, "a static in-situ offset of +5.7–7.5 µV": refuted by
     TB-1.** A static offset cancels in the radio on/off step, so the step
-    should still have been ≥ 13.9 mA. It was +2.3 mA. "True SOC ~88–90 %" is
+    should still have been ≥ 11.4 mA. Rev 4 said 13.9 mA before the Seeed
+    data (item 18). It was +2.3 mA. "True SOC ~88–90 %" is
     withdrawn (§10.4).
 12. **Item 1 above** ("Report 08-26 §7.1: the DTIM premise is wrong, monitor
     23.5–27.4 mA"): **now unsettled.**
@@ -923,6 +930,21 @@ integrates as if it were drain. The P-4, §6.4 and stopgap fixes remove it.
     - Run sheet TB-2 rows: none fits. The shape is a threshold (§10.2).
 17. **§3.3, mechanism B ("second"): out as the main path.** TB-1, TB-4 and
     the TB-2 shape each contradict linear antenna pickup (§10.3).
+
+**Rev 4.1 (Bill added the Seeed and Adafruit documents):**
+
+18. **Rev 4 §10.4, "Seeed … 'normal mode 24 mA' … of that order": wrong.**
+    - That came from a search summary that mislabelled the table.
+    - The document gives **74 mA** in normal mode (Wi-Fi connected,
+      `AT+SLEEP=0`) and 24 mA in modem sleep, at 4.2 V.
+    - So the Seeed data argues *against* a low no-sleep draw. (i) survives
+      only as "the XIAO is actually in modem sleep".
+    - The predicted TB-1 step's lower bound moves from 13.9 to 11.4 mA.
+19. **Rev 4 §10.4, the OLED figure "5–20 mA full white [S, uncertain]":
+    replaced.** Adafruit's guide says ~20 mA on average from 3.3 V, only "a
+    little" dependent on lit area.
+    - The lit-page comparison is now the main TB-4 evidence.
+    - The white-vs-lit pair is demoted.
 
 ---
 
@@ -1181,21 +1203,50 @@ components [I]:
 
 ### 10.4 B1: TB-1 refutes the offset. Two readings remain
 
+**Rev 4.1** (same day). Bill added the two documents that were blocked
+here:
+
+- `INA228 Monitor/Seeed_Studio_XIAO_ESP32C3_Power_Consumption_Tests.pdf`
+- `INA228 Monitor/monochrome-oled-breakouts.pdf`
+
+They firm up this section, and they correct one citation (R13 items 18–19).
+
+**What the two documents measured:**
+
+- **Seeed XIAO ESP32C3** [S: Seeed PDF p1–3]:
+  - Wi-Fi connected, "normal power mode" (`AT+SLEEP=0`): **74 mA**
+  - modem sleep (`AT+SLEEP=1`): **24 mA**
+  - light sleep (`AT+SLEEP=2`): 3 mA
+  - Conditions: a Keysight N6705C simulating the battery, set to 4.2 V
+    [P: the screenshot on p2].
+  - The battery input feeds the XIAO's linear regulator, so the current is
+    ≈ the same at 3.3 V [I].
+  - `AT+SLEEP=0` is `WIFI_PS_NONE`, the mode our firmware asks for [I:
+    ESP-AT convention; the Seeed PDF only says "normal power mode"].
+- **Adafruit monochrome OLED guide** [S: p7]. The display's draw "depend[s]
+  a little on how much of the display is lit but on average the display uses
+  about 20mA from the 3.3V supply."
+  - The guide covers the 1.3" 128×64 that the monitor uses (Adafruit 938)
+    among its other panels. The figure is not given per size.
+  - ESPHome runs it at contrast 1.0 → 0xFF, the maximum
+    [S: `ssd1306_base`].
+
 **What the step should have been**, if the monitor's return runs through the
 shunt and the receiver is on continuously:
 
 1. **The receiver setting.** `power_save_mode: none` becomes
    `esp_wifi_set_ps(WIFI_PS_NONE)` [S: ESPHome `wifi_apply_power_save_()`].
-2. **Radio on:** 84 mA [S: C3 Table 5-7, RX HT20. The table's heading says
-   "Peak"].
+2. **Radio on:** 74 mA [S: Seeed, board measured] to 84–87 mA
+   [S: C3 Table 5-7, RX; the table's heading says "Peak"].
 3. **Radio off:** 16–28 mA [S: C3 Table 5-8, Modem-sleep at 160 MHz, CPU
    idle to running].
-4. **Δ at 3.3 V:** 84 − 28 = 56 mA to 84 − 16 = 68 mA.
+4. **Δ at 3.3 V:** 74 − 28 = 46 mA to 87 − 16 = 71 mA. 87 mA is the HT40
+   figure; AP info shows `sta bw HT40` [M].
 5. **At the bank**, Δ × 3.3 V / (η × 13.30 V):
 
    | η | 1 | 0.9 | 0.8 |
    |---|---|---|---|
-   | step | **13.9–16.9 mA** | 15.4–18.7 mA | 17.4–21.1 mA |
+   | step | **11.4–17.6 mA** | 12.7–19.6 mA | 14.3–22.0 mA |
 
 **Measured:** +2.32 mA [M].
 
@@ -1205,69 +1256,96 @@ shunt and the receiver is on continuously:
 
 **The offset reading is refuted:**
 
-- A static offset (§4, item 2) cancels in a step. It still predicts
-  ≥ 13.9 mA.
-- To survive, the Wi-Fi-off window would need a DC error of **−11.6 mA or
-  more** (13.9 − 2.32), reading *more* drain than is real.
+- A static offset (§4, item 2) cancels in a step, so it still predicts
+  ≥ 11.4 mA.
+- To survive, the Wi-Fi-off window would need a DC error of **−9.1 mA or
+  more** (11.4 − 2.32), reading *more* drain than is real.
 - Every other high-noise window read **less** drain:
   - 20 dBm vs 8.5 dBm: +2.6 mA
   - 1 ms loop: +1.7 mA, despite the extra CPU load
 - The offset reading and its ~88–90 % SOC are withdrawn (R13 item 11).
 
-**What is left must hide most of the radio's ~56–68 mA from the shunt:**
+**The shunt sees at most ~20 % of the radio's current** [D: 2.32 / 11.4, the
+most favourable case]. Two readings remain.
 
-- **(i) The ESP draws far less than its datasheet.**
-  - The radio would add only 2.32 × 13.30 × η / 3.3 = **7.5–8.4 mA** at
-    3.3 V (η 0.8–0.9).
-  - That is an RF duty of ~11–13 % [D: 7.5 / 68 to 8.4 / 63]. In other
-    words, modem-sleep behaviour despite `WIFI_PS_NONE`.
-  - B1 would then close with no offset. The quiet reading of 10.3–10.8 mA is
-    33–39 mA at 3.3 V for the whole monitor
-    [D: 10.3 × 13.30 × 0.8 / 3.3 to 10.8 × 13.30 × 0.9 / 3.3].
-  - The Seeed figure found in a search, "normal mode 24 mA" for the XIAO
-    ESP32-C3, is of that order. The Seeed PDF itself is blocked here, so the
-    test conditions are unknown [S, weak].
-- **(ii) Most of the monitor's supply current bypasses the shunt.**
-  - It would return to battery-negative by a path that skips the shunt.
-  - Bill says this is impossible by construction. Wiring summary §4.4 routes
-    GND → negative busbar (the load side).
-  - The shunt's ~10 mA would then be other load-side draw (the inverter off,
-    for example), plus offset and DC error.
-- **In either case**, part of the +2.32 mA may itself be DC error, since the
-  radio-off window was the noisiest.
+**(i) The XIAO is in modem sleep, despite `power_save_mode: none`.**
 
-**TB-4 tilts toward (ii) but does not settle it** [M/D]:
+- **It explains TB-1.** Modem sleep minus radio-off is 24 − (16 to 21) =
+  3–8 mA at 3.3 V, or 0.8–2.5 mA at the bank (η 0.9–0.8). The measured
+  +2.32 mA sits at the top of that range.
+- **It closes B1 with no offset.** The monitor is 24 + 0.64 + 0.73 =
+  25.4 mA at 3.3 V, which is **7.0–7.9 mA** at the bank (η 0.9–0.8). The
+  remaining 2.4–3.8 mA of the quiet reading (10.3–10.8 mA) is the inverter's
+  off draw, the offset (±2.67 mA) and DC error.
+- **It would make the 08-26 report's DTIM premise right** (R13 item 12),
+  but only if the driver is not honouring `WIFI_PS_NONE`.
+- **It does not explain TB-4** (below).
 
-- **White minus lit, same run.** Both frames are display-on and both are
-  quiet.
-  - The differences are +0.28, +0.09 and +0.30 mA: **+0.22 ± 0.12 mA**, less
-    drain with more pixels.
-  - **Under (i) it should be ≤ −0.7 mA.**
-    1. ESPHome's default contrast 1.0 → 0xFF [S: `ssd1306_base`].
-    2. At that contrast a full-white module of this type draws 5–20 mA at
-       3.3 V [S, uncertain: an Adafruit figure seen only in a search
-       summary; the page is blocked here].
-    3. A text page lights well under half the pixels [I].
-    4. So white adds ≥ 2.5 mA at 3.3 V, which is ≥ 0.69 mA at the bank
-       (η 0.9).
-  - **So one of three holds:**
-    - the pixel current does not reach the shunt (ii);
-    - the pixels draw < ~0.3 mA, which is implausible;
-    - a DC error moves by ≥ +0.9 mA with pixel count, at equal noise [I].
-- **Black minus bases:** −1.30 ± 0.32 mA with the noise unchanged.
-  - Under (i), this is the panel-on current: ≈ 4.5 mA at 3.3 V
-    [D: 1.30 / 0.292, η 0.85].
-  - Under (ii), it is a DC-error change without a noise change.
+**(ii) Most of the monitor's supply current bypasses the shunt.**
+
+- It would return to battery-negative by a path that skips the shunt.
+- Bill says this is impossible by construction. Wiring summary §4.4 routes
+  GND → negative busbar, the load side.
+- The shunt's ~10 mA would then be other load-side draw (the inverter off,
+  for example), plus offset and DC error.
+- **It explains both TB-1 and TB-4.**
+
+**In either case**, part of the +2.32 mA may itself be DC error, since the
+radio-off window was the noisiest.
+
+**TB-4 now leans clearly toward (ii)** [M/D]. The base windows have the panel
+asleep (0xAE, µA), so lit minus base is the panel's whole draw plus any DC
+shift.
+
+- **Lit page minus bases: −1.75 ± 0.17 mA** (3 runs).
+- **Expected under (i):** Adafruit's average 20 mA × 3.3 / (η × 13.30) =
+  **−5.0 to −6.2 mA** (η 1 to 0.8). That is before the DC shift, which in
+  TB-2 went the same way (−2.0 to −2.6 mA from noisy to quiet).
+- **Put the other way:** if all of the −1.75 mA were panel current, the panel
+  would draw at most 1.75 × 13.30 × η / 3.3 = **5.6–7.1 mA** at 3.3 V.
+  That is about ⅓ of Adafruit's average, at maximum contrast.
+- **Black minus bases: −1.30 ± 0.32 mA**, with the noise unchanged.
+  - Under (i), it is ~4.5 mA of panel-on current [D: 1.30 / 0.292,
+    η 0.85].
+  - Under (ii), it is a DC-state change.
+- **White minus lit: +0.22 ± 0.12 mA.**
+  - Adafruit says the draw depends only "a little" on how much is lit.
+  - So this pair is weaker evidence than Rev 4 said. It is still the wrong
+    sign for (i).
 - **The 09-22 shift is not evidence either way** (R13 item 15).
+
+**So far this is an inference, not a measurement** [I]. The shunt missed
+two loads on the 3.3 V rail at their documented sizes:
+
+- the radio: ≥ 46 mA at 3.3 V; ≤ ~20 % was seen
+- the panel: ~20 mA; ≤ ~⅓ was seen
+
+(ii) explains both with one cause. (i) explains only the radio.
 
 **What decides it:**
 
+- **Cheapest: read the driver's actual power-save mode** (firmware only).
+  - Add a text sensor to the next build (V1.28 or a diag):
+
+    ```cpp
+    wifi_ps_type_t ps;
+    if (esp_wifi_get_ps(&ps) != ESP_OK) return {"ERR"};
+    return {ps == WIFI_PS_NONE ? "NONE" : ps == WIFI_PS_MIN_MODEM ? "MIN_MODEM" : "MAX_MODEM"};
+    ```
+
+    It needs `<esp_wifi.h>`, which the diag build already includes.
+  - **MIN_MODEM** → (i) is possible. §7 item 1 was wrong and the 08-26
+    report's premise right, while the TB-4 panel result stays unexplained.
+  - **NONE** → (i) would need the XIAO to draw ~⅓ of Seeed's measured 74 mA
+    in the same mode. (ii) is then all but certain.
+  - Flashing is Bill's call (R12).
 - **P-1** (§5.2): a DMM in series with TB1 BATT_RAW, on V1.27 as installed,
   with the panel dark.
-  - **(i)** predicts ≤ ~13 mA: the shunt's 10.3–10.8 mA plus at most the
-    2.67 mA offset limit.
-  - **(ii)** predicts **21–28 mA** (§4).
-- **If P-1 reads ≥ 20 mA, find the return.**
+  - **(i)** predicts **~6–11 mA**: 6.3–7.9 mA at Seeed's modem-sleep draw
+    (η 1–0.8), plus whatever ESPHome's CPU adds over AT-firmware idle.
+  - **(ii)** predicts **≥ ~19 mA**: 18.7 mA at 74 mA and η = 1, up to
+    27.4 mA (§4).
+- **If P-1 reads ≥ 19 mA, find the return.**
   - Where does the TB1 GND wire land?
   - Does it carry the P-1 current? The mV drop along it tells: 18 AWG is
     ≈ 21 mΩ/m, so ~0.5 mV per metre at 25 mA.
@@ -1297,10 +1375,13 @@ shunt and the receiver is on continuously:
   - The turnover's ~96.7 % ± 1.1 % stands.
   - What remains is the between-state DC error: ≤ 2.6 mA, or ≤ 0.48 %/mo
     (2.6 × 0.184).
-- **(ii), at the datasheet draw of 23.5–27.4 mA:**
-  - The unseen drain is **4.3–5.0 %/mo**.
-  - Since the 07-16 anchor (1,686 h) that is 39.6–46.2 Ah, or 10.0–11.6 %
-    of 397 Ah. The true SOC would be **~85–87 %**, not ~96.7 %.
+- **(ii):**
+  - The monitor draws 74–87 mA + 1.37 mA at 3.3 V, which is
+    **20.8–27.4 mA** at the bank (η 0.9–0.8).
+  - At most ~20 % of that is seen, per TB-1.
+  - If none of it is seen, the unseen drain is **3.8–5.0 %/mo**.
+  - Since the 07-16 anchor (1,686 h) that is 35.1–46.2 Ah, or 8.8–11.6 % of
+    397 Ah. The true SOC would be **~85–88 %**, not ~96.7 %.
   - The firmware cannot see it. §6.2 item 1's `I_off` must carry it until
     the return is fixed.
 
@@ -1338,6 +1419,9 @@ shunt and the receiver is on continuously:
    - Under (ii), it is the unseen monitor draw.
    - Under (i), it is ~0 plus the INA228's own offset (P-2a).
    - Set it from P-1, P-5 and P-2a, not from B1's gap.
+   - **Also publish the driver's Wi-Fi power-save mode** (the `esp_wifi_get_ps()`
+     text sensor in §10.4). It tells whether `power_save_mode: none` is in
+     effect.
 4. **Keep §6.2 items 3–6:** `max_current` 400 A, B2c, RECON and re-zero.
    - For RECON σ, use the measured between-state DC error, 1.3–2.6 mA [M].
    - With item 1 in place, only the within-state residual remains.
@@ -1359,9 +1443,10 @@ shunt and the receiver is on continuously:
 
 Physical work is Bill's call (R14); V1.28 waits on his go (R12).
 
-1. **Decide B1 (i) vs (ii): P-1, or P-5 at 100 Ω** (§10.4). The two readings
-   differ by ~10 SOC points if the datasheet draw holds. One reading settles
-   it.
+1. **Decide B1 (i) vs (ii)** (§10.4). The two readings differ by ~9–12 SOC
+   points.
+   - **Firmware:** the power-save readback. NONE all but rules (i) out.
+   - **Physical:** P-1, or P-5 at 100 Ω. One reading settles it.
 2. **V1.28** with §10.5 items 1–4 and the rest of §6.2, plus B2, B3, O1 and
    O2. Carry `I_off` from step 1.
 3. **P-2a/P-2b in the quiet state.** They show where the residual enters and
