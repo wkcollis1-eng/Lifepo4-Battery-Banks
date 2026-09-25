@@ -372,6 +372,65 @@ Daily means [M] (from Rev 2):
 - **The steps exceed the chip.** The INA228's drift is ±10 nV/°C max [S], so
   steps of this size are external to it.
 
+### 3.6 Coexistence-OFF baseline, and what a working black frame should show
+
+**Baseline** [M]. 2-s current from 09-24 15:15Z → 09-25 11:57Z (20.7 h,
+n = 36,420), from Bill's two exports joined. HW counters are available to
+09-25 02:12Z.
+
+| quantity | coexistence OFF (measured) | black frame, *if* it behaves like the three lit windows (projected) | + §6.2 ADC timing (projected) |
+|---|---|---|---|
+| 2-s sd | 4.98 mA (hourly 4.69–5.34) | **~2.0 mA** (lit 1-min sd 1.7–2.9 mA, review §8.2) | ~1.4 mA |
+| positive readings | 5.6 % (~2,600 a day) | ~1 a day [D: P(N(−8, 2) > 0) = 3 × 10⁻⁵] | ~0 |
+| daily extremes | −36 / +20 mA | about −17 / +1 mA [D: ±4.3σ] | about −14 / −2 mA |
+| sd of 1-min means (2-s samples) | 0.94 mA | ~0.37 mA [D: 2.0 / √29] | ~0.26 mA |
+| per-minute CHARGE drain scatter | 0.78 mA | ~0.4 mA (lit: 0.39–0.45 mA) | ~0.3 mA |
+| hourly CHARGE drain scatter | 0.13 mA (10 h) | 0.1 mA or less; the slow component may set the floor | — |
+| ENERGY gauge | 0.455 W | ~0.22 W [D: σ_conv 19 mA, μ −8 mA] | — |
+| mean drain | −7.71 (2 s) / −8.01 (CHARGE) mA | the same, plus the panel-on current, ~0.3 mA at the bank for ~1 mA at 3.3 V [I] | same |
+| SW ledger (±50 mA deadband) | books **0 %**: nothing crossed ±50 mA in 20.7 h | books **0 %**; the displayed SOC stays frozen | 0 % |
+
+**What a working black frame changes for SOC**, with coexistence already OFF:
+
+- **Almost nothing today.** The quiet state already has no regime DC error to
+  remove.
+- **It fixes neither the frozen SOC display nor B1.** V1.28 fixes the
+  display. P-1 fixes B1.
+- **Its SOC value is insurance.** A router reset turns coexistence back ON by
+  default (turnover §4). Then the unlit monitor returns to ~18 mA sd, with a
+  ~0.9 mA DC error while noisy (≤ 0.16 %/mo). The lit windows held −10.3 mA
+  and 0.23 W in both regimes. On 09-22 the unlit drain moved ~0.9 mA across
+  the router change while the lit drain did not (−10.26 → −10.37) [M, n = 1
+  per side].
+
+**What it changes for the CURRENT channel:**
+
+- 2.5× less noise
+- positive readings essentially gone
+- a mean that no longer depends on the router
+
+That helps the runtime display, the idle state thresholds and HA graphs.
+
+**What it leaves.** The lit per-conversion error (σ ≈ 19 mA) is still ~10×
+the chip's 2 mA. The §6.4 filter and lead dress are still needed to reach
+the 0.16 mA per-reading floor.
+
+**TB-4(b) pass criteria:**
+
+- Within one minute of lighting a black frame, 3 times out of 3, nobody
+  present:
+  - 5-min sd ≤ 3 mA
+  - per-minute ENERGY ≤ 0.25 W
+- The noise returns within 2 min of switching the frame off.
+
+**What the result would mean:**
+
+- **If (b) passes,** the panel-on state suppresses the noise, not the load.
+  That would argue against A's load-level mechanism (§3.3) and point the root
+  cause at an interaction between the panel and the 3V3 rail.
+- **If (b) fails but (a)/(c) pass,** the load level drives it. A holds, and
+  P-5 is the hardware twin.
+
 ---
 
 ## 4. The energy balance (review B1)
