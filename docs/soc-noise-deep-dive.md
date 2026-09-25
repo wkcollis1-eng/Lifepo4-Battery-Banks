@@ -431,6 +431,37 @@ the 0.16 mA per-reading floor.
 - **If (b) fails but (a)/(c) pass,** the load level drives it. A holds, and
   P-5 is the hardware twin.
 
+### 3.7 Offline gaps: the counters bridge them, and the noise drops in every one
+
+**Why the counters can see an offline window.** CHARGE and ENERGY accumulate
+inside the INA228 whether or not the ESP is on the network. The firmware
+keeps reading them every 60 s over I²C (lines 1659–1712), so the first value
+published after a gap gives the average over the gap [S: firmware; DS
+§7.3.1].
+
+**Every data gap ≥ 150 s in the 60-s record** [M] (09-10 08:12Z → 09-25):
+
+| gap (UTC) | length | ENERGY in gap | ENERGY 10 min before | drain in gap | drain 10 min before | likely cause [I] |
+|---|---|---|---|---|---|---|
+| 09-12 21:54 → 21:57 | 2.9 min | **0.225 W** | 0.627 W | −9.31 mA | −7.18 mA | unknown: no `unavailable` in the Display Button export |
+| 09-15 13:54 → 15:01 | 66.9 min | **0.384 W** | 1.082 W | −9.96 mA | −8.79 mA | HA down. Button shows `unavailable` at 15:01:24 and `off` at 15:01:26, the restart-then-reconnect pattern |
+| 09-18 15:11 → 15:14 | 2.9 min | 0.696 W | 1.255 W | −9.20 mA | −9.60 mA | a restart or flash that day (button `unavailable` 15:10:49 and 15:13:55) |
+| 09-18 23:44 → 23:48 | 4.1 min | 0.537 W | 1.267 W | −10.61 mA | −9.84 mA | HA restart pattern at 23:48:33 |
+
+**What the gaps show:**
+
+- **The noise gauge fell in all four gaps,** by 45–65 %.
+- **The 67-min gap is the clean one.** If HA was down, the ESP stayed on
+  Wi-Fi and simply stopped sending API traffic. The gauge went from 1.08 W
+  to 0.38 W in a noisy period.
+- **So the ESP's own traffic looks like part of the modulator.** That is B,
+  or A driven by the TX load. It is not the router.
+- **Caveats:**
+  - The causes are inferred. Bill should confirm the HA restarts.
+  - Each gap includes up to ~1 min of normal operation at each edge.
+  - The drain in the gaps also moved, 0.4–2 mA more negative in three of
+    four. It is not yet known whether that is real current or DC error.
+
 ---
 
 ## 4. The energy balance (review B1)
@@ -578,6 +609,47 @@ this first.**
   because `output_power` is unset.
 - **TB-3 and the SW ledger** books ≤ 0.6 mAh per 5-min step.
 - **TB-3 and the ALERT limits** compare averaged values (SLOWALERT).
+
+### 5.1a Getting data while Wi-Fi is off
+
+HA records nothing while the ESP is off the network. Three sources still
+work:
+
+1. **INA228 counters (free, any firmware).** ΔCHARGE/Δt and ΔENERGY/Δt
+   across the gap give the mean current and the per-conversion noise gauge
+   (§3.7).
+   - Edge dilution: the average includes up to ~1 min of normal operation at
+     each end. A 30-min window keeps that under ~7 %, and the on-state rate
+     corrects it.
+2. **On-device statistics (test build).** During the window the ESP keeps
+   n, Σi, Σi², Σi³, min, max, the count > 0, and the lowest and highest 1-min
+   sd of the 2-s current. It also snapshots CHARGE and ENERGY at the start
+   and end, then publishes it all after `wifi.enable`.
+   - RAM cost: a few dozen bytes.
+   - The same code runs a matched Wi-Fi-on window just before and just
+     after, so the comparison is like for like.
+3. **Optional raw replay (test build).** Keep the 300 × 2-s samples of a
+   10-min window in RAM (1.2 KB). After reconnect, publish them as a burst on
+   a diagnostic sensor.
+   - HA stores them with arrival times, but the order and values survive, and
+     the sample spacing is known (2 s).
+
+**Ways to create the offline window:**
+
+| method | radio state | firmware | tests |
+|---|---|---|---|
+| **Disable the device in HA** (Settings → Devices & services → ESPHome → the device → Disable), 30 min, then re-enable | on, associated, ~no API traffic | none | "does the ESP's own traffic drive the noise?" The 09-15 gap suggests yes |
+| router off | on, scanning (probe TX) | none | not radio-off; mixed |
+| **`wifi.disable` → 10 min → `wifi.enable`** (TB-1) | **off** | test build | radio vs not; B1 sign test (mean should go positive) |
+
+**Safety of TB-1.**
+
+- CORE keeps running locally: SOC integrators, watchdog, alarms, OLED, LED.
+- `reboot_timeout: 0s` on api and wifi (lines 536, 555), so losing the API
+  does not reboot the device.
+- `enable_on_boot` defaults to true [S: ESPHome], so any reboot brings Wi-Fi
+  back.
+- Cost: HA sees nothing for the window. Run it at idle.
 
 ### 5.2 Physical tests (Bill's call, R14)
 
