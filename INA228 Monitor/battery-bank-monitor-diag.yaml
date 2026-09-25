@@ -1,5 +1,5 @@
 # ============================================================================
-# Battery Bank Monitor V1.27-diag1 — TEST BUILD (not production)
+# Battery Bank Monitor V1.27-diag2 — TEST BUILD (not production)
 #   CORE (backup readiness — must be correct): V/I/T acquisition, stale-bus FAULT
 #     watchdog, 3-tier low-voltage alarms + overvoltage guard, bank_state machine,
 #     runtime-remaining, and SOC (Coulomb counter anchored at full charge).
@@ -39,6 +39,16 @@
 #   - Passive: 5-min current mean/sd, Wi-Fi AP channel/width, reset reason.
 #   Run one test at a time (buttons refuse while one runs). During TB-4 do not
 #   press the OLED button (its 5-min sleep timer would cut the lit variants).
+# V1.27-diag2, 2026-09-25: review fixes, DIAG scripts only (CORE unchanged,
+#   NVS unchanged: the one new global is restore_value no).
+#   - TB-3 / TB-5 skip every window if ADC_CONFIG cannot be read. In diag1 a
+#     failed read only left one lambda, and the windows still ran at the
+#     unchanged config under the test's labels.
+#   - Every ADC_CONFIG write in TB-3 / TB-5 is verified by reading it back.
+#     A window whose setting did not take is labelled CFGFAIL_<label>.
+#   - TB-5 ends with diag_restore, so a failed inline restore is retried.
+#   - TB-1's last window is labelled TB1_ON_AFTER_NOAPI if the API has not
+#     reconnected within the 5-min wait.
 # ----------------------------------------------------------------------------
 # Purpose : Full instrumentation for 12V/500Ah LiFePO4 battery bank with
 #           Giandel 1500W inverter and LiTime 80A charger. Reports V/I/P,
@@ -399,13 +409,13 @@ esphome:
     - "<esp_wifi.h>"   # DIAG: esp_wifi_get/set_max_tx_power, esp_wifi_sta_get_ap_info
   project:
     name: "wkcollis1.battery-bank-monitor"
-    version: "1.27-diag1"
+    version: "1.27-diag2"
   on_boot:
     - priority: -200
       then:
         - logger.log:
             level: INFO
-            format: "Battery Bank Monitor V1.27-diag1 (TEST BUILD) boot -- INA228 @ 0x40, DS18B20 on GPIO10"
+            format: "Battery Bank Monitor V1.27-diag2 (TEST BUILD) boot -- INA228 @ 0x40, DS18B20 on GPIO10"
         # Start panel dark — wakes on button press only. turn_off() not setup() (issue #1393).
         - lambda: 'id(panel).turn_off();'
         # alert_reason shows "none" from boot (V1.21) — not "unknown" until first alert
@@ -968,7 +978,10 @@ script:
           id(diag_status).publish_state("TB-1 3/3: Wi-Fi ON control, 10 min");
       - script.execute:
           id: diag_win_start
-          label: "TB1_WIFI_ON_AFTER"
+          label: !lambda |-
+            // DIAG2: flag the window if the 5-min wait above timed out without the API
+            return std::string(api::global_api_server != nullptr && api::global_api_server->is_connected()
+                                   ? "TB1_WIFI_ON_AFTER" : "TB1_ON_AFTER_NOAPI");
       - delay: 10min
       - script.execute: diag_win_finish
       - lambda: |-
@@ -1026,32 +1039,49 @@ script:
           id(diag_adc_saved) = ((uint16_t) b[0] << 8) | b[1];
           ESP_LOGI("diag", "TB-3: ADC_CONFIG saved 0x%04X (%s)", id(diag_adc_saved),
                    id(diag_adc_saved_ok) ? "ok" : "READ FAILED - ladder skipped");
-      - repeat:
-          count: 5
+      # DIAG2: a failed read now really skips the ladder. In diag1 the `return`
+      # below only left its lambda, and all five windows ran at the unchanged
+      # config under TB3_AVG_n labels.
+      - if:
+          condition:
+            lambda: 'return id(diag_adc_saved_ok);'
           then:
-            - lambda: |-
-                static const uint8_t CODE[5] = {0, 1, 2, 3, 4};   // AVG field: 1, 4, 16, 64, 128
-                static const int N[5] = {1, 4, 16, 64, 128};
-                id(diag_avg_set) = N[iteration];
-                if (!id(diag_adc_saved_ok)) return;
-                const uint16_t v = (id(diag_adc_saved) & 0xFFF8) | CODE[iteration];
-                uint8_t buf[3] = { 0x01, (uint8_t) (v >> 8), (uint8_t) (v & 0xFF) };
-                const bool w = id(bus_a).write(0x40, buf, 3) == i2c::ERROR_OK;
-                char s[80];
-                snprintf(s, sizeof(s), "TB-3 %u/5: AVG %d (ADC_CONFIG 0x%04X)%s",
-                         (unsigned) iteration + 1, N[iteration], v, w ? "" : " - WRITE FAILED");
-                id(diag_status).publish_state(s);
-            - delay: 10s
-            - script.execute:
-                id: diag_win_start
-                label: !lambda |-
-                  char s[24];
-                  snprintf(s, sizeof(s), "TB3_AVG_%d", id(diag_avg_set));
-                  return std::string(s);
-            - delay: 5min
-            - script.execute: diag_win_finish
-      - script.execute: diag_restore
-      - lambda: 'id(diag_status).publish_state("TB-3 done - ADC_CONFIG restored");'
+            - repeat:
+                count: 5
+                then:
+                  - lambda: |-
+                      static const uint8_t CODE[5] = {0, 1, 2, 3, 4};   // AVG field: 1, 4, 16, 64, 128
+                      static const int N[5] = {1, 4, 16, 64, 128};
+                      id(diag_avg_set) = N[iteration];
+                      id(diag_cfg_ok) = false;
+                      if (!id(diag_adc_saved_ok)) return;
+                      const uint16_t v = (id(diag_adc_saved) & 0xFFF8) | CODE[iteration];
+                      uint8_t buf[3] = { 0x01, (uint8_t) (v >> 8), (uint8_t) (v & 0xFF) };
+                      // DIAG2: verify by readback (every ADC_CONFIG field is R/W, SLYS021A Table 7-6)
+                      uint8_t reg = 0x01, b[2] = {0, 0};
+                      const bool w = id(bus_a).write(0x40, buf, 3) == i2c::ERROR_OK &&
+                                     id(bus_a).write(0x40, &reg, 1, false) == i2c::ERROR_OK &&
+                                     id(bus_a).read(0x40, b, 2) == i2c::ERROR_OK &&
+                                     (uint16_t) (((uint16_t) b[0] << 8) | b[1]) == v;
+                      id(diag_cfg_ok) = w;
+                      char s[80];
+                      snprintf(s, sizeof(s), "TB-3 %u/5: AVG %d (ADC_CONFIG 0x%04X)%s",
+                               (unsigned) iteration + 1, N[iteration], v, w ? "" : " - NOT APPLIED");
+                      id(diag_status).publish_state(s);
+                  - delay: 10s
+                  - script.execute:
+                      id: diag_win_start
+                      label: !lambda |-
+                        char s[24];
+                        snprintf(s, sizeof(s), "%sTB3_AVG_%d", id(diag_cfg_ok) ? "" : "CFGFAIL_", id(diag_avg_set));
+                        return std::string(s);
+                  - delay: 5min
+                  - script.execute: diag_win_finish
+            - script.execute: diag_restore
+            - lambda: 'id(diag_status).publish_state("TB-3 done - ADC_CONFIG restored");'
+          else:
+            - script.execute: diag_restore
+            - lambda: 'id(diag_status).publish_state("TB-3 SKIPPED - ADC_CONFIG read failed; nothing changed, no windows run");'
 
   # TB-4: OLED / load round, 9 steps: 20 s settle + 5 min window each.
   - id: diag_tb4
@@ -1112,45 +1142,71 @@ script:
           id(diag_adc_saved_ok) = id(bus_a).write(0x40, &reg, 1, false) == i2c::ERROR_OK &&
                                   id(bus_a).read(0x40, b, 2) == i2c::ERROR_OK;
           id(diag_adc_saved) = ((uint16_t) b[0] << 8) | b[1];
-          id(diag_status).publish_state("TB-5 1/3: base ADC config, 15 min");
-      - script.execute:
-          id: diag_win_start
-          label: "TB5_BASE"
-      - delay: 15min
-      - script.execute: diag_win_finish
-      - lambda: |-
-          if (!id(diag_adc_saved_ok)) {
-            id(diag_status).publish_state("TB-5: ADC_CONFIG read FAILED - preview skipped");
-            return;
-          }
-          uint8_t buf[3] = { 0x01, 0xFD, 0xC5 };
-          const bool w = id(bus_a).write(0x40, buf, 3) == i2c::ERROR_OK;
-          id(diag_status).publish_state(w ? "TB-5 2/3: ADC_CONFIG 0xFDC5, 15 min"
-                                          : "TB-5 2/3: ADC_CONFIG write FAILED");
-      - delay: 10s
-      - script.execute:
-          id: diag_win_start
-          label: "TB5_FDC5"
-      - delay: 15min
-      - script.execute: diag_win_finish
-      - lambda: |-
-          // restore ADC_CONFIG inline (diag_restore would clear diag_busy mid-test)
-          if (id(diag_adc_saved_ok)) {
-            const uint16_t v = id(diag_adc_saved);
-            uint8_t buf[3] = { 0x01, (uint8_t) (v >> 8), (uint8_t) (v & 0xFF) };
-            const bool w = id(bus_a).write(0x40, buf, 3) == i2c::ERROR_OK;
-            id(diag_adc_saved_ok) = !w;   // keep it for Stop + Restore if the write failed
-          }
-          id(diag_status).publish_state("TB-5 3/3: restored ADC config, 15 min");
-      - delay: 10s
-      - script.execute:
-          id: diag_win_start
-          label: "TB5_RESTORED"
-      - delay: 15min
-      - script.execute: diag_win_finish
-      - lambda: |-
-          id(diag_busy) = false;
-          id(diag_status).publish_state("TB-5 done");
+      # DIAG2: a failed read now skips the whole test. In diag1 the `return` in
+      # the 0xFDC5 lambda only left that lambda, and TB5_FDC5 ran at the base
+      # config.
+      - if:
+          condition:
+            lambda: 'return id(diag_adc_saved_ok);'
+          then:
+            - lambda: 'id(diag_status).publish_state("TB-5 1/3: base ADC config, 15 min");'
+            - script.execute:
+                id: diag_win_start
+                label: "TB5_BASE"
+            - delay: 15min
+            - script.execute: diag_win_finish
+            - lambda: |-
+                id(diag_cfg_ok) = false;
+                if (!id(diag_adc_saved_ok)) {
+                  id(diag_status).publish_state("TB-5: ADC_CONFIG read FAILED - preview skipped");
+                  return;
+                }
+                uint8_t buf[3] = { 0x01, 0xFD, 0xC5 };
+                // DIAG2: verify by readback (every ADC_CONFIG field is R/W, SLYS021A Table 7-6)
+                uint8_t reg = 0x01, b[2] = {0, 0};
+                const bool w = id(bus_a).write(0x40, buf, 3) == i2c::ERROR_OK &&
+                               id(bus_a).write(0x40, &reg, 1, false) == i2c::ERROR_OK &&
+                               id(bus_a).read(0x40, b, 2) == i2c::ERROR_OK &&
+                               b[0] == 0xFD && b[1] == 0xC5;
+                id(diag_cfg_ok) = w;
+                id(diag_status).publish_state(w ? "TB-5 2/3: ADC_CONFIG 0xFDC5, 15 min"
+                                                : "TB-5 2/3: ADC_CONFIG 0xFDC5 NOT APPLIED");
+            - delay: 10s
+            - script.execute:
+                id: diag_win_start
+                label: !lambda 'return std::string(id(diag_cfg_ok) ? "TB5_FDC5" : "CFGFAIL_TB5_FDC5");'
+            - delay: 15min
+            - script.execute: diag_win_finish
+            - lambda: |-
+                // restore ADC_CONFIG inline (diag_restore would clear diag_busy mid-test)
+                id(diag_cfg_ok) = false;
+                if (id(diag_adc_saved_ok)) {
+                  const uint16_t v = id(diag_adc_saved);
+                  uint8_t buf[3] = { 0x01, (uint8_t) (v >> 8), (uint8_t) (v & 0xFF) };
+                  // DIAG2: verify by readback, as above
+                  uint8_t reg = 0x01, b[2] = {0, 0};
+                  const bool w = id(bus_a).write(0x40, buf, 3) == i2c::ERROR_OK &&
+                                 id(bus_a).write(0x40, &reg, 1, false) == i2c::ERROR_OK &&
+                                 id(bus_a).read(0x40, b, 2) == i2c::ERROR_OK &&
+                                 (uint16_t) (((uint16_t) b[0] << 8) | b[1]) == v;
+                  id(diag_cfg_ok) = w;
+                  id(diag_adc_saved_ok) = !w;   // keep it for Stop + Restore if the write failed
+                }
+                id(diag_status).publish_state(id(diag_cfg_ok) ? "TB-5 3/3: restored ADC config, 15 min"
+                                                              : "TB-5 3/3: ADC_CONFIG restore NOT APPLIED - retried at the end");
+            - delay: 10s
+            - script.execute:
+                id: diag_win_start
+                label: !lambda 'return std::string(id(diag_cfg_ok) ? "TB5_RESTORED" : "CFGFAIL_TB5_RESTORED");'
+            - delay: 15min
+            - script.execute: diag_win_finish
+            # DIAG2: diag_restore retries a failed inline restore, and clears diag_busy
+            - script.execute: diag_restore
+            - lambda: 'id(diag_status).publish_state("TB-5 done");'
+          else:
+            - lambda: |-
+                id(diag_busy) = false;
+                id(diag_status).publish_state("TB-5 SKIPPED - ADC_CONFIG read failed; nothing changed, no windows run");
 
 globals:
 
@@ -1442,6 +1498,7 @@ globals:
   - {id: diag_p_s2,        type: double,      initial_value: '0.0',   restore_value: no}
   - {id: diag_adc_saved,   type: uint16_t,    initial_value: '0',     restore_value: no}
   - {id: diag_adc_saved_ok, type: bool,       initial_value: 'false', restore_value: no}
+  - {id: diag_cfg_ok,      type: bool,        initial_value: 'true',  restore_value: no}   # DIAG2: last ADC_CONFIG write verified by readback
   - {id: diag_avg_set,     type: int,         initial_value: '128',   restore_value: no}
   - {id: diag_txp_saved,   type: int8_t,      initial_value: '0',     restore_value: no}
   - {id: diag_txp_actual,  type: float,       initial_value: 'NAN',   restore_value: no}
