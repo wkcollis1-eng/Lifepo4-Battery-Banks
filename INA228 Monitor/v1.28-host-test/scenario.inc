@@ -359,6 +359,40 @@ int main() {
     if (!CHG_COND()) CHG_ELSE();
   }
 
+  // =============== S10 (review 2026-09-25): Hours Since Anchor across a reboot without HA time ===============
+  printf("\n=== S10 reboot while HA time is not valid: Hours Since Anchor carried ===\n");
+  {
+    ha_time->valid = true;
+    hw_charge_ah->update(); MANUAL();                 // a known anchor, epoch = now
+    run(3600.0 * 5, -0.0105);
+    const float h0 = hours_since_anchor_.v, s0 = hours_since_anchor_saved_.v;
+    CHECK(h0 > 4.99f && h0 - s0 >= 0.0f && h0 - s0 < 0.1f, "5 h after the anchor %.3f h, saved %.3f h (0.1 h step)", h0, s0);
+    ha_time->valid = false;                           // HA down ...
+    reboot_fresh();                                   // ... and the node reboots
+    run(600, -0.0105);
+    const float up = g_ms / 3600000.0f;
+    CHECK(std::fabs(hours_since_anchor_.v - (s0 + up)) < 1e-3f, "no HA time: hours run on from the saved value, %.3f h (saved %.3f + uptime %.3f; was 0)", hours_since_anchor_.v, s0, up);
+    const float h1 = hours_since_anchor_.v;
+    ha_time->valid = true;                            // HA back
+    run(60, -0.0105);
+    const float want = h0 + 660.0f / 3600.0f;         // wall time is continuous across reboot_fresh
+    CHECK(std::fabs(hours_since_anchor_.v - want) < 1e-3f && std::fabs(hours_since_anchor_.v - h1) < 0.1f, "HA time back: %.3f h from the epoch (want %.3f), step from the carried value %.3f h", hours_since_anchor_.v, want, hours_since_anchor_.v - h1);
+
+    ha_time->valid = false;                           // anchor set while HA is down: epoch unknown
+    hw_charge_ah->update(); MANUAL();
+    CHECK(anchor_epoch_.v == 0u, "anchor without HA time: epoch 0 (set at first valid time)");
+    run(3600.0 * 2, -0.0105);
+    CHECK(std::fabs(hours_since_anchor_.v - 2.0f) < 0.02f, "hours run on without HA time: %.3f h", hours_since_anchor_.v);
+    reboot_fresh();
+    run(600, -0.0105);
+    ha_time->valid = true;
+    run(60, -0.0105);
+    const uint32_t wall = (uint32_t) (ha_time->base + g_ms / 1000);
+    const float true_h = 2.0f + 660.0f / 3600.0f;
+    const float seeded_h = anchor_epoch_.v ? (wall - anchor_epoch_.v) / 3600.0f : NAN;
+    CHECK(std::fabs(seeded_h - true_h) < 0.11f && std::fabs(hours_since_anchor_.v - seeded_h) < 1e-3f, "late-seeded epoch keeps the hours: %.3f h (true %.3f; was 0)", seeded_h, true_h);
+  }
+
   printf("\n%d passed, %d failed\n", g_pass, g_fail);
   return g_fail ? 1 : 0;
 }

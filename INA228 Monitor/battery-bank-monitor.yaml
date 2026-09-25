@@ -107,6 +107,8 @@
 #                last CHARGE SOC, else the SW ledger) > SW-ledger movement from the
 #                last CHARGE SOC while CHARGE is invalid. Never NAN. "SOC Source"
 #                names the rung. The V1.27 ledger stays as "SOC (SW Ledger)".
+#                Review 2026-09-25: the hours in the I_off term are carried across
+#                a reboot (saved in 0.1 h steps, + uptime until HA time is valid).
 #            (d) B2a: SHUNT_CAL, ADC_CONFIG and TEMP_LIMIT are checked on every
 #                CHARGE poll against this boot's readback; a runtime INA228 reset
 #                publishes nothing, says so, and reboots so the boot check bridges.
@@ -971,6 +973,8 @@ script:
           id(brk_in_saved) = 0.0f;  id(brk_out_saved) = 0.0f;
           id(brk_whin_saved) = 0.0f; id(brk_whout_saved) = 0.0f;
           id(hours_since_anchor) = 0.0f;
+          id(hours_since_anchor_saved) = 0.0f;
+          id(hours_boot_base) = -(float) millis() / 3600000.0f;   // hours run on from 0 without HA time
           auto t = id(ha_time).now();
           id(anchor_epoch) = t.is_valid() ? (uint32_t) t.timestamp : 0u;   // 0 = set at first valid time
           id(soc_unclamped) = NAN;
@@ -1365,6 +1369,14 @@ globals:
   - id: hours_since_anchor
     type: float
     initial_value: '0.0'
+    restore_value: no
+  - id: hours_since_anchor_saved
+    type: float
+    initial_value: '0.0'    # hours_since_anchor as last saved (0.1 h steps): carried across a reboot
+    restore_value: yes
+  - id: hours_boot_base
+    type: float
+    initial_value: 'NAN'    # hours_since_anchor - uptime h; seeded from the saved value at boot
     restore_value: no
   - id: soc_unclamped
     type: float
@@ -1998,15 +2010,28 @@ sensor:
       float ledger = (isnan(lo) || isnan(li)) ? NAN : 100.0f - ((lo - li + sd) / C * 100.0f);
       if (!isnan(ledger)) ledger = ledger > 100.0f ? 100.0f : (ledger < 0.0f ? 0.0f : ledger);
       // Hours since the anchor (HA time); late-seed the epoch if it was unknown.
+      // Review 2026-09-25: carried across a reboot. Until HA time is valid the
+      // hours run on from the saved value (0.1 h steps) plus uptime - they
+      // were 0, which dropped the I_off term - and a late-seeded epoch keeps
+      // the hours already run. (host test S10)
       {
         auto t = id(ha_time).now();
         bool anchored = !isnan(id(hw_charge_anchor_ah)) || !isnan(id(hw_prov_anchor_ah));
+        const float up_h = (float) millis() / 3600000.0f;
+        if (anchored && isnan(id(hours_boot_base))) id(hours_boot_base) = id(hours_since_anchor_saved);
         if (t.is_valid()) {
           uint32_t now = (uint32_t) t.timestamp;
-          if (anchored && id(anchor_epoch) == 0u) id(anchor_epoch) = now;
-          if (id(anchor_epoch) != 0u && now >= id(anchor_epoch))
+          if (anchored && id(anchor_epoch) == 0u)
+            id(anchor_epoch) = now - (uint32_t) ((id(hours_boot_base) + up_h) * 3600.0f);
+          if (id(anchor_epoch) != 0u && now >= id(anchor_epoch)) {
             id(hours_since_anchor) = (float) (now - id(anchor_epoch)) / 3600.0f;
+            id(hours_boot_base) = id(hours_since_anchor) - up_h;
+          }
+        } else if (anchored) {
+          id(hours_since_anchor) = id(hours_boot_base) + up_h;
         }
+        if (anchored && fabsf(id(hours_since_anchor) - id(hours_since_anchor_saved)) >= 0.1f)
+          id(hours_since_anchor_saved) = id(hours_since_anchor);
       }
       float hw = id(hw_charge_ah).state;
       bool fresh = id(hw_anchor_checked) && id(hw_last_good_ms) != 0u &&
