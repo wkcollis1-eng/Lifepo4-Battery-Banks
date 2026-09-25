@@ -61,7 +61,8 @@ struct Script3 {
   int runs = 0;
   void execute(float a, int b, bool c) { runs++; if (fn) fn(a, b, c); }
 };
-struct Script0 { int runs = 0; void execute() { runs++; } };
+// running: set by execute, cleared by the scenario's simulated reboot (the 2 s delay)
+struct Script0 { int runs = 0; bool running = false; void execute() { runs++; running = true; } bool is_running() { return running; } };
 
 // ---- I2C + simulated INA228 ------------------------------------------------------------
 namespace i2c { enum ErrorCode { ERROR_OK = 0, ERROR_UNKNOWN = 1 }; }

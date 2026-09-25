@@ -110,6 +110,8 @@
 #            (d) B2a: SHUNT_CAL, ADC_CONFIG and TEMP_LIMIT are checked on every
 #                CHARGE poll against this boot's readback; a runtime INA228 reset
 #                publishes nothing, says so, and reboots so the boot check bridges.
+#                Review 2026-09-25: after 3 such reboots in a row the next waits
+#                for 30 min of uptime (<= 2/h, not ~1/min), cleared after 1 h held.
 #                B2b: the "first boot on sentinel firmware" branch is retired
 #                (sentinel_established). B2c: CHARGE counts only if read within
 #                180 s. A reset that cannot be bridged invalidates BOTH anchors.
@@ -1356,6 +1358,10 @@ globals:
     type: bool
     initial_value: 'false'  # a runtime reset is acted on once per boot
     restore_value: no
+  - id: ina_reset_reboots
+    type: int
+    initial_value: '0'      # B2a reboots in a row (rate limit); cleared after 1 h of held config
+    restore_value: yes
   - id: hours_since_anchor
     type: float
     initial_value: '0.0'
@@ -2198,18 +2204,36 @@ sensor:
         uint16_t sc = 0, ac = 0, tl = 0;
         if (!rd16(0x02, sc) || !rd16(0x01, ac) || !rd16(0x10, tl)) return {};
         if (sc != id(ina_expect_shunt_cal) || ac != id(ina_expect_adc_config) || tl != 0x7FFE) {
-          if (!id(ina_reset_seen)) {
+          // Review 2026-09-25: reboot rate limit. A chip that keeps resetting
+          // would otherwise reboot the node about once a minute. After 3 reset
+          // reboots in a row the next waits for 30 min of uptime (<= 2/h [D]);
+          // meanwhile CHARGE is not used and current reads 1.09x (above). The
+          // run of reboots ends after 1 h with the config held. 3 / 30 / 60 are
+          // design choices, not measurements. is_running(): a component.update
+          // (charger stop, manual anchor) inside the 2 s delay is not a second
+          // reset. (host test S2b)
+          const bool may_reboot = id(ina_reset_reboots) < 3 || millis() >= 1800000u;
+          if (!id(ina_reset_seen) || (may_reboot && !id(ina_reset_reboot).is_running())) {
             id(ina_reset_seen) = true;
             char m[220];
-            snprintf(m, sizeof(m),
-              "INA228 reset while running (SHUNT_CAL=%u ADC_CONFIG=0x%04X TEMP_LIMIT=0x%04X; expected %u / 0x%04X / 0x7FFE) - CHARGE not used; rebooting to bridge",
-              sc, ac, tl, id(ina_expect_shunt_cal), id(ina_expect_adc_config));
+            if (may_reboot)
+              snprintf(m, sizeof(m),
+                "INA228 reset while running (SHUNT_CAL=%u ADC_CONFIG=0x%04X TEMP_LIMIT=0x%04X; expected %u / 0x%04X / 0x7FFE) - CHARGE not used; rebooting to bridge (reset reboot %d in a row)",
+                sc, ac, tl, id(ina_expect_shunt_cal), id(ina_expect_adc_config), id(ina_reset_reboots) + 1);
+            else
+              snprintf(m, sizeof(m),
+                "INA228 reset while running (SHUNT_CAL=%u ADC_CONFIG=0x%04X TEMP_LIMIT=0x%04X; expected %u / 0x%04X / 0x7FFE) - CHARGE not used; reboot deferred to 30 min uptime (%d reset reboots in a row)",
+                sc, ac, tl, id(ina_expect_shunt_cal), id(ina_expect_adc_config), id(ina_reset_reboots));
             ESP_LOGE("bank.hwcheck", "%s", m);
             id(ina228_reset_check).publish_state(m);
-            id(ina_reset_reboot).execute();
+            if (may_reboot) {
+              id(ina_reset_reboots) += 1;
+              id(ina_reset_reboot).execute();
+            }
           }
           return {};
         }
+        if (id(ina_reset_reboots) != 0 && millis() >= 3600000u) id(ina_reset_reboots) = 0;
       }
       uint8_t reg = 0x0A;
       uint8_t b[5];

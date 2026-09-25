@@ -45,6 +45,15 @@ static void run(double seconds, double amps, bool poll_energy = true) {
 
 static float soc() { return soc_estimate->state; }
 
+// a reboot: uptime (millis) restarts, wall time continues, the reboot script's delay is over
+static void reboot_fresh() {
+  time_t wall = ha_time->base + g_ms / 1000;
+  g_ms = 20000;
+  ha_time->base = wall - g_ms / 1000;
+  ina_reset_reboot_.running = false;
+  boot(400.0);
+}
+
 int main() {
   wire();
   ha_time->base = REPLAY_T0_EPOCH - g_ms / 1000;
@@ -114,16 +123,55 @@ int main() {
     int pubs = hw_charge_ah->publishes;
     g_ms += 60000; hw_charge_ah->update();  // next poll sees SHUNT_CAL/ADC_CONFIG/TEMP_LIMIT wrong
     CHECK(ina_reset_reboot_.runs == reb + 1, "reset detected, reboot scheduled (%s)", ina228_reset_check->state.c_str());
+    CHECK(ina_reset_reboots_.v == 1, "reset reboot counted (%d in a row)", ina_reset_reboots_.v);
     CHECK(hw_charge_ah->publishes == pubs, "nothing published from the reset chip");
     // reboot (the script's safe_reboot): chip keeps its POR state; driver rewrites SHUNT_CAL/ADC_CONFIG
     ina.driver_setup(400.0);
     ina.advance(5, -0.0105, V_BUS);
     reset_transients();
+    ina_reset_reboot_.running = false;
     BOOT();
     CHECK(hw_bridge_count_.v >= 1, "boot bridged the reset (bridge #%d): %s", hw_bridge_count_.v, ina228_reset_check->state.c_str());
     CHECK(std::fabs(hw_charge_ah->state - hw_before) < 0.02f, "HW Net Charge continuous within the 10 mAh save step: %.4f vs %.4f", hw_charge_ah->state, hw_before);
     CHECK(std::fabs(soc() - soc_before) < 0.01f, "SOC continuous: %.4f%% vs %.4f%%", soc(), soc_before);
     CHECK(soc_anchor_src_.v == 3, "anchor kept (src %d)", soc_anchor_src_.v);
+  }
+
+  // =============== S2b: a chip that keeps resetting -> reboots rate-limited (review 2026-09-25) ===============
+  printf("\n=== S2b INA228 resetting every minute for 3 h: reboot rate limit (B2a) ===\n");
+  {
+    ina_reset_reboots_.v = 0;                      // (S2's reboot kept uptime > 1 h, so its boot poll cleared it)
+    float soc_before = soc();
+    g_quiet = true;
+    reboot_fresh();
+    int boots = 0, last_boot = -1, min_gap = 1 << 30;
+    bool doubled = false;
+    std::string deferred;
+    for (int minute = 0; minute < 180; minute++) {
+      ina.por();                                   // the chip resets ...
+      int r = ina_reset_reboot_.runs, c = ina_reset_reboots_.v;
+      run(60, -0.0105);                            // ... and the next poll sees it
+      if (ina228_reset_check->state.find("deferred") != std::string::npos) deferred = ina228_reset_check->state;
+      if (ina_reset_reboot_.runs != r) {
+        hw_charge_ah->update();                    // a component.update inside the 2 s delay
+        if (ina_reset_reboots_.v != c + 1 || ina_reset_reboot_.runs != r + 1) doubled = true;
+        if (boots >= 3) min_gap = std::min(min_gap, minute - last_boot);
+        last_boot = minute;
+        boots++;
+        reboot_fresh();
+      }
+    }
+    g_quiet = false;
+    CHECK(boots >= 6 && boots <= 9, "%d reboots in 180 min of a reset every minute (no limit: 1 per poll)", boots);
+    CHECK(min_gap >= 30, "after 3 in a row, reboots >= 30 min apart (closest %d min)", min_gap);
+    CHECK(!doubled, "a component.update inside the 2 s delay neither re-counts nor re-executes");
+    CHECK(!deferred.empty(), "deferral announced: %s", deferred.c_str());
+    CHECK(std::fabs(soc() - soc_before) < 0.05f, "SOC through the resets: %.4f%% vs %.4f%%", soc(), soc_before);
+    reboot_fresh();                                // the fault clears
+    run(3000, -0.0105);
+    CHECK(ina_reset_reboots_.v == boots, "count held through 50 min of held config (%d)", ina_reset_reboots_.v);
+    run(900, -0.0105);
+    CHECK(ina_reset_reboots_.v == 0, "count cleared after 1 h with the config held (%d)", ina_reset_reboots_.v);
   }
 
   // =============== S3: reset that cannot be bridged -> carry from the last CHARGE SOC ===============
