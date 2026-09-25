@@ -1,30 +1,37 @@
 # Battery-bank SOC: noise root cause and INA228 accuracy (deep dive)
 
-**Rev 2, 2026-09-25.** Rev 1 (commit `961e077`) was written without the
-datasheets or Bill's exports. Rev 2 adds both:
+**Rev 3, 2026-09-25.** This revision adds three things:
 
-- **Datasheets**, now in the repo:
-  - `INA228 Monitor/ina228.pdf`: TI SLYS021A, January 2021, revised May 2022
-  - `INA228 Monitor/esp32-c3_datasheet_en.pdf`: Espressif, version 2.1
-- **Bill's HA exports:**
-  - `current` (2 s): 09-24 14:16 → 09-25 02:16 UTC
-  - `HW Net Charge` and `HW Energy`: 07-17 → 09-25. Hourly statistics until
-    09-10 08:00Z, then 60 s.
-  - `WiFi Signal` (RSSI), from 07-28
-  - `Display Button`, from 09-10
-  - three temperatures: ESP32 internal, INA228 die, pack
+- **Photos** of the enclosure and carrier. They show the INA228 input terminal
+  block ~1 cm from the Pololu buck, and the ESP antenna next to both.
+- **Bill's answers:**
+  - Only the batteries, the monitor and the inverter are on the busbars.
+  - The inverter is connected but off, and its AC side is unplugged.
+  - Nobody knows what moved on the four step dates.
+- **A per-minute analysis** of the three OLED-lit windows (§3.1).
 
-The exports are not committed here. The derived hourly table is described in
-§3.6.
+**What changed from Rev 2** (R13):
+
+- **The leading suspect is now the monitor's own buck regulator.** Rev 2's was
+  the ESP's radio.
+- **The 0.88 mA "noisy excess" is most likely a DC error, not real current.**
+- **Rev 2's airtime model is demoted.** Its key premise fails (§3.3).
+
+**Earlier revisions:**
+
+- Rev 1 (`961e077`): written without datasheets or data.
+- Rev 2 (`8b54cef`): added the datasheets and the 2026-09-25 HA exports.
+  - `INA228 Monitor/ina228.pdf`: TI SLYS021A, revised May 2022
+  - `INA228 Monitor/esp32-c3_datasheet_en.pdf`: v2.1
 
 **Scope.** This reviews `docs/soc-accuracy-turnover.md` (the **turnover**)
 and `docs/soc-v128-review.md` (the **review**) against:
 
-- firmware **V1.27**, `INA228 Monitor/battery-bank-monitor.yaml` (2,705
-  lines). Line numbers are this copy's and match both docs.
+- firmware **V1.27**, `INA228 Monitor/battery-bank-monitor.yaml`. Line
+  numbers match both docs.
 - the wiring summary (Rev 1.10) and the commissioning report
 - the 2026-08-26 report
-- the INA228 data in `data/`
+- the data in `data/` and Bill's exports
 
 **Nothing is built.** V1.28 still waits on Bill's go (R12). Physical work is
 Bill's call (R14).
@@ -33,21 +40,16 @@ Bill's call (R14).
 
 - **[M]** measured
 - **[D]** derived, with the chain shown
-- **[S]** source document read this session. "DS" means the INA228 datasheet
-  and "C3" the ESP32-C3 datasheet.
+- **[S]** source read this session. "DS" means the INA228 datasheet, "C3" the
+  ESP32-C3 datasheet.
+- **[P]** seen in Bill's photos
 - **[I]** inference, not yet checked
 
-**What remains unverified:**
+**Not verified:**
 
-- the Pololu D24V7F3 efficiency. The site is blocked, so η = 0.80–0.90 is
-  [I].
+- the Pololu D24V7F3's efficiency (η = 0.80–0.90 assumed) and its light-load
+  switching behaviour. Pololu's site is blocked here.
 - antenna gains and distances [I]
-
-**Other sources read:**
-
-- ESPHome `dev` source (2026.10.0-dev, commit `4a2f17b`; the device runs
-  2026.9.0)
-- Adafruit's `Adafruit-INA228-PCB` design files
 
 ---
 
@@ -55,84 +57,88 @@ Bill's call (R14).
 
 ### 0.1 The noise source
 
-- **The noise is not current** (§2):
-  - It reads positive when nothing on the bus can charge the bank.
-  - Its skew is about 100× too small for any train of sampled discharge
-    pulses.
-  - The monitor's real Wi-Fi bursts add at most ~0.35 mA of scatter.
-- **It is an error voltage inside the measurement.** It is 2–7 µV rms per
-  averaged reading, and ~16–51 µV rms per single conversion [M/D, §3.3]. It
-  enters at inputs with **no filtering between the field wiring and the
-  silicon** [S: Adafruit schematic]. TI's own input-filter guidance names
-  exactly this risk. DS §8.1.4: "transients that occur at or very close to
-  the sampling rate harmonics can cause problems … at 1 MHz and higher …
-  managed by incorporating filtering at the input".
-- **The source is very probably the monitor's own ESP32-C3 transmitting.**
-  Three independent lines point there:
-  1. **One model fits both regimes and the drain difference.** Noise variance
-     ∝ the ESP's TX airtime. It reproduces both regimes and the 0.88 mA
-     noisy-state drain with 0.11–0.17 % (quiet) and 1.2–1.8 % (noisy) airtime
-     [D, §3.2].
-  2. **The ESP chip runs warmer when the noise is higher.** This does not
-     involve the INA228 at all [M, weak, §3.2].
-  3. **The router's measured field at the monitor is far weaker than the
-     ESP's own.** RSSI of −30 to −39 dBm means 0.16–0.44 V/m from the router,
-     against an estimated 11–22 V/m from the ESP's antenna if it sits
-     10–20 cm away [D/I, §3.1].
-
-  The router's coexistence setting changes *how much the ESP transmits*. It
-  does not change the coupling path. **This is still [I] until TB-1 and TB-2
-  run (§5).** Both are firmware-only and can run now, in the quiet state.
-- **The "third state" is the OLED being lit** [M]. `Display Button` was
-  pressed at 14:22:52, 12:02:45 and 14:16:32 EDT. Those are exactly the
-  starts of review §8.2's three windows (09-11, 09-18, 09-22).
-  - The +3.2 mA is the OLED's own current, and the shunt sees it.
-  - Why the noise falls to ~2 mA while it is lit is still open (TB-4).
-- **Coexistence OFF held for the 11 h exported** [M]:
-  - sd 5.0 mA, skew 0.011
-  - no 5-min block above 9 mA
-
-  That partly scores the review §8.1 prediction.
+- **The noise is generated inside the monitor, and lighting the OLED
+  switches it off** [M]. This is the new central fact.
+  - Each time the OLED was lit (09-11, 09-18, 09-22), the per-conversion
+    noise gauge fell within one minute to the same floor: **0.225–0.245 W**.
+    That held in both regimes: 0.88–1.30 W before when noisy, 0.52 W before
+    when quiet.
+  - The 2-s sd fell to ~2 mA.
+  - It came back within 1–2 min of the 5-min display timeout.
+  - Across **21,114 minutes** of 60-s data, the floor appears **only** in
+    those 16 lit minutes (§3.1).
+  - The router's RF does not change when an OLED lights up. **So the router
+    is effectively ruled out as the direct source.**
+- **Prime suspect: the Pololu D24V7F3 buck (U3)** [P + I].
+  - It sits ~1 cm below the INA228 input terminal block.
+  - Its 22 µH inductor is marked "220" [P].
+  - The sense wires leave the terminal block untwisted and run past it [P].
+- **Proposed mechanism** [I]. The regulator runs at ~90 mA, where small
+  bucks typically change switching mode. The ESP's load changes (TX bursts,
+  CPU wake-ups) make it hop between modes. Its switching field or input
+  ripple reaches the unfiltered INA228 inputs. TI flags exactly this: DS
+  §8.1.4, "transients that occur at or very close to the sampling rate
+  harmonics … at 1 MHz and higher".
+- **How the observations fit:**
+  - **OLED:** lit, it adds a steady ~8–9 mA at 3.3 V [D], which would hold
+    the regulator in one mode.
+  - **Regimes:** the router regime changes the ESP's activity pattern, and so
+    how often the regulator hops.
+- **Second suspect: the ESP's antenna**, "very close" per Bill and [P].
+  Its near field at the breakout is 100× or more the router's (§3.2). But it
+  does not explain why a lit OLED silences the noise.
+- **The 0.88 mA noisy-state excess is most likely a DC error riding on the
+  noise, not real radio current** [M, n = 3]. With the OLED lit, the drain
+  read −10.25, −10.27 and −10.37 mA, whether the regime was noisy or quiet.
+  Real extra TX current would have persisted.
+- **The router coexistence stopgap still works** because it lowers the
+  modulation. The monitor-side fix is in §6.4.
 
 ### 0.2 SOC and accuracy
 
-- **The largest SOC term is the unmeasured zero, and the datasheet makes it
-  larger than Rev 1 said.**
-  - `power_save_mode: none` becomes `WIFI_PS_NONE` [S: ESPHome], so the
-    receiver is always on.
-  - Receive current is **84 mA (HT20) / 87 mA (HT40)** [S: C3 Table 5-7].
-  - The monitor should therefore draw **23.5–27.4 mA** from the bank. Even
-    through a lossless regulator it would draw **21.2 mA**.
-  - The shunt reads **7.3–8.2 mA** [M].
-  - **Gap: 15–20 mA** (≥ 13 mA at η = 1) [D, §4].
-- **If the gap is an in-situ offset:**
+- **The largest SOC term is still the unmeasured zero, and it is not the
+  noise.**
+  - The ESP32-C3's receive current is 84–87 mA [S: C3 Table 5-7], and the
+    firmware keeps the receiver on (`WIFI_PS_NONE`).
+  - So the monitor should draw 23.5–27.4 mA from the bank, or ≥ 21.2 mA even
+    through a lossless regulator.
+  - The shunt reads 7.3–8.2 mA: a **gap of 15–20 mA**.
+  - **The lit-OLED state shows the gap is not the noise's DC part.** With the
+    interference suppressed, the reading (−10.3 mA) still sits 15.6–19.5 mA
+    short of the expected 25.9–29.8 mA (monitor + OLED) [D].
+  - **The bus contents narrow it further.** Only the batteries, the monitor
+    and the inverter (off) are on the busbars. No charger can trickle. The
+    inverter's off-state draw goes *through* the shunt, which can only
+    widen the gap.
+  - Two explanations are left (§4):
+    1. the ESP draws ~⅓ of its datasheet current, or
+    2. a **static in-situ offset of +5.7–7.5 µV**
+- **If it is an offset:**
   - V1.28 inherits **2.8–3.7 %/mo**.
-  - The true SOC today is **~88–90 %, not ~96.7 %** [D, conditional].
-- **The zero also moves.** The CHARGE-register drain steps by 1–3 mA at
-  physical events: the 08-04 rewire, the 08-31 power loss, the 09-22 router
-  power-down. RSSI steps at the same hours. There was also one step with no
-  RSSI change, on 08-19 [M, §3.6]. So a one-time zero is necessary but not
-  sufficient. The RF pickup has to go, or RECON has to track the residual.
-- **How to settle the gap:**
-  - One DMM reading (P-1).
-  - TB-1 does it for free if the monitor is on the shunt. With the radio off
-    the true draw is 4.8–9.1 mA [S: C3 Table 5-8; η I], so the reading
-    should go **positive** (≈ +7 to +15 mA). Any reading above −4.8 mA
-    proves an offset.
+  - The true SOC today is **~88–90 %**, not ~96.7 % [D, conditional].
+- **How to settle it:** one DMM reading (P-1), or TB-1. With the radio off,
+  any reading above −4.8 mA proves an offset.
+- **The zero also steps by 1–3 mA** when the monitor or router is moved
+  (08-04, 08-31, 09-22) [M, §3.5]. After an in-situ zero, the residual wander
+  is ~±0.28 %/mo until the pickup is fixed.
 - **V1.28's core design stands.** CHARGE accumulates *each conversion*,
-  unaveraged [S: DS §7.3.1, Fig. 7-2]. So it integrates zero-mean
-  interference to zero.
-- **Firmware items beyond the review** (§6.2):
+  unaveraged [S: DS §7.3.1, Fig. 7-2]. It integrates zero-mean interference
+  to zero.
+- **Firmware items** (§6.2):
   - an in-situ offset term
-  - 2× shunt integration time at the same cycle time. The noise table shows
-    the bus channel loses nothing [S: DS Table 8-2].
+  - 2× shunt integration time at the same cycle time [S: DS Table 8-2]
   - `max_current` 400 A, because the 350 A guard can never trip today
   - an honest RECON uncertainty
+- **Possible firmware stopgap for the CURRENT channel:** keep the OLED "on"
+  with a black frame (no burn-in), if TB-4 shows that suppresses the noise.
 
-### 0.3 Data
+### 0.3 Next step and data
 
-- Received and used: §8.1.
-- Still needed: §8.2.
+- **Cheapest decisive test:** TB-4, the remote OLED variants and a CPU-load
+  variant (§5). It is firmware-only and needs nobody present.
+- **The physical twin:** P-5, a resistor between the board's 3V3 and GND test
+  points.
+- **Still needed:** §8.2.
 
 ---
 
@@ -141,48 +147,44 @@ Bill's call (R14).
 | # | Signature | Source |
 |---|---|---|
 | S1 | Noisy: mean −8.28 / sd 18.11 mA. Quiet: −7.22 / 5.44 mA | [M] turnover §3, review §2 |
-| S2 | White at 2 s (lag-1 −0.004 in Bill's 09-24 export, both regimes) | [M] review §2; this review |
-| S3 | Symmetric: skew 0.011–0.016 in the long windows. Positive readings: 8.7 % (quiet, Sept) and 17.5–19 % (July). 6.1–6.2 % of noisy samples > +20 mA | [M] turnover §4, review §7, this review |
+| S2 | White at 2 s (lag-1 −0.004, both regimes) | [M] review §2; 09-24 export |
+| S3 | Symmetric: skew 0.011–0.016. Positive readings: 5.3–8.7 % quiet (Sept), 17.5–19 % July | [M] turnover §4, review §7, exports |
 | S4 | Hourly CHARGE scatter 0.39 mA = 18.11 / √2278 | [M/D] review §2 |
-| S5 | The regime follows the router. Coexistence OFF gave 11 h of quiet (sd 5.0 mA) with no 5-min block > 9 mA | [M] turnover §4, review §8.1, 09-24 export |
-| S6 | Noisy draws 0.88 mA more (t = 10.7) | [M] turnover §3 |
-| S7 | Third state = OLED lit: the button press precedes each window by < 1 min | [M] `Display Button` export |
-| S8 | The chip floor (0.16 mA per reading [D: DS Table 8-2]) is never reached | [M/D] review §7 |
-| S9 | July idle: sd 7.2–7.8 mA, skew 0.02–0.20, lag-1 ≤ 0.02 | [M] `data/ina228 Amperage.csv` |
-| S10 | ENERGY at idle: 0.46 W quiet, 1.44 W noisy, 0.82–0.85 W through July. The true power is ~0.1 W | [M] HW export, §3.3 |
-| S11 | Drain and noise level step at physical events, and not in proportion | [M] HW and RSSI exports, §3.6 |
-| S12 | The ESP32 die runs ~0.5 °C warmer in noisy hours | [M] ESP temperature export, §3.2 |
+| S5 | The regime follows the router. Coexistence OFF gave 11 h quiet (sd 5.0 mA), no noisy block | [M] turnover §4, 09-24 export |
+| S6 | Unlit, noisy reads 0.88 mA more drain than quiet (t = 10.7) | [M] turnover §3 |
+| S7 | **Lit OLED: the noise gauge drops to 0.23 W and the drain reads −10.3 mA in both regimes; seen only when lit** | [M] §3.1 |
+| S8 | The chip floor (0.16 mA per reading [D: DS Table 8-2]) is never reached, even when lit (~2 mA) | [M/D] |
+| S9 | July idle: sd 7.2–7.8 mA, symmetric, white | [M] `data/ina228 Amperage.csv` |
+| S10 | ENERGY idle rate: 0.46 W quiet, 1.44 W noisy, 0.82–0.85 W July, 0.23 W lit. The true power is ~0.1 W | [M] HW export |
+| S11 | Drain and noise level step at physical events, and not in proportion | [M] §3.5 |
+| S12 | ESP32 die ~0.5 °C warmer in noisy hours (r = 0.45) | [M, weak] ESP temperature export |
 
 ---
 
-## 2. Why the noise is not current
+## 2. Why the noise is not in-band current
 
 ### 2.1 Sign
 
-At idle, nothing on the bus charges the bank (the inverter is off; the
-charger's state is question §8.2-1). Every consumer, the monitor included,
-returns through the shunt as discharge. A true reading can never be positive,
-yet 5.3–8.7 % of quiet samples and 17.5–19 % of July samples are [M].
-**Those readings are error.** A trickling charger would add a DC current,
-never zero-mean scatter.
+Nothing on the bus can charge the bank. The bus holds the batteries, the
+monitor and the inverter, which is off; no charger is connected [Bill].
+Every consumer returns through the shunt as discharge. Yet 5.3–8.7 % of
+quiet samples and 17.5–19 % of July samples are positive [M]. **Those
+readings are error.**
 
 ### 2.2 Shape
 
-Suppose the scatter came from real discharge-direction pulses: Wi-Fi TX,
-CPU, the LED. The INA228 samples them in its shunt conversion windows.
-
-For Poisson or clustered arrivals with positive pulse sizes *a*, one reading
-has:
+Suppose the scatter came from real discharge pulses sampled in the ADC's
+conversion windows. For Poisson or clustered arrivals with positive pulse
+sizes *a*:
 
 ```
-N pulses per reading ~ Poisson(mu)
 mean contribution  m    = mu * E[a]
 variance                = mu * E[a^2]
 skew                    = E[a^3] / (E[a^2]^1.5 * sqrt(mu))
 skew / (sd / m)         = E[a^3] * E[a] / E[a^2]^2  >= 1   (Cauchy-Schwarz)
 ```
 
-So **skew ≥ sd / m**, and *m* cannot exceed the whole mean:
+So **skew ≥ sd / m**, with *m* ≤ |mean|:
 
 | | sd | m ≤ | skew must be ≥ | measured skew |
 |---|---|---|---|---|
@@ -191,291 +193,261 @@ So **skew ≥ sd / m**, and *m* cannot exceed the whole mean:
 
 Both miss by two orders of magnitude.
 
-### 2.3 Size
+### 2.3 What this does *not* exclude
 
-Take the airtime model of §3.2: ~1.5 % extra TX airtime in the noisy state,
-in pulses of ~53–78 mA at the bank.
+The argument covers current inside the ADC's passband (below ~121 Hz, the
+first notch at 1 / (2 × 4.12 ms) [S: DS §7.3.4.1]).
 
-1. For 0.2–1 ms frames, the pulse rate is 15–75 per second.
-2. Each reading has 0.527 s of shunt time, so it catches N = 8–40 pulses.
-3. Each pulse moves a reading by ~63 mA × d / 0.527 s = 0.024–0.12 mA.
-4. The scatter is (per-pulse shift) × √N = **0.15–0.34 mA** [D].
+It does not cover **high-frequency current or voltage near the ADC's
+~1 MHz sampling harmonics** [S: DS §6.5 FOSC, §8.1.4]. Those alias into the
+baseband as zero-mean, symmetric error. The buck's switching ripple is one
+such source. It can reach the inputs two ways:
 
-Real radio current appears in the mean, not in the noise.
+- through the shunt itself, because the monitor's return runs through it
+- by coupling into the input wiring
+
+Physically, that ripple is "current", but it reads as symmetric noise. The
+fix for either path is the same: the §6.4 input filter.
 
 ---
 
-## 3. Where the error enters
+## 3. Where the error comes from
 
-### 3.1 The input is wide open, and the ESP is the strongest transmitter nearby
+### 3.1 The lit OLED switches it off
 
-- **No filter on the breakout inputs.** Net VIN+ is IC1, X1-3, R1, SJ1 and
-  JP2-7. Net VIN− is IC1, X1-1, R1 and JP2-6. There is no R or C on either
-  [S: `Adafruit INA228 I2C Power Monitor.sch`, parsed]. R1 (15 mΩ) was
-  removed.
-- **TI's recommended filter is absent.** The recommendation: R ≤ 100 Ω and
-  0.1–1 µF ceramic. Also, "10-Ω resistors in series with each input"
-  protect against dV/dt events [S: DS §8.1.4, Fig. 8-1].
-- **Why RF matters here.** The ADC's time base is a 1 MHz oscillator [S: DS
-  §6.5, FOSC]. TI flags interference "at or very close to the sampling rate
-  harmonics". Broadband RF energy, or RF demodulated by the input
-  structures, lands there.
-- **The sense pair** is 22 AWG, twisted, unshielded. Its length and
-  untwisted fan-out are not recorded.
-- **The antenna.** The XIAO's U.FL antenna is in the same enclosure (wiring
-  summary §8.2 step 6).
+Per-minute rates from the 60-s `HW Energy` / `HW Net Charge` data [M]. ENERGY
+is a per-conversion noise gauge: DS §7.3.1 / Fig. 7-2 says it accumulates
+each conversion, unaveraged, and POWER is unsigned.
 
-**Fields at the monitor:**
+| press (UTC) | before: ENERGY / drain / drain scatter | lit: ENERGY / drain / drain scatter | after: ENERGY / drain |
+|---|---|---|---|
+| 09-11 18:22:52 (noisy) | 0.884 W / −8.95 / 1.94 mA | **0.280 W** (0.23 once settled) / **−10.25** / 0.42 mA | 0.944 W / −9.33 |
+| 09-18 16:02:45 (noisy) | 1.299 W / −8.64 / 1.78 mA | **0.265 W** (0.23) / **−10.27** / 0.39 mA | 0.770 W / −7.74 |
+| 09-22 18:16:32, then 4 presses to 18:21:47 (quiet) | 0.800 W* / −7.89 / 4.69 mA | **0.237 W** (sd 0.009) / **−10.37** / 0.45 mA | 0.535 W / −7.48 |
 
-- **Router, from measured RSSI** [D; 2 dBi assumed]. The effective aperture
-  is A = G λ² / 4π = 1.58 × 0.125² / 12.57 = 0.00197 m².
-  - −30 dBm (1 µW): S = 1 µW / A = 5.1 × 10⁻⁴ W/m², so
-    E = √(377 × S) = **0.44 V/m**.
-  - −39 dBm: **0.16 V/m**.
-  - RSSI ran −29 to −39 dBm over the record [M], so the router is close.
-- **ESP's own antenna**, estimated [I: distance and TX level]. With 20 dBm
-  (0.1 W), 2 dBi and d = 0.1–0.2 m, E = √(30 × 0.1 × 1.6) / d =
-  **11–22 V/m**.
-- **Comparison.** The ESP's field is ~25–140× the router's in amplitude,
-  during its own transmissions.
+\*The 09-22 "before" window includes the router power-down (18:06–18:11Z).
+Its last minutes before the press read 0.52–0.55 W.
 
-**Supply coupling is unlikely** [D, with the AC behaviour I]. Shunt offset
-vs supply is ±0.5 µV/V max [S: DS §6.5 PSRR]. A 100 mV droop of the 3V3 rail
-during TX would shift the input by ≤ 0.05 µV. That is ~40–140× below the
-2–7 µV to explain, even before accounting for TX's ~1 % duty. It works only
-if the rejection at the burst frequencies is far worse than the DC figure.
+**Timing:**
 
-### 3.2 One model fits both regimes: noise variance ∝ the ESP's TX airtime
+- The floor is reached in the first full minute after the press.
+- It lasts exactly until the display times out (5 min after the last press).
+- It is gone in the first minute after.
+- On 09-22 the extra presses extended the lit time to 10 min, and the floor
+  held all 10 minutes.
 
-**Assumption.** Each ESP TX burst adds an independent error at the input.
-Then:
+**Uniqueness.** In 21,114 per-minute rates (09-10 08:12Z → 09-25), the rate is
+< 0.30 W only in these 16 minutes. The one other hit is a 0 W reading at a
+reboot. The lowest unlit rate is 0.35 W.
 
-- noise variance ∝ airtime *T*
-- extra real drain = ΔT × ΔI_b
+**What changes when the OLED is lit** [S: ESPHome `ssd1306_base.cpp`,
+`ssd1306_i2c.cpp`]:
 
-**Arithmetic:**
+- **The I²C traffic does not change.** `update()` renders and writes the full
+  1 KB buffer every second whether the panel is on or off. `turn_off()` only
+  sends 0xAE.
+- **What does change:**
+  - the panel is on
+  - its internal charge pump runs [I]
+  - it draws pixel current
+  - on these three occasions, a person was present
+- **The person is unlikely to be the cause.** The noise tracked the display
+  timeout to the minute three times, including a 10-min extension.
+  Presence can't be fully excluded; TB-4 does that.
 
-1. Variance ratio: 18.11² / 5.44² = 328.0 / 29.6 = **11.08** [D from M].
-2. TX minus RX current at 3.3 V [S: C3 Table 5-7]:
-   - 278 − 87 = 191 mA (HT40 MCS7 @ 18.5 dBm)
-   - 335 − 84 = 251 mA (802.11b @ 21 dBm)
-3. At the bank, ΔI_b = ΔI × 3.3 V / (η × 13.30 V):
-   - 191 × 3.3 / (0.90 × 13.3) = **53 mA**
-   - 251 × 3.3 / (0.80 × 13.3) = **78 mA**
-4. ΔT = 0.88 / (53–78) = 1.66–1.13 %.
-5. T_quiet = ΔT / 10.08 = **0.17–0.11 %**.
-6. T_noisy = 11.08 × T_quiet = **1.8–1.2 %**.
+**Quantities** [D]:
 
-**Independent support: the ESP runs warmer when noisy** [M, weak].
+- **The OLED's current:** 09-22 (quiet) went from −7.89 to −10.37 mA, so
+  ΔI_b = 2.5 mA at the bank. At 3.3 V: 2.5 × 13.3 × (0.80–0.90) / 3.3 =
+  **8–9 mA**.
+- **The noisy excess disappears when lit:**
+  - Lit minus before is −1.30 and −1.63 mA in the two noisy cases, against
+    −2.48 mA in the quiet one.
+  - So the unlit noisy readings carried an extra −0.85 to −1.18 mA.
+  - That extra is gone when lit: −10.25 / −10.27 vs −10.37 mA.
+  - **The turnover's 0.88 mA is therefore most likely a DC error of the
+    interference, not current** [n = 3].
+- **The lit per-conversion error:** 0.23 W / 13.29 V = 17.3 mA mean |I|. With
+  μ = −10.3 mA, that inverts to σ ≈ **19 mA (7 µV)**.
+  - For comparison: 42 mA quiet, 136 mA noisy, and 2 mA for the chip alone
+    [D: DS Table 8-2, 16.0 bits at 4120 µs].
+  - A smaller residual remains even when lit.
 
-- The ESP32 internal temperature minus pack temperature rises with the
-  hourly ENERGY rate, which is the noise gauge of §3.3.
-- Slope: +1.19 °F per W, r = 0.45, n = 163 h (09-10 → 09-24).
-- The noisy-to-quiet change (~1.3 → ~0.47 W) predicts ≈ 1.0 °F (0.55 °C).
-- The daily means match: ESP − pack fell from 34.5 °F (09-18 → 09-20) to
-  33.2 °F (09-23/24).
-- At a θ of 50–100 °C/W [I], 0.55 °C means ~5–11 mW. The model's extra TX
-  power is 0.88 mA × 13.3 V × 0.85 ≈ 10 mW.
-- The sensor steps in 0.5 °C, so this corroborates the model; it does not
-  prove it. It is the only evidence here that does not pass through the
-  INA228.
+### 3.2 What the photos show
 
-**What the model predicts:**
+[P], approximate distances:
 
-- **Wi-Fi off:** sd falls to the chip floor. That is 0.16 mA per reading
-  [D: DS Table 8-2, 19.7 noise-free bits → 327.68 mV / 2^19.7 =
-  0.385 µV p-p ÷ 6.6 = 0.058 µV rms ÷ 375 µΩ], in either regime.
-- **Lower TX power:**
-  - Radiated: sd × 10^(ΔdBm/20), i.e. × 0.27 from 20 to 8.5 dBm.
-  - Conducted: about × 0.5 [I, TX current vs power level not tabulated].
-  - Router as the source: flat.
+1. **U2 (INA228 breakout) sits directly above C1 and U3 (the Pololu buck).**
+   The breakout's VIN+/VBUS/VIN− terminal block is on its lower edge, facing
+   U3, ~1 cm from the 22 µH inductor ("220").
+2. **The input wires are red and look untwisted** from the terminal block
+   until they pass U3/C4 and head to the lower-left gland. The wiring summary
+   specifies a twisted pair.
+3. **The XIAO (ESP32-C3, U.FL) sits right beside the INA228 breakout.** The
+   antenna pigtail loops over the board. Bill: "very close".
+4. **The OLED harness crosses U3 and the INA228 terminal block** in long
+   untwisted loops (SDA/SCL/3V3/GND).
+5. **TB1 (black/white) leaves by its own gland**, apart from the sense wires.
+   Good. The outside routing is not shown.
+6. **The breakout's own power LED is lit.** That is consistent with the
+   ~0.13 mA budget item.
+7. **Photo 3 is probably from July** (13.41 V, SOC 100 %, a page layout with
+   "IDLE" that V1.27 does not draw). The wiring may have changed at the
+   08-04 or 08-31 rewires. A current photo of the terminal-block area would
+   help (§8.2).
 
-**What would break it:** sd unchanged with Wi-Fi off.
+**Fields at the breakout** [D/I]:
 
-### 3.3 ENERGY measures the per-conversion error, and it is not white-independent
+- **Router,** from RSSI of −30 to −39 dBm with a 2 dBi antenna: **0.44–0.16
+  V/m**. The aperture is A = 1.58 × 0.125² / 12.57 = 0.00197 m², and
+  E = √(377 × P / A).
+- **ESP**, 20 dBm, 2–5 cm away: E ≈ √(30 × 0.1 × 1.6) / d = **44–110 V/m**.
+  This is far-field arithmetic in the near field, so it is order-of-magnitude
+  only. That is 100–700× the router in amplitude.
 
-**Why ENERGY is a gauge.** CHARGE and ENERGY accumulate *each conversion*,
-and "the INA228 averaging function is not applied to these" [S: DS §7.3.1,
-Fig. 7-2]. POWER is unsigned. So ENERGY's idle rate is the mean
-|V × I| of *single* 4.12 ms conversions, and that makes it a per-conversion
-error gauge.
+### 3.3 Mechanisms, ranked
 
-**Result**, over simultaneous windows from Bill's exports [M/D; Gaussian
-folded-normal inversion with μ = the CHARGE drain]:
+| mechanism | explains regimes? | explains lit-OLED collapse? | explains the zero steps at moves? | status |
+|---|---|---|---|---|
+| **A. Buck switching** (mode hopping at ~90 mA, modulated by the ESP's load) into the unfiltered inputs: magnetic pickup at the untwisted terminal fan-out ~1 cm from U3, and/or HF ripple through the shunt | yes, via the ESP's activity pattern | **yes**: a steady +8–9 mA holds the regulator in one mode [I] | yes: moving wires near U3 changes the coupling | **leading** |
+| **B. ESP antenna near field** on the breakout/leads | yes, via TX airtime | no obvious way | yes | second |
+| **C. Router RF** | yes | **no** | partly | effectively ruled out |
+| **D. Supply rejection** (3V3 droop) | — | — | — | unlikely: ±0.5 µV/V max [S: DS §6.5] → ≤ 0.05 µV per 100 mV |
 
-| window (UTC) | ENERGY rate | mean \|I\| per conversion | σ per conversion | sd_avg (2 s) | σ if independent (sd_avg × √128) | variance ratio |
-|---|---|---|---|---|---|---|
-| noisy, 09-24 14:17–15:14 | 1.442 W | 108.5 mA | 136 mA | 19.00 mA | 215 mA | 2.5 |
-| quiet, 09-24 15:20 → 09-25 02:12 | 0.456 W | 34.3 mA | 42 mA | 5.00 mA | 57 mA | 1.8 |
+**Rev 2's airtime model (B), demoted.**
 
-**What it means.** The averaged readings carry 1.8–2.5× more variance than
-independent conversions with the ENERGY-implied spread would give. Two
-explanations fit, and **TB-3 (AVG = 1) separates them**:
+- **Its arithmetic stands if its premise holds.** 11.08× variance ratio;
+  TX − RX = 191–251 mA [S: C3 Table 5-7]; 53–78 mA per burst at the bank;
+  0.11–0.17 % / 1.2–1.8 % airtime.
+- **Its premise was that the 0.88 mA noisy excess is real TX current.** §3.1
+  now says it is not.
+- **The ESP's warmer die in noisy hours** (S12) remains weak and possibly
+  time-of-day confounded. It no longer carries the model.
 
-- the error is **correlated** across successive conversions (tens to hundreds
-  of ms), or
-- it is **impulsive**: it hits a subset of conversions hard. Heavy tails make
-  mean |X| understate σ.
+**The ENERGY vs averaged-sd check still holds** [M/D; Gaussian inversion]:
 
-Either one describes bursty radio traffic. Neither describes a steady
-broadband carrier sampled independently.
+| state | σ per conversion | sd_avg × √128 | variance ratio |
+|---|---|---|---|
+| noisy | 136 mA | 215 mA | 2.5 |
+| quiet | 42 mA | 57 mA | 1.8 |
+| lit | 19 mA | ~23 mA (sd ~2 mA) | ~1.4 |
 
-**Size relative to the chip.** The quiet per-conversion σ of 42 mA
-(16 µV) is 21× the chip's own per-conversion noise: 2.0 mA [D: DS Table
-8-2, 16.0 bits at 4120 µs × 1].
+The error is correlated across conversions or impulsive. Burst-mode
+switching gives exactly that. TB-3 (AVG = 1) measures it directly.
 
-### 3.4 The third state is the lit OLED
+### 3.4 Where in the chain: a test tree
 
-| window (EDT) | Display Button presses (EDT) | lit until (5-min timeout) |
-|---|---|---|
-| 09-11 14:23–14:26 | 14:22:52 | 14:27:52 |
-| 09-18 12:03–12:06 | 12:02:45 | 12:07:45 |
-| 09-22 14:17–14:26 | 14:16:32, then 14:21:25 / :32 / :37 / :47 | 14:26:47 |
+The trees below split the paths. Each branch is one cheap step; details are
+in §5.
 
-**The drain step is the OLED's real current.** The +3.2 mA at the bank is
-~11 mA at 3.3 V [D: 3.2 × 13.3 × 0.85 / 3.3]. That is plausible for a
-mostly dark SSD1306 [I]. The shunt sees the monitor's own load step, which
-is consistent with the monitor being on the shunt.
+- **P-5, a preload resistor** (3V3 TP to GND TP; 220–330 Ω = 10–15 mA):
+  - noise collapses as it does with the OLED → **the load level drives it
+    (A)**
+  - no change → the OLED panel itself does it (TB-4 variants)
+- **P-2a, short the inputs at the INA228 terminal block:**
+  - noise persists → **board-level pickup:** the buck's or ESP's field on
+    the breakout
+  - noise gone → it is in the leads or the shunt. Go to P-2b.
+- **P-2b, short the inputs at the shunt end, leads kept:**
+  - noise persists → **pickup in the lead loop**
+  - noise gone → **HF ripple through the shunt itself**
 
-**Why the noise falls while lit is open.** Candidates [I]:
+### 3.5 The zero moves with the RF/physical environment
 
-- The 1 s display refresh (~1 KB over I²C at 100 kHz ≈ 0.1 s) changes the
-  ESP's loop and TX timing.
-- A person at the monitor changes the RF geometry.
+Daily means [M] (from Rev 2):
 
-TB-4 lights the OLED remotely with nobody present, which separates the two.
-
-**July.** The July low-noise windows (07-15 16:30Z, 07-16 11:35Z and
-20:00Z) are probably the same thing. The button export starts 09-10, so
-the July history is needed to confirm it (§8.2).
-
-### 3.5 The 2026-08-04 rewire changed RSSI, drain and noise in the same hour
-
-Hourly, from Bill's exports [M]:
-
-| UTC | 17 | 18 | 19 | 20 | 21 |
-|---|---|---|---|---|---|
-| RSSI (dBm) | −33.4 | −33.4 | −35.5 | −29.5 | −29.3 |
-| drain (mA) | −6.04 | −6.08 | −5.55 | −8.33 | −9.07 |
-| ENERGY (W) | 0.83 | 0.82 | 0.81 | 0.89 | 0.87 |
-
-Something RF-relevant moved during the rewire: the antenna, the leads, or the
-router. From the next day, ENERGY settled lower (0.63–0.70 W). So the
-per-conversion noise *fell* while the drain grew ~3 mA more negative.
-
-That cannot be the airtime model, which ties more drain to *more* noise
-(§3.2). The report's reading of a thermal-EMF shift (report §7.3) is still
-possible. An RF-geometry DC term is now equally possible.
-
-### 3.6 The zero moves with the RF environment
-
-Daily means from the HW exports [M]. The hourly table was built from
-`HW Energy` / `HW Net Charge` differences, excluding reset and charge hours.
-
-| period | ENERGY (W) | drain (mA) | RSSI (dBm) | what changed at the start |
+| period | ENERGY (W) | drain (mA) | RSSI (dBm) | at the start |
 |---|---|---|---|---|
 | 07-21 → 08-04 | 0.82–0.92 | −5.6 to −6.9 | −33 to −35 | (post-charge) |
-| 08-05 → 08-18 | 0.65–0.72 | −8.2 to −9.0 | −29 to −30 | 08-04 20Z: rewire; RSSI +4 dB |
-| 08-19 → 08-31 | 0.76–0.90 | −6.6 to −8.2 | −30 → −34.7 | 08-18 22Z: ENERGY up, drain +1.2 mA, **no RSSI change** |
-| 09-01 → 09-21 | 0.74 → 1.34 | −8.3 to −9.3 | −29.5 to −33 | 08-31 ~21Z: INA228 power loss (rewire); RSSI +3.5 dB, drain −1.2 mA |
+| 08-05 → 08-18 | 0.65–0.72 | −8.2 to −9.0 | −29 to −30 | 08-04 20Z: rewire; RSSI +4 dB; drain −2.8 mA |
+| 08-19 → 08-31 | 0.76–0.90 | −6.6 to −8.2 | −30 → −34.7 | 08-18 22Z: ENERGY up, drain +1.2 mA, no RSSI change |
+| 09-01 → 09-21 | 0.74 → 1.34 | −8.3 to −9.3 | −29.5 to −33 | 08-31 ~21Z: INA228 power loss (rewire); RSSI +3.5 dB; drain −1.2 mA |
 | 09-22 → 09-25 | 0.40–0.60 | −7.0 to −7.6 | −36 to −39 | router power-down; coexistence OFF 09-24 |
 
-**Findings:**
-
-- **The drain level steps by 1–3 mA (0.4–1.1 µV).** It steps at the same
-  hour as RSSI steps when something is physically moved: 08-04, 08-31 and
-  09-22.
-- **One step had no RSSI change** (08-18 22Z).
-- **The steps are not proportional to the noise level.** 08-05: less noise,
-  more drain. 09-22: less noise, less drain.
-- **The 1–3 mA steps exceed the chip.** They are larger than anything the
-  INA228's offset drift can do: ±10 nV/°C [S: DS §6.5] is ≤ 0.03 mA/°C.
-- **For SOC:**
-  - A single in-situ zero (P-1) removes the 15–20 mA question.
-  - It leaves a ±1.5 mA wander (±0.28 %/mo) that moves whenever the RF
-    geometry does.
-  - Removing the pickup (§6.4) should remove the wander. Re-running this
-    table after the fix is the acceptance test.
+- **The steps are 1–3 mA (0.4–1.1 µV).** They coincide with RSSI steps at the
+  physical events, and they are not proportional to the noise level. Bill
+  doesn't know what moved (§8.2).
+- **Under A**, these are changes in coupling geometry near U3 and the
+  terminal block. They move both the noise and its DC part.
+- **The steps exceed the chip.** The INA228's drift is ±10 nV/°C max [S], so
+  steps of this size are external to it.
 
 ---
 
-## 4. The energy balance (review B1), from the datasheets
+## 4. The energy balance (review B1)
 
-**Firmware.** `power_save_mode: none` (line 554) becomes `WIFI_PS_NONE` [S:
-ESPHome `wifi_apply_power_save_()`]. The receiver never sleeps.
+**Firmware.** `power_save_mode: none` becomes `WIFI_PS_NONE` [S: ESPHome].
 
-**Expected draw, 3.3 V side:**
+**Expected draw, 3.3 V side** [S: C3 Table 5-7, DS §6.5; D]:
 
-| item | current | source |
-|---|---|---|
-| ESP32-C3 receiving | 84 mA (HT20) / 87 mA (HT40) | [S: C3 Table 5-7] |
-| INA228 | 0.64 mA typ | [S: DS §6.5, IQ] |
-| breakout power LED | ~0.13 mA | [D: (3.3 − ~2.0 V) / 10 kΩ; S: Adafruit R7, D1] |
-| status LED | 0.6 mA average | line 756 |
-| **total** | **85.4–88.4 mA** | a lower bound: TX adds 0.2–4.6 mA [D: T × ΔI] |
+| item | current |
+|---|---|
+| ESP receiving | 84 / 87 mA |
+| INA228 | 0.64 mA |
+| breakout LED | ~0.13 mA |
+| status LED | 0.6 mA |
+| **total** | **85.4–88.4 mA**, plus 0.2–4.6 mA of TX |
 
-**Expected draw, bank side:** I = 3.3 V × I₃V₃ / (η × 13.30 V).
+**Expected draw, bank side:** I = 3.3 × I₃V₃ / (η × 13.30).
 
-- η = 0.90: 85.4 × 3.3 / 11.97 = **23.5 mA**
-- η = 0.80: 88.4 × 3.3 / 10.64 = **27.4 mA**
-- Even at η = 1.0: 85.4 × 3.3 / 13.3 = **21.2 mA**
+- η = 0.90: **23.5 mA**
+- η = 0.80: **27.4 mA**
+- even at η = 1: **21.2 mA**
 
-**Measured:** 7.3–8.2 mA [M]. So:
+**Measured:** 7.3–8.2 mA [M].
 
-- **Gap = 15.3–20.1 mA**, which is ≥ 13.0 mA even at η = 1.
-- That is **5.7–7.5 µV** at 375 µΩ.
-- The datasheet offset limit is ±1 µV. The gap is 6–7× that.
+- **Gap: 15.3–20.1 mA** (≥ 13.0 at η = 1).
+- That is **5.7–7.5 µV**, or 6–7× the datasheet's ±1 µV offset limit.
 
-**The 08-26 report's reconciliation.** Report §7.1 reconciled 7.4 mA with a
-25 mA DTIM power-save draw, but the firmware does not use power save. The
-header's "Monitor ~100 mA" (line 79) matches the 3.3 V side (85–93 mA). The
-report's R13 note calling it "14× high" needs its own R13 correction.
+**The lit-OLED check.** With the interference suppressed, the bank reads
+−10.3 mA. The expected value is (23.5–27.4) + 2.5 = 25.9–29.8 mA. The gap,
+15.6–19.5 mA, is the same, so **the gap is not the noise's DC part.**
 
-**The OLED step (§3.4).** The shunt sees a ~11 mA (3.3 V) load step at about
-the expected size. This argues that the monitor *is* on the shunt.
+**Bus contents** [Bill]. Only the batteries, the monitor and the inverter
+(connected, off) are on the bus.
 
-**Remaining explanations:**
+- No charger, so there is no charge source that could make the reading too
+  small.
+- The inverter's off-state draw, if any, is on the load side, so it adds to
+  the true discharge and widens the gap.
+
+**What is left:**
 
 1. The ESP draws ~⅓ of its datasheet receive current with power save off.
    [I, unlikely]
-2. **An in-situ offset of +5.7–7.5 µV**, so the reading is less negative
-   than the truth.
-3. A source on the battery side of the shunt. Bill rules out a bypass by
-   construction. A trickling charger would be real charge current, harmless
-   to SOC.
+2. **A static in-situ offset of +5.7–7.5 µV**, for example thermal EMF at
+   dissimilar-metal joints or the board. Bill rules out a bypass by
+   construction.
+
+**The 08-26 report.** Report §7.1 reconciled 7.4 mA with a DTIM power-save
+draw, which the firmware does not use. The header's "~100 mA" (line 79)
+matches the 3.3 V side. The report's R13 note needs its own R13.
 
 **SOC consequence if (2) holds:**
 
-- **Rate.** 1 mA for a month = 0.73 Ah = 0.184 % of 397 Ah. V1.28 would read
-  high by 15.3–20.1 × 0.184 = **2.8–3.7 %/mo**.
-- **Since the 07-16 anchor** (1,686 h to 09-25 02:00Z):
+- **Rate.** 1 mA-month = 0.184 % of 397 Ah, so the error is 15.3–20.1 ×
+  0.184 = **2.8–3.7 %/mo**.
+- **Since the 07-16 anchor** (1,686 h):
   1. 15.3 × 1,686 = 25.8 Ah = 6.5 %
   2. 20.1 × 1,686 = 33.9 Ah = 8.5 %
   3. Both come on top of the turnover's 3.3 %, so the true SOC is **~88–90 %**.
 
-**Temperature split.** Kept from Rev 1: the drain–temperature link in report
-§7.5 is mostly the monitor's own heating (die − pack), and it changed 4× at
-the rewire.
-
-| segment | hours | pack coef (mA/°F) | die − pack coef (mA/°F) | r² |
-|---|---|---|---|---|
-| pre-rewire | 373 | −0.54 ± 0.07 | −1.57 ± 0.21 | 0.19 |
-| post-rewire | 517 | −0.66 ± 0.03 | −6.83 ± 0.22 | 0.76 |
-
-The ambient coefficient converts to 0.36–0.45 µV/°C. That is 36–45× the
-DS's ±10 nV/°C maximum [S], so if it is real, it is not the chip.
+**Temperature split** (Rev 1). The report §7.5 link is mostly the monitor's
+own heating, and it changed 4× at the rewire. The ambient coefficient,
+0.36–0.45 µV/°C, is 36–45× the DS's ±10 nV/°C.
 
 **How to settle it:**
 
-- **P-1 (DMM):** the clean way.
-- **TB-1 (radio off):** free, if the monitor is on the shunt.
-  - The radio-off draw is 16–28 mA [S: C3 Table 5-8, modem-sleep at
-    160 MHz] + 1.4 mA. At the bank that is **4.8–9.1 mA** [D, η I].
-  - The reading is ≈ −7.9 mA today. It should rise by 15–22 mA, to about
-    **+7 to +15 mA**.
-  - **Any reading above −4.8 mA proves an offset.**
-  - If it rises by only a few mA, the ESP draws far less than its datasheet:
-    explanation 1.
+- **P-1, the DMM reading.** Do it lit and unlit.
+  - Zero ≥ reading + I_TB1. The inverter's off-draw can only add to the
+    true discharge.
+  - **Prediction:** I_TB1 ≈ 23–28 mA.
+- **TB-1, radio off.**
+  - The ESP drops to 16–28 mA [S: C3 Table 5-8], which is **4.8–9.1 mA** at
+    the bank.
+  - Readings above −4.8 mA prove an offset.
+  - Under A, radio off also changes the load on the buck. Read the noise part
+    of TB-1 with that in mind.
 
 ---
 
@@ -483,12 +455,26 @@ DS's ±10 nV/°C maximum [S], so if it is real, it is not the chip.
 
 ### 5.1 One diagnostic build (firmware only, controlled at runtime from HA)
 
-**When to run it.** Run it now, in the quiet state. The quiet state is 5.0
-mA against a 0.16 mA floor (31×), so it discriminates without a router
-change.
+**When:** run it now, in the quiet state. **Scope:** keep it separate from
+V1.28. **Gate:** `esp-firmware-validation`.
 
-**Scope.** Keep it separate from V1.28 (turnover §7). The gate is
-`esp-firmware-validation`.
+**TB-4: OLED and load variants, nobody present, 5 min each, 3 times each. Run
+this first.**
+
+| variant | how | if A (load level) | if the panel itself | if presence |
+|---|---|---|---|---|
+| a. lit, normal page | `turn_on`, page_main | low | low | high |
+| b. lit, black frame, contrast 0 | panel on, ~no pixel current | high | low | high |
+| c. lit, all white | maximum pixel current | low | low | high |
+| d. panel off, CPU spinning | `App.set_loop_interval(0)` for 5 min; the CPU stops idling, adding ~7 mA [S: C3 Table 5-8, 16 → 23 mA] | low | high | high |
+
+- **"Low"** means ENERGY ≈ 0.23 W and 2-s sd ≈ 2 mA.
+- **About (d):** `Application::set_loop_interval()` exists, with a default of
+  16 ms [S: ESPHome `core/application.h`, dev]. Two things are [I]: whether
+  0 keeps the CPU from idling, and whether the call behaves the same in
+  2026.9.0. P-5 is the cleaner load test.
+- **If (b) is low,** a black lit panel is a burn-in-free stopgap for the
+  CURRENT channel.
 
 **TB-1: Wi-Fi off, 10 min.**
 
@@ -496,88 +482,73 @@ change.
   mean, sd, min and max of the 2-s current, plus ΔCHARGE/Δt and ΔENERGY/Δt.
   Publish them on reconnect.
 - **Expected:**
-  - ESP as the source: sd falls to ~0.16–0.3 mA. The mean rises by
-    15–22 mA. The ENERGY rate falls to about |mean reading| × V, roughly
-    0.1–0.2 W, because the chip's ~2 mA per-conversion noise no longer
-    dominates.
-  - Router or other external source: sd unchanged.
+  - The mean should rise 15–22 mA (B1).
+  - B (radio): noise → floor.
+  - A: noise changes with the new, lighter load; the direction is not
+    predicted.
 
 **TB-2: TX-power ladder.**
 
-- **How:** a template `number` calls `esp_wifi_set_max_tx_power(dBm × 4)`.
-  Step 20.5 → 17 → 14 → 11 → 8.5 dBm, 15 min each.
+- **How:** `esp_wifi_set_max_tx_power(dBm × 4)`, 20.5 → 8.5 dBm, 15 min per
+  step.
 - **Expected:**
-  - Radiated: sd ∝ 10^(ΔdBm/20).
-  - Conducted: ≈ × 0.5.
-  - External: flat.
+  - B (radiated): sd × 0.27 at −11.5 dB.
+  - A: a smaller change, because the load steps shrink.
+  - C: flat.
 
 **TB-3: averaging ladder.**
 
-- **How:** a `select` writes ADC_CONFIG AVG ∈ {1, 4, 16, 64, 128, 256, 1024},
-  5 min each.
-- **What AVG = 1 gives:** the per-conversion σ and its tails directly.
-  Compare with the 42 mA from ENERGY (§3.3):
-  - kurtosis ≫ 0 → impulsive error
-  - sd ≈ 42 mA with a 1/√N fall only at large N → correlated error
-- **CHARGE is untouched**, because it accumulates per conversion [S: DS
-  §7.3.1].
-
-**TB-4: OLED lit remotely, 5 min, nobody present, three times.**
-
-- **Expected:**
-  - The 2 mA state follows → the monitor's own activity modulates the
-    error.
-  - It does not → presence/geometry.
+- **How:** AVG ∈ {1, …, 1024}, 5 min each.
+- **Expected:** AVG 1 gives the per-conversion σ and kurtosis directly.
+  CHARGE is untouched [S: DS §7.3.1].
 
 **TB-5: preview §6.2 item 2.**
 
-- **How:** VBUSCT 2074 µs, VSHCT 4120 µs, VTCT 50 µs, AVG 256.
-  ADC_CONFIG = 0xFDC5.
+- **How:** ADC_CONFIG = 0xFDC5.
 - **Expected:** sd × 0.71.
 
 **Passive additions:**
 
-- 5-min on-device current sd/mean
-- the AP bandwidth or secondary channel from `esp_wifi_sta_get_ap_info()`
-  every 60 s, to test review §8.1's 20 MHz fallback directly [I: whether it
-  tracks live HT operation]
+- a 5-min on-device sd
+- the AP bandwidth, from `esp_wifi_sta_get_ap_info()`
 - the reset reason
-- ENERGY rate is already a free regime gauge (§3.3), and needs nothing new
 
-**Notes:**
+**Notes, unchanged from Rev 2:**
 
-- **TX-power range.** 8.5–20.5 dB is ESPHome's `output_power` range [S].
-  With no `output_power` configured, ESPHome re-applies nothing on
-  reconnect. The script must restore the value; a reboot also restores it.
-- **TB-3 and the SW ledger.** At AVG 1 the 2-s samples scatter ~40–200 mA.
-  The SW ledger books both tails, netting ≤ 0.6 mAh per 5-min step and
-  ~2 mAh for the whole ladder [D: Gaussian].
-- **TB-3 and the ALERT limits.** Limits compare the averaged value
-  (SLOWALERT = 1, line 516) [S: DS DIAG_ALRT bit 13]. At AVG 1 that is one
-  conversion. It stays far from ±250 A and 12.2 V.
+- **TX power.** The script must restore it. ESPHome re-applies nothing,
+  because `output_power` is unset.
+- **TB-3 and the SW ledger** books ≤ 0.6 mAh per 5-min step.
+- **TB-3 and the ALERT limits** compare averaged values (SLOWALERT).
 
 ### 5.2 Physical tests (Bill's call, R14)
 
+**P-5: preload.** Clip a 220–330 Ω resistor (¼ W: 3.3² / 220 = 50 mW) between
+the carrier's **3V3** and **GND** test points [P] for 10 min, then remove it.
+
+- It reproduces the OLED's load with no display and no person.
+- It is the physical twin of TB-4 (d).
+
 **P-1: DMM in series with TB1 BATT_RAW.**
 
-- **Avoiding a reboot:** clip the DMM, on a mA range, across the F1 holder,
-  then pull F1. Reverse the order to finish.
-- **Reading:** log a ≥ 1 min average, with the HA 2-s current over the same
-  minute.
-- **Result:** zero = reading + I_TB1 + (other loads, §8.2 item 1).
-- Once per regime if convenient.
-- **Prediction:** I_TB1 ≈ 23–28 mA (§4).
+- **Avoiding a reboot:** clip the DMM across the F1 holder, then pull F1.
+- **Reading:** a ≥ 1 min average, taken both lit and unlit, with the HA
+  current over the same minutes.
 
-**P-2: short the inputs at the INA228 terminal block.**
+**P-2a and P-2b: shorts.** At the INA228 terminal block, then at the shunt
+end (§3.4).
 
-- **How:** leads off, VIN+ jumpered to VIN−, VBUS stays connected.
-- **Expected:**
-  - sd stays ~5 mA → the pickup is on the board or breakout.
-  - sd → floor → the pickup is on the sense pair or shunt loop.
-- It also gives today's chip-plus-board offset, to compare with the 0.9 µV
-  from commissioning.
+**P-4: dress the input wires.**
 
-**P-3:** only after TB-1, TB-2 and P-2 name the path (§6.4).
+- Twist VIN+/VIN− tightly right into the terminal.
+- Route them away from U3/C4 and from the OLED harness.
+- Compare noise before and after.
+- It is cheap. Under A, it may be most of the fix.
+
+**P-6 (optional): an oscilloscope, if one is available.**
+
+- **Probe:** the buck's 3V3 output ripple or switch-node timing.
+- **Compare:** OLED on vs off, and with the P-5 preload. It shows mode hopping
+  directly.
 
 ---
 
@@ -585,26 +556,26 @@ change.
 
 ### 6.1 Keep from the two docs
 
-Keep the V1.28 core. Nothing here overturns it:
+Keep the V1.28 core:
 
-- SOC from CHARGE with the anchor (turnover §5)
-- review B2 (a)–(c)
-- review B3: the provisional-anchor ladder
+- CHARGE-based SOC with the anchor
+- B2 (a)–(c)
+- the B3 ladder
 - O1 and O2
 - the review §4–§5 budgets
 
-**Datasheet checks of the review's claims** [S: DS]:
+**Datasheet checks** [S: DS]:
 
-- **POR** at VS < 1.26 V typ (§7.4.2).
-- **Reset values:** SHUNT_CAL 1000h, ADC_CONFIG FB68h, TEMP_LIMIT 7FFFh
-  (§7.6.1.2, §7.6.1.3, §7.6.1.17).
-- **Oscillator:** ±0.5 % at 25 °C, ±1 % over temperature.
+- POR at VS < 1.26 V
+- SHUNT_CAL resets to 1000h, ADC_CONFIG to FB68h, TEMP_LIMIT to 7FFFh
+- the oscillator is ±0.5 % / ±1 %
 
-One review budget row changes. The review's "0.88 mA noisy excess, if none
-is real": the airtime model and the ESP temperature say it is real radio
-current, which CHARGE should count.
+**Budget row, corrected by Rev 3.** The review's "noisy excess 0.88 mA, if
+none is real: ≤ 0.16 %/mo, only while noisy" **stands** (§3.1). Rev 2 had
+called the excess real. It is a DC error of the interference, which CHARGE
+integrates as if it were drain. The P-4, §6.4 and stopgap fixes remove it.
 
-### 6.2 New firmware items
+### 6.2 Firmware items
 
 1. **An in-situ offset term.**
 
@@ -613,205 +584,184 @@ current, which CHARGE should count.
    soc    = 100 + ah_net / ${validated_capacity_ah}f * 100
    ```
 
-   - `I_off` is a substitution, 0.0 until P-1 measures it. Publish its value
-     and source.
-   - The anchor re-seed resets the hours. Apply the same term to the
-     provisional anchor.
+   - `I_off` defaults to 0 until P-1 measures it. Publish its value and
+     source.
+   - The anchor re-seed resets the hours, and the term applies to the
+     provisional anchor too.
    - Publish Ah-below-full.
 
 2. **Double the shunt integration time at the same cycle time.**
    - **Config:**
      `adc_time: {bus_voltage: 2074us, shunt_voltage: 4120us, temperature: 50us}`
-     and `adc_averaging: 256`. ESPHome supports both [S]. The ADC_CONFIG
-     layout was checked against the driver struct and FB68h.
+     and `adc_averaging: 256`.
    - **Arithmetic:**
 
      | | now | proposed | change |
      |---|---|---|---|
-     | cycle | 128 × 3 × 4.12 ms = 1.582 s | 256 × (2.074 + 4.12 + 0.05) ms = 1.598 s | ≈ same |
-     | shunt time per reading | 128 × 4.12 ms = 0.527 s | 256 × 4.12 ms = 1.055 s | × 2.00 |
-     | bus time per reading | 0.527 s | 256 × 2.074 ms = 0.531 s | ≈ same |
+     | cycle | 1.582 s | 256 × 6.244 ms = 1.598 s | ≈ same |
+     | shunt time per reading | 0.527 s | 1.055 s | × 2 |
+     | bus time per reading | 0.527 s | 0.531 s | ≈ same |
 
-   - **The noise table backs it** [S: DS Table 8-2, ADCRANGE 0]: 2074 µs ×
-     256 = **19.7** noise-free bits, the same as 4120 µs × 128. The chip's
-     own ENOB does not rise (4120 × 256 is also 19.7). The gain is against
-     *external* white interference: sd × 1/√2.
-     - noisy 18.1 → 12.8 mA
-     - quiet 5.0 → 3.5 mA
-     - hourly CHARGE 0.39 → 0.28 mA
-   - **Assumption:** the table is labelled by the shunt ranges. That the bus
-     channel scales the same way is [I]. TB-5 checks bus-voltage sd directly.
-   - **Cost:** die temperature comes from 12.8 ms of conversion per reading.
-     It is diagnostic only and averaged over 60 s.
+   - **Noise table** [S: DS Table 8-2]: 2074 × 256 = 19.7 bits, the same as
+     4120 × 128.
+   - **Effect:** external white interference sd × 1/√2. The bus channel
+     scaling is [I]; TB-5 checks it.
 
 3. **`max_current` 200 → 400 A.**
-   - CURRENT is 20-bit two's complement with LSB = max_current / 2¹⁹ [S: DS
-     Eq. 3, §7.6.1.8]. So it spans ±200 A.
-   - **`i_max_plausible_a: 350` (line 339) can never trip,** at any of its
-     five uses (lines 1347, 1369, 1396, 1413 and 2002).
-     - An open Kelvin lead that drives the ADC toward ±163.84 mV (437 A)
-       reads ≤ 200 A.
-     - Above the range, MATHOF means "current and power data may be
-       invalid" [S: DS DIAG_ALRT bit 9]. Whether CURRENT saturates or wraps
-       is not stated [I].
-   - **The coincident peak is out of range.** CHANGELOG 2026-08-27 records
-     274–297 A at the DC bus.
-   - **At 400 A:**
-     - SHUNT_CAL = 13107.2 × 10⁶ × 400/2¹⁹ × 375 × 10⁻⁶ = **3750 (0x0EA6)**
-       [S: DS Eq. 2]
-     - That is distinct from the POR value 4096, so B2(a)'s readback still
-       detects a reset. A POR would read 4096 / 3750 = 1.09× high.
-     - LSB 0.763 mA, dithered by the chip's ~2 mA per-conversion noise.
+   - CURRENT spans ±max_current [S: DS Eq. 3, §7.6.1.8], so today it spans
+     ±200 A.
+   - **So the 350 A guard (line 339; uses at 1347, 1369, 1396, 1413, 2002)
+     can never trip.** An open Kelvin lead reads ≤ 200 A.
+   - **Above the range,** MATHOF means "current and power data may be
+     invalid" [S: DS DIAG_ALRT bit 9].
+   - **The coincident peak is out of range:** CHANGELOG 2026-08-27 records
+     274–297 A.
+   - **At 400 A,** SHUNT_CAL = **3750** [S: DS Eq. 2]. That is distinct from
+     the POR value 4096, so B2(a)'s readback still works.
    - **Review §9 becomes mandatory:** one substitution drives the lambda
      literal (lines 1676 and 1707) and `max_current`.
 
 4. **Freshness predicate (B2c).** Add the now-reachable |I| test.
 
-5. **RECON uncertainty.**
-   - Lines 2346–2352 say "INA228 offset (~mAh) is negligible". Over 60 days
-     it is not:
-     - the datasheet's ±2.67 mA alone: 2.67 × 1,440 h = 3.8 Ah = 1.0 %
-     - B1's gap: 15.3–20.1 × 1,440 = 22–29 Ah
+5. **RECON uncertainty** (lines 2346–2352).
+   - "Offset ~mAh negligible" is wrong: ±2.67 mA × 1,440 h = 3.8 Ah, and B1's
+     gap is 22–29 Ah over 60 days.
    - Add σ_offset × hours to sigma.
    - U = offset + invisible drain + CE error, which is the lumped term SOC
-     needs. After two agreeing brackets it can feed the
-     `self_discharge_pct_per_month` hook (renamed "unseen drain").
+     needs.
 
-6. **Re-zero triggers.** Re-zero after any shunt, lug, monitor or router
-   move. §3.6 records 1–3 mA steps at each.
+6. **Re-zero** after any shunt, lug, monitor-wiring or router move (§3.5).
 
-7. **Comment corrections.**
+7. **Optional stopgap.** A "noise-suppression" mode keeps the panel on with a
+   black frame at contrast 0, or whichever TB-4 variant proves sufficient.
+   - Cost: the panel-on current, CHARGE-counted. At most ~2.5 mA × 730 h =
+     1.8 Ah/mo of real drain (0.46 %/mo) if a lit page were needed.
+   - It helps the CURRENT channel (runtime, thresholds, Ri) and removes the
+     regime-dependent DC error. Not a substitute for §6.4.
+
+8. **Comment corrections.**
 
    | line | now says | should say |
    |---|---|---|
-   | 79 | "Monitor ~100 mA" | consistent with the 3.3 V side; say so, and add the bank-side figure from P-1 |
-   | 345 | "50 mA ≈ 60× step" | 50 mA = 131 CURRENT LSBs; the per-reading floor is 0.16 mA |
-   | 1267–1270 | the `reset_on_boot` comment | under V1.28 the setting is load-bearing |
+   | 79 | "~100 mA" | 3.3 V side; add the bank-side figure after P-1 |
+   | 345 | the 50 mA comment | 50 mA = 131 LSB; floor 0.16 mA |
+   | 1267–1270 | the `reset_on_boot` comment | load-bearing under V1.28 |
 
-   Also wiring summary §5.2 ("noise floor ~5–10 mA"): that is interference.
+   Also wiring summary §5.2's "5–10 mA floor", which is interference.
 
 ### 6.3 Observability
 
-- ENERGY idle rate as a live per-conversion noise gauge. The mean |I| per
-  conversion ≈ (Wh/h) / V. The quiet state reads 0.46 W. With the
-  interference gone, it should read ~|mean| × V ≈ 0.1 W.
-- On-device 5-min sd.
-- AP bandwidth.
+- **ENERGY idle rate as a live noise gauge.** 0.23 W means suppressed;
+  0.4–0.6 W quiet; 0.9–1.4 W noisy.
+- A 5-min on-device sd.
+- The AP bandwidth.
 
-### 6.4 Hardware, after the tests name the path
+### 6.4 Hardware, ordered by how likely each is to matter under A
 
-- **Input filter at the breakout terminal block**, in TI's form [S: DS
-  §8.1.4]:
-  - **10 Ω per leg.** TI's dV/dt protection value. Gain error
-    20 / (92,000 + 20) = 0.022 % against R_DIFF = 92 kΩ [S: DS §6.5].
-  - **0.1–1 µF ceramic differential.**
-  - **A small C0G at the pins for 2.4 GHz** [I]. Add 100 pF–1 nF across
-    VIN+/VIN− right at the pins; a 1 µF part is inductive there.
-  - Match the legs.
-- **If the ESP is confirmed:** move the antenna away from the breakout and
-  pair, and/or set `output_power` to the lowest TB-2 value that keeps link
-  margin. RSSI of −30 to −39 dBm leaves room.
-- **The sense pair:** twist it right to the terminal, and keep the fan-out
-  at the shunt short.
-- **Optional standing zero:** fit a second, unmodified INA228 breakout
-  (15 mΩ, 0x41) in series with BATT_RAW.
-  - 25 mA × 15 mΩ = 0.375 mV; ±1 µV → ±0.07 mA [D].
-  - Valid only while nothing else is on the bus. Decide after P-1.
+1. **Input filter at the breakout terminal block** [S: DS §8.1.4, Fig. 8-1]:
+   - **10 Ω in series with each input.** TI's dV/dt value. Gain error
+     20 / 92,020 = 0.022 %, against R_DIFF = 92 kΩ [S: DS §6.5].
+   - **1 µF ceramic across VIN+/VIN−.** The corner is 1 / (2π × 20 Ω × 1 µF)
+     = 8 kHz, about 40 dB down at 1 MHz.
+   - **Plus 100 pF–1 nF C0G at the pins,** for 2.4 GHz [I].
+   - Bias-current offset ≤ 2.5 nA × 10 Ω = 25 nV (0.07 mA) [D].
+2. **Lead dress (P-4).** Twisted to the terminal; away from U3/C4 and the
+   OLED harness.
+3. **Regulator.** Only if P-5 or P-6 confirm mode hopping:
+   - a permanent small preload, or
+   - a regulator with forced PWM, or
+   - move U3 or put a ferrite/LC on its input, or
+   - increase the U2–U3 spacing on a Rev 1.2 board.
+4. **Antenna.** Move it away from the breakout, ideally outside the enclosure,
+   and/or lower `output_power`. RSSI −30 to −39 dBm leaves room.
+5. **Standing zero (optional).** A second, unmodified INA228 (15 mΩ, 0x41) in
+   series with BATT_RAW: ±0.07 mA [D]. Valid while the bus is otherwise idle.
 
 ### 6.5 Idle accuracy after each step
 
 | state | idle SOC error | basis |
 |---|---|---|
 | today, SW ledger, quiet | 1.34 %/mo low against the measured drain | turnover |
-| V1.28 as designed, if the B1 gap is an offset | 2.8–3.7 %/mo high | §4 |
-| V1.28, if B1 closes with no offset | ≤ 0.49 %/mo (±1 µV) + wander + invisible drain | review §4, §3.6 |
-| V1.28 + P-1 zero | ~0.1 %/mo + **±0.28 %/mo wander** + invisible drain | [D: ±0.5 mA DMM × 0.184; ±1.5 mA × 0.184] |
-| + the §6.4 filter, if it removes the wander | ~0.1 %/mo + invisible drain | acceptance: §3.6 table flat across moves |
-| + the §6.2 ADC timing | same mean; noise × 0.71 | §6.2 |
+| V1.28 as designed, if B1 is an offset | 2.8–3.7 %/mo high | §4 |
+| V1.28, if B1 closes | ≤ 0.49 %/mo + wander + noisy DC ≤ 0.16 %/mo + invisible | review §4, §3 |
+| V1.28 + P-1 zero | ~0.1 %/mo + ±0.28 %/mo wander + noisy DC + invisible | [D] |
+| + filter / lead dress, if they remove wander and DC | ~0.1 %/mo + invisible | acceptance: ENERGY ~0.23 W or lower unlit; §3.5 table flat across a move |
 
 ---
 
-## 7. Corrections to existing records (R13)
+## 7. Corrections to records (R13)
 
-1. **Report 08-26 §7.1.** The DTIM premise is wrong for this firmware. The
-   datasheet puts the monitor at 23.5–27.4 mA; the reconciliation is open.
-2. **Report 08-26 §7.5.** The temperature link is mainly the monitor's own
+1. **Report 08-26 §7.1.** The DTIM premise is wrong. Monitor 23.5–27.4 mA
+   [S].
+2. **Report 08-26 §7.5.** The temperature link is mostly the monitor's own
    heating.
-3. **Report 08-26 §7.3.** The 08-04 step came with a +4 dB RSSI step and a
-   noise-level change in the same hour. Thermal EMF is still possible. An
-   RF-geometry term is now equally possible.
-4. **Firmware.** The 350 A guard is unreachable at `max_current: 200 A`.
+3. **Report 08-26 §7.3.** The 08-04 step came with an RSSI step and a noise
+   change. Geometry near U3 is a candidate alongside thermal EMF.
+4. **Firmware.** The 350 A guard is unreachable at 200 A.
 5. **Firmware.** The RECON "offset ~mAh" comment.
-6. **Wiring summary §5.2.** The noise floor: the chip's is 0.16 mA per
-   reading.
-7. **Review §8.2 / Q1.** The third state is the lit OLED (Display Button
-   history). Q1 is closed.
-8. **Review §4 budget.** The 0.88 mA noisy excess is most likely real radio
-   current.
-9. **Turnover §4, candidates (a)/(b).** (a), the ESP's own radio, is
-   favoured by three independent lines (§0.1). "Real current" is closed
-   by §2.2.
+6. **Wiring summary §5.2.** The noise floor.
+7. **Review §8.2 / Q1.** The third state = the lit OLED. Closed.
+8. **Rev 2 of this doc (self-correction).**
+   - "The 0.88 mA is real radio current": wrong on the lit-OLED evidence.
+   - "Most probably the ESP's radio": superseded by A.
+   - The review's budget row stands.
+9. **Turnover §4.** Candidates (a) own radio and (b) router RF on the leads
+   become A (buck), B (radio), C (router, effectively out).
+10. **Wiring summary §4.2.** The sense pair should be twisted; the photo
+    suggests it is not inside the enclosure [P, to confirm].
 
 ---
 
 ## 8. Data
 
-### 8.1 Received from Bill, 2026-09-25, and what each showed
+### 8.1 Received, 2026-09-25
 
-| export | finding | section |
+| item | finding | section |
 |---|---|---|
-| Display Button (09-10 →) | the third state = the lit OLED | §3.4 |
-| HW Energy / Net Charge (07-17 →) | per-conversion noise gauge; regime history; the zero steps | §3.3, §3.6 |
-| WiFi Signal (07-28 →) | the router field at the monitor is 0.16–0.44 V/m; RSSI steps at physical events | §3.1, §3.6 |
-| current, 2 s (09-24 14:16 → 09-25 02:16Z) | 11 h quiet since coexistence OFF; simultaneous sd for §3.3 | §0.1, §3.3 |
-| ESP32 / INA228 / pack temperatures | the ESP runs warmer when noisy | §3.2 |
+| Display Button (09-10 →) | third state = the lit OLED | §3.1 |
+| HW Energy / Net Charge (07-17 →) | per-conversion gauge; lit-OLED collapse; zero steps | §3.1, §3.5 |
+| WiFi Signal (07-28 →) | router field 0.16–0.44 V/m; RSSI steps at moves | §3.2, §3.5 |
+| current, 2 s (09-24/25) | 11 h quiet since coexistence OFF | §0.1 |
+| temperatures | the ESP warmer when noisy (weak) | S12 |
+| photos | U3 ~1 cm from the INA228 terminal block; untwisted inputs; antenna beside the breakout | §3.2 |
+| bus contents | batteries, monitor, inverter (off) only | §4 |
+| step dates | cause unknown | §3.5 |
 
 ### 8.2 Still needed
 
-**From Bill:**
-
-1. **During storage:** is the charger's AC plugged in? What state is the
-   inverter in? Is anything else on the busbars? This is needed to turn P-1
-   into a zero.
-2. **What happened at these times:**
-   - 08-04 ~19–20Z (the rewire; what moved?)
-   - 08-18 ~22Z (drain and noise changed, RSSI didn't)
-   - 08-28 ~20Z (RSSI fell 3 dB)
-   - 08-31 ~21Z (the rewire / INA228 power loss)
-
-   Router moves, antenna, leads, monitor lid?
-3. **Layout:**
-   - antenna ↔ breakout, antenna ↔ sense pair, router ↔ monitor
-   - sense-pair length and its untwisted ends
-   - whether the TB1 leads run alongside the pair
-   - a photo of the enclosure interior and one of the shunt end
-4. **Commissioning Tier 2:** where the inputs were shorted, the sign of the
-   0.9 µV, the sd while shorted, and whether Wi-Fi was on.
-5. **Kelvin tap hardware:** the screw metal and the lug plating.
-
-**Optional exports:**
-
-6. **Display Button for July.** Confirms the July windows are OLED too.
-7. **Battery current (2 s) for 09-10 → 09-24.** Repeats §3.3 across many
-   noisy/quiet spells instead of one hour.
+1. **A current photo** of the INA228 terminal block, the input wires and U3.
+   Photo 3 looks like July.
+   - Are VIN+/VIN− twisted?
+   - Which red wire is which?
+   - How do the wires run outside the box to the shunt?
+2. **Commissioning Tier 2:**
+   - Where were the inputs shorted?
+   - What sign did the 0.9 µV have?
+   - What was the sd while shorted?
+   - Was Wi-Fi on?
+3. **The Kelvin screw metal and lug plating** (for thermal EMF, B1).
+4. **Whether an oscilloscope is available** (P-6).
+5. **Optional exports:**
+   - Display Button for July
+   - 2-s current for 09-10 → 09-24
 
 **Tests** (each needs Bill's go):
 
-- TB-1 to TB-5, in one build
-- P-1 and P-2
+- TB-4 first, then TB-1, TB-2, TB-3 and TB-5
+- P-5, P-1, P-2a/b and P-4
 
 ---
 
 ## 9. Suggested order
 
-1. The answers in §8.2, items 1–2. They are free, and item 1 is needed for
-   P-1.
-2. The diagnostic build, TB-1 to TB-5, in the current quiet state. TB-1
-   alone may settle both the source and B1.
-3. P-1, the DMM reading. It sets `I_off`.
-4. P-2, if the board-versus-leads question remains.
-5. The R1 statement for V1.28, with §6.2 items 1–6 plus B2, B3, O1 and O2.
-   Then turnover gates 2–6.
-6. The filter/antenna fix. Acceptance:
-   - TB-1-like sd near the floor with Wi-Fi *on*
-   - a flat §3.6 table across a deliberate router move
+1. **TB-4 and P-5.** Cheap, and they decide A vs the panel vs presence.
+2. **TB-1.** Settles B1's sign test, and radio vs not.
+3. **P-1, lit and unlit.** Sets `I_off`.
+4. **P-4 (lead dress) and the §6.4 filter.**
+   - Acceptance: unlit ENERGY near 0.23 W or lower, and the unlit 2-s sd near
+     2 mA, in both regimes (coexistence toggled).
+   - Then a deliberate router move shows a flat §3.5 table.
+5. **The R1 statement for V1.28:**
+   - §6.2 items 1–6 (and 7 if wanted)
+   - plus B2, B3, O1 and O2
+   - then turnover gates 2–6
