@@ -102,7 +102,7 @@ ROLES = {
     "CHG_ELSE": lambda lam: (
         "Charge session ended (no full-charge anchor)" in lam["text"]
     ),
-    "TAIL_5S": lambda lam: "absorb_tail_min_a->value() = i" in lam["text"],
+    "TAIL_5S": lambda lam: "absorb_tail_pending_a->value() = i" in lam["text"],
     "MANUAL": lambda lam: "MANUAL ANCHOR" in lam["text"],
     "WIFI_RB": lambda lam: "esp_wifi_get_ps" in lam["text"],
     "MEANNET": lambda lam: (

@@ -115,6 +115,9 @@
 #                180 s. A reset that cannot be bridged invalidates BOTH anchors.
 #            (e) O2: the full-charge anchor needs the CV current to have tapered to
 #                <= anchor_taper_max_a (10 A; LiTime stops at 6.48 A [M]).
+#                Review 2026-09-25: a CV reading counts only once the next 5 s
+#                reading is also CV, so the one averaged reading that straddles a
+#                mid-CV charger stop cannot pass O2 (host test S4c).
 #            (f) max_current 200 -> 400 A (one substitution drives the driver, the
 #                CHARGE/ENERGY conversion and PWR_LIMIT, now 0x0960). The 350 A
 #                plausibility guard can trip at last. LSB 0.763 mA, still finer than
@@ -1381,6 +1384,10 @@ globals:
     type: float
     initial_value: 'NAN'    # O2: lowest charge current seen in CV this session
     restore_value: no
+  - id: absorb_tail_pending_a
+    type: float
+    initial_value: 'NAN'    # O2: last CV reading, committed only when the next is CV too
+    restore_value: no
   - id: sess_in_start
     type: float
     initial_value: '0.0'
@@ -1423,11 +1430,24 @@ interval:
                 float i = id(ina228_current).state;
                 if (i > id(charge_peak_a_raw))
                   id(charge_peak_a_raw) = i;   // Most-positive = highest charge A
-                // V1.28 (O2): lowest current while in CV (Absorption Phase pressed) =
-                // how far the charge tapered before the charger stopped.
-                if (id(battery_fully_charged).state &&
-                    (isnan(id(absorb_tail_min_a)) || i < id(absorb_tail_min_a)))
-                  id(absorb_tail_min_a) = i;
+      # V1.28 (O2): lowest current while in CV (Absorption Phase pressed) =
+      # how far the charge tapered before the charger stopped.
+      # Review 2026-09-25 (host test S4c): a reading is committed only when the
+      # NEXT 5 s reading is also in CV. The one 1.6 s-averaged conversion that
+      # straddles a charger stop reads between I_cv and 0 while Absorption Phase
+      # is still held on by its 30 s delayed_off; committed directly, a stop at
+      # 30 A read 8 A and anchored a false 100 %. The reading after a stop is
+      # <= charge_threshold_a, which clears the pending one uncommitted.
+      - lambda: |-
+          const float i = id(ina228_current).state;
+          if (id(battery_fully_charged).state && i > ${charge_threshold_a}f) {
+            const float p = id(absorb_tail_pending_a);
+            if (!isnan(p) && (isnan(id(absorb_tail_min_a)) || p < id(absorb_tail_min_a)))
+              id(absorb_tail_min_a) = p;
+            id(absorb_tail_pending_a) = i;
+          } else {
+            id(absorb_tail_pending_a) = NAN;
+          }
       - if:
           condition:
             lambda: 'return id(ina228_current).state < ${discharge_threshold_a}f;'
@@ -2984,6 +3004,7 @@ binary_sensor:
           id(charge_session_start_v) = id(ina228_voltage).state;
           id(charge_peak_a_raw)      = 0.0f;   // Reset; 5s interval seeds peak from CC phase
           id(absorb_tail_min_a)      = NAN;    // V1.28 (O2): CV taper tracker
+          id(absorb_tail_pending_a)  = NAN;
           id(sess_in_start)          = id(brk_in_ah);   // V1.28: CHARGE session totals
           id(sess_whin_start)        = id(brk_whin);
           ESP_LOGI("bank",
@@ -3220,6 +3241,7 @@ binary_sensor:
 
                   // ---- V1.28: re-anchor SOC at this full charge (clean bracket) ----
                   id(absorb_tail_min_a) = NAN;
+                  id(absorb_tail_pending_a) = NAN;
                   if (!isnan(hw_now)) {
                     id(soc_anchor_set).execute(hw_now, 1, true);
                   } else {
@@ -3246,6 +3268,7 @@ binary_sensor:
                   bool was_set = id(absorption_reached);
                   id(absorption_reached) = false;
                   id(absorb_tail_min_a) = NAN;   // V1.28 (O2)
+                  id(absorb_tail_pending_a) = NAN;
                   // V1.19: discard any accumulated CV time — a partial session is not a
                   // valid charger-health sample (the trend metric is only meaningful
                   // across COMPLETED absorption profiles). last_absorption_min untouched.
@@ -3533,6 +3556,7 @@ button:
             }
           }
           id(absorb_tail_min_a) = NAN;
+          id(absorb_tail_pending_a) = NAN;
           id(hw_bridge_count) = 0;   // V1.26: new anchor-to-anchor cycle
           id(absorption_reached) = false;
           id(discharge_peak_a_raw) = 0.0f;

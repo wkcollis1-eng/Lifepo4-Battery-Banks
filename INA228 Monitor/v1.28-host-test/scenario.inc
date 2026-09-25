@@ -176,7 +176,7 @@ int main() {
     float soc_pre = soc();
     is_charging_.state = true; CHG_PRESS();
     V_BUS = 14.4; battery_fully_charged_.state = true; absorption_reached_.v = true;
-    run(600, 30.0); ina228_current->state = 30.0f; TAIL_5S();
+    run(600, 30.0); ina228_current->state = 30.0f; TAIL_5S(); TAIL_5S();   // 2 CV polls: one commits
     battery_fully_charged_.state = false; is_charging_.state = false;
     V_BUS = 13.4; run(60, -0.0105);
     hw_charge_ah->update(); CHG_SESS();
@@ -194,7 +194,7 @@ int main() {
     V_BUS = 14.4; battery_fully_charged_.state = true; absorption_reached_.v = true;
     double deficit = (100.0 - soc()) / 100.0 * C_AH;
     run(3600.0 * deficit / 0.99 / 20.0, 20.0);
-    ina228_current->state = 6.5f; TAIL_5S();
+    ina228_current->state = 6.5f; TAIL_5S(); TAIL_5S();   // 2 CV polls: one commits
     battery_fully_charged_.state = false; is_charging_.state = false;
     hw_charge_ah->update(); CHG_SESS(); if (CHG_COND()) { CHG_THEN(); ah_discharged_cycle->reset(); ah_charged_cycle->reset(); wh_discharged_cycle->reset(); self_discharge_ah->reset(); }
     CHECK(brk_clean_.v && soc_anchor_src_.v == 1, "clean anchor, bracket starts");
@@ -205,7 +205,7 @@ int main() {
     is_charging_.state = true; CHG_PRESS();
     V_BUS = 14.4; battery_fully_charged_.state = true; absorption_reached_.v = true;
     run(3600.0 * (drain / 0.99) / 5.0, 5.0);
-    ina228_current->state = 5.0f; TAIL_5S();
+    ina228_current->state = 5.0f; TAIL_5S(); TAIL_5S();   // 2 CV polls: one commits
     battery_fully_charged_.state = false; is_charging_.state = false;
     hw_charge_ah->update(); CHG_SESS();
     if (CHG_COND()) { CHG_THEN(); ah_discharged_cycle->reset(); ah_charged_cycle->reset(); wh_discharged_cycle->reset(); self_discharge_ah->reset(); }
@@ -268,6 +268,47 @@ int main() {
     float before = soc_last_good_.v;
     run(60, -0.0105);
     CHECK(soc_anchor_src_.v == 4 && std::fabs(soc() - before) < 0.06f, "SOC carries on from %.3f%% -> %.3f%% (%s)", before, soc(), soc_source->state.c_str());
+  }
+
+  // =============== S4c (review 2026-09-25): mid-CV stop with ONE straddling reading ===============
+  // The INA228 averages 256 x 6.244 ms = 1.6 s. The conversion that covers a charger
+  // stop reads between the CV current and ~0. Absorption Phase is still ON for its
+  // 30 s delayed_off and the reading is > charge_threshold_a, so the 5 s tracker sees it.
+  // V1.28 as first built committed it: the 8 A case FAILED here ("anchor ACCEPTED").
+  for (int k = 0; k < 2; k++) {
+    const float straddle = k == 0 ? 8.0f : 15.0f;   // k=0 fault, k=1 control (> 10 A)
+    printf("\n=== S4c charge stopped mid-CV at 30 A, straddling reading %.1f A ===\n", straddle);
+    run(3600.0 * 5, -3.0);
+    is_charging_.state = true; CHG_PRESS();
+    V_BUS = 14.4; battery_fully_charged_.state = true; absorption_reached_.v = true;
+    run(600, 30.0); ina228_current->state = 30.0f; TAIL_5S(); TAIL_5S();
+    ina228_current->state = straddle; TAIL_5S();          // the one straddling conversion
+    ina228_current->state = 0.0f; TAIL_5S();              // charger off, Absorption Phase held on
+    battery_fully_charged_.state = false; is_charging_.state = false;
+    V_BUS = 13.4; run(60, -0.0105);
+    hw_charge_ah->update(); CHG_SESS();
+    bool ok = CHG_COND();
+    CHECK(!ok, "O2 refuses a mid-CV stop at 30 A (straddle %.1f A): CV tail read %.1f A, anchor %s",
+          straddle, absorb_tail_min_a_.v, ok ? "ACCEPTED - false 100 pct" : "refused");
+    if (!ok) CHG_ELSE();
+    else { absorption_reached_.v = false; absorb_tail_min_a_.v = NAN; }
+  }
+
+  // =============== S4d (review 2026-09-25): the straddle reading is dropped, not carried ===============
+  printf("\n=== S4d straddle, charger off, charger back on at 30 A ===\n");
+  {
+    run(3600.0, -3.0);
+    is_charging_.state = true; CHG_PRESS();
+    V_BUS = 14.4; battery_fully_charged_.state = true; absorption_reached_.v = true;
+    run(600, 30.0); ina228_current->state = 30.0f; TAIL_5S();
+    ina228_current->state = 8.0f; TAIL_5S();               // straddles the stop
+    ina228_current->state = 0.0f; TAIL_5S();               // Absorption Phase still held on
+    ina228_current->state = 30.0f; TAIL_5S(); TAIL_5S();   // charger back, CV again
+    CHECK(absorb_tail_min_a_.v > 29.0f, "straddle reading dropped at the stop: CV tail %.1f A", absorb_tail_min_a_.v);
+    battery_fully_charged_.state = false; is_charging_.state = false;
+    V_BUS = 13.4; run(60, -0.0105);
+    hw_charge_ah->update(); CHG_SESS();
+    if (!CHG_COND()) CHG_ELSE();
   }
 
   printf("\n%d passed, %d failed\n", g_pass, g_fail);
