@@ -1,0 +1,56 @@
+entity_id,state,last_changed_utc
+sensor.basement_battery_bank_monitor_diag_status,unknown,2026-09-25T14:10:41.880888+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-4 1/9: base (panel off),2026-09-25T14:11:42.752825+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-4 2/9: lit page_main,2026-09-25T14:17:02.763012+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-4 3/9: base (panel off),2026-09-25T14:22:22.768672+00:00
+sensor.basement_battery_bank_monitor_diag_status,"TB-4 4/9: BLACK frame, panel on",2026-09-25T14:27:42.779999+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-4 5/9: base (panel off),2026-09-25T14:33:02.792604+00:00
+sensor.basement_battery_bank_monitor_diag_status,"TB-4 6/9: WHITE frame, panel on",2026-09-25T14:38:22.819170+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-4 7/9: base (panel off),2026-09-25T14:43:42.825055+00:00
+sensor.basement_battery_bank_monitor_diag_status,"TB-4 8/9: 1 ms loop interval (extra CPU load), panel off",2026-09-25T14:49:02.830589+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-4 9/9: base (panel off),2026-09-25T14:54:22.855645+00:00
+sensor.basement_battery_bank_monitor_diag_status,"TB-4 done - panel off, loop interval restored",2026-09-25T14:59:42.856941+00:00
+sensor.basement_battery_bank_monitor_diag_status,"TB-1 1/3: Wi-Fi ON control, 10 min",2026-09-25T15:00:48.916227+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-1 2/3: Wi-Fi OFF 10 min - HA shows unavailable; results arrive after reconnect,2026-09-25T15:10:48.938315+00:00
+sensor.basement_battery_bank_monitor_diag_status,unavailable,2026-09-25T15:12:51.877234+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-1 2/3: Wi-Fi OFF 10 min - HA shows unavailable; results arrive after reconnect,2026-09-25T15:20:59.926320+00:00
+sensor.basement_battery_bank_monitor_diag_status,"TB-1 3/3: Wi-Fi ON control, 10 min",2026-09-25T15:21:14.777288+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-1 done,2026-09-25T15:31:14.785785+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-4 1/9: base (panel off),2026-09-25T15:32:15.687780+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-4 2/9: lit page_main,2026-09-25T15:37:35.709486+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-4 3/9: base (panel off),2026-09-25T15:42:55.699320+00:00
+sensor.basement_battery_bank_monitor_diag_status,"TB-4 4/9: BLACK frame, panel on",2026-09-25T15:48:15.716343+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-4 5/9: base (panel off),2026-09-25T15:53:35.712567+00:00
+sensor.basement_battery_bank_monitor_diag_status,"TB-4 6/9: WHITE frame, panel on",2026-09-25T15:58:55.711006+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-4 7/9: base (panel off),2026-09-25T16:04:15.721195+00:00
+sensor.basement_battery_bank_monitor_diag_status,"TB-4 8/9: 1 ms loop interval (extra CPU load), panel off",2026-09-25T16:09:35.716597+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-4 9/9: base (panel off),2026-09-25T16:14:55.832793+00:00
+sensor.basement_battery_bank_monitor_diag_status,"TB-4 done - panel off, loop interval restored",2026-09-25T16:20:15.847575+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-2 1/5: TX max 20.00 dBm (asked 20.5),2026-09-25T16:21:16.892751+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-2 2/5: TX max 17.00 dBm (asked 17.0),2026-09-25T16:37:16.910632+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-2 3/5: TX max 14.00 dBm (asked 14.0),2026-09-25T16:53:16.929398+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-2 4/5: TX max 11.00 dBm (asked 11.0),2026-09-25T17:09:16.953223+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-2 5/5: TX max 8.50 dBm (asked 8.5),2026-09-25T17:25:16.969537+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-2 done - TX power restored,2026-09-25T17:41:16.978126+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-4 1/9: base (panel off),2026-09-25T17:42:18.029392+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-4 2/9: lit page_main,2026-09-25T17:47:38.035318+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-4 3/9: base (panel off),2026-09-25T17:52:58.043570+00:00
+sensor.basement_battery_bank_monitor_diag_status,"TB-4 4/9: BLACK frame, panel on",2026-09-25T17:58:18.059266+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-4 5/9: base (panel off),2026-09-25T18:03:38.042369+00:00
+sensor.basement_battery_bank_monitor_diag_status,"TB-4 6/9: WHITE frame, panel on",2026-09-25T18:08:58.078140+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-4 7/9: base (panel off),2026-09-25T18:14:18.093200+00:00
+sensor.basement_battery_bank_monitor_diag_status,"TB-4 8/9: 1 ms loop interval (extra CPU load), panel off",2026-09-25T18:19:38.044485+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-4 9/9: base (panel off),2026-09-25T18:24:58.126863+00:00
+sensor.basement_battery_bank_monitor_diag_status,"TB-4 done - panel off, loop interval restored",2026-09-25T18:30:18.134410+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-3 1/5: AVG 1 (ADC_CONFIG 0xFFF8),2026-09-25T18:31:20.140355+00:00
+sensor.basement_battery_bank_monitor_diag_status,Stopped - all test settings restored,2026-09-25T18:31:33.881098+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-3 1/5: AVG 1 (ADC_CONFIG 0xFFF8),2026-09-25T19:08:54.629941+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-3 2/5: AVG 4 (ADC_CONFIG 0xFFF9),2026-09-25T19:14:04.739674+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-3 3/5: AVG 16 (ADC_CONFIG 0xFFFA),2026-09-25T19:19:14.759432+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-3 4/5: AVG 64 (ADC_CONFIG 0xFFFB),2026-09-25T19:24:24.766465+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-3 5/5: AVG 128 (ADC_CONFIG 0xFFFC),2026-09-25T19:29:34.786851+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-3 done - ADC_CONFIG restored,2026-09-25T19:34:44.800230+00:00
+sensor.basement_battery_bank_monitor_diag_status,"TB-5 1/3: base ADC config, 15 min",2026-09-25T19:36:00.963825+00:00
+sensor.basement_battery_bank_monitor_diag_status,"TB-5 2/3: ADC_CONFIG 0xFDC5, 15 min",2026-09-25T19:51:00.978983+00:00
+sensor.basement_battery_bank_monitor_diag_status,"TB-5 3/3: restored ADC config, 15 min",2026-09-25T20:06:11.002074+00:00
+sensor.basement_battery_bank_monitor_diag_status,TB-5 done,2026-09-25T20:21:21.022292+00:00

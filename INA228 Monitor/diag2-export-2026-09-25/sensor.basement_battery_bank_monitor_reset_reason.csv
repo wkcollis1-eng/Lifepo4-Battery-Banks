@@ -1,0 +1,5 @@
+entity_id,state,last_changed_utc
+sensor.basement_battery_bank_monitor_reset_reason,unknown,2026-09-25T14:10:41.883873+00:00
+sensor.basement_battery_bank_monitor_reset_reason,software via esp_restart,2026-09-25T14:10:42.016663+00:00
+sensor.basement_battery_bank_monitor_reset_reason,unavailable,2026-09-25T15:12:51.909607+00:00
+sensor.basement_battery_bank_monitor_reset_reason,software via esp_restart,2026-09-25T15:20:59.926902+00:00

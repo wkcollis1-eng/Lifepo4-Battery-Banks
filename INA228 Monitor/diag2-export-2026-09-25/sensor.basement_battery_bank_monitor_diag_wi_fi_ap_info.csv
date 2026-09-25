@@ -1,0 +1,10 @@
+entity_id,state,last_changed_utc
+sensor.basement_battery_bank_monitor_diag_wi_fi_ap_info,unknown,2026-09-25T14:10:41.883104+00:00
+sensor.basement_battery_bank_monitor_diag_wi_fi_ap_info,"ch 8, 2nd none, sta bw HT40, 11bgn, tx max 20.00 dBm",2026-09-25T14:10:42.016197+00:00
+sensor.basement_battery_bank_monitor_diag_wi_fi_ap_info,unavailable,2026-09-25T15:12:51.878071+00:00
+sensor.basement_battery_bank_monitor_diag_wi_fi_ap_info,"ch 8, 2nd none, sta bw HT40, 11bgn, tx max 20.00 dBm",2026-09-25T15:20:59.926759+00:00
+sensor.basement_battery_bank_monitor_diag_wi_fi_ap_info,"ch 8, 2nd none, sta bw HT40, 11bgn, tx max 17.00 dBm",2026-09-25T16:37:40.687232+00:00
+sensor.basement_battery_bank_monitor_diag_wi_fi_ap_info,"ch 8, 2nd none, sta bw HT40, 11bgn, tx max 14.00 dBm",2026-09-25T16:53:40.691541+00:00
+sensor.basement_battery_bank_monitor_diag_wi_fi_ap_info,"ch 8, 2nd none, sta bw HT40, 11bgn, tx max 11.00 dBm",2026-09-25T17:09:40.696223+00:00
+sensor.basement_battery_bank_monitor_diag_wi_fi_ap_info,"ch 8, 2nd none, sta bw HT40, 11bgn, tx max 8.50 dBm",2026-09-25T17:25:40.700354+00:00
+sensor.basement_battery_bank_monitor_diag_wi_fi_ap_info,"ch 8, 2nd none, sta bw HT40, 11bgn, tx max 20.00 dBm",2026-09-25T17:41:40.707070+00:00
