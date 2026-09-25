@@ -1528,6 +1528,14 @@ Physical work is Bill's call (R14); V1.28 waits on his go (R12).
 
 ### 10.7 Bill's call and the V1.28 content (2026-09-25)
 
+**Built (2026-09-25).** `INA228 Monitor/battery-bank-monitor.yaml` is now
+V1.28, and it implements this list.
+
+- Validation, predictions and flash notes are in
+  `INA228 Monitor/V1.28-release-notes.md`.
+- The host replay is in `INA228 Monitor/v1.28-host-test/`: 42 / 42 pass.
+- Not flashed; that is Bill's call (R14).
+
 **Decision (Bill).** B1 is reading (i): the XIAO runs in modem sleep.
 
 - The DS18B20 updates correctly.
