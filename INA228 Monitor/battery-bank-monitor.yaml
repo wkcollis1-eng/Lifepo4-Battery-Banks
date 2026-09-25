@@ -1,8 +1,10 @@
 # ============================================================================
-# Battery Bank Monitor V1.27 — PRODUCTION Configuration
+# Battery Bank Monitor V1.28 — PRODUCTION Configuration
 #   CORE (backup readiness — must be correct): V/I/T acquisition, stale-bus FAULT
 #     watchdog, 3-tier low-voltage alarms + overvoltage guard, bank_state machine,
-#     runtime-remaining, and SOC (Coulomb counter anchored at full charge).
+#     runtime-remaining, and SOC (INA228 CHARGE register against a full-charge
+#     anchor — V1.28). V1.28 moves the CHARGE read (hw_charge_ah), its INA228
+#     reset check and the V1.26 bridge INTO CORE: they now source SOC.
 #   OBSERVABILITY (free data, isolated — never feeds back into CORE): stasis
 #     trend, lifetime + per-outage energy, self-discharge reconciliation logger,
 #     opportunistic Ri. A bug in this layer can produce a wrong number but cannot
@@ -11,8 +13,10 @@
 #     socket; external 375 µΩ DROK Kelvin shunt in negative cable (low-side).
 #     INA228 onboard 15 mΩ shunt REMOVED; VBUS jumper LEFT OPEN (low-side default);
 #     VBUS driven from positive busbar via inline-fused lead at breakout terminal block.
-#   Source-level reviewed against ESPHome 2026.5.x. Flash-ready after credentials
-#     are set in secrets.yaml. Apparent Ri (V1.8) remains PROVISIONAL.
+#   Source-level reviewed against ESPHome 2026.5.x; V1.28 validated against
+#     ESPHome 2026.9.0 (config, codegen, host g++ of every lambda; the real
+#     compile is Device Builder's). Flash-ready after credentials are set in
+#     secrets.yaml. Apparent Ri (V1.8) remains PROVISIONAL.
 # ============================================================================
 # Purpose : Full instrumentation for 12V/500Ah LiFePO4 battery bank with
 #           Giandel 1500W inverter and LiTime 80A charger. Reports V/I/P,
@@ -53,7 +57,7 @@
 #                 NOTE: UPS board has A0 bridged → 0x41. Different address.
 #   Shunt       : 375 µΩ (DROK 200A/75mV manganin; onboard INA228 shunt REMOVED)
 #   ADC range   : ±163.84 mV (adc_range 0 — mandatory for 75 mV at 200A shunt)
-#   Max current : 200 A
+#   Max current : 400 A (V1.28, substitution ina_max_current_a; was 200 A)
 #
 # Sign convention — Option B wiring (low-side topology, V2 board):
 #   Shunt installed in the negative cable between battery− and the negative busbar.
@@ -76,13 +80,68 @@
 #   Inverter RTE: 90.3% @ 440 W. LiTime: CC→80 A, CV→14.6 V, taper, stop.
 #   Plateau/knee/cliff boundaries: TODO cross-check against report §Fig.1.
 #
-# Survival sleep: not implemented. Monitor ~100 mA = 8% of inverter standby;
-#   buys ~1 day. Protection: HA 3-tier automation + inverter LVC + BMS.
+# Survival sleep: not implemented. V1.28: the monitor draws ~25 mA at 3.3 V
+#   (the XIAO runs in modem sleep - diag2 TB-1 and Bill's B1 call, 2026-09-25;
+#   Seeed's own XIAO test: 24 mA modem sleep, 74 mA no sleep), i.e. ~7-8 mA at
+#   the bank. Was "~100 mA" (the no-sleep figure). Sleeping it would buy ~2 h,
+#   not ~1 day. Protection: HA 3-tier automation + inverter LVC + BMS.
 #
 # vs ups-monitor.yaml: INA228 0x40 (not 0x41), external 375 µΩ shunt, 397 Ah,
 #   float_voltage 13.26 V, no BP-65, no survival sleep.
 #
 # Changelog:
+#   V1.28 — SOC from the INA228 CHARGE register; noise fixes from the diag2 run
+#            (2026-09-25). Scope and evidence: docs/soc-noise-deep-dive.md §10.7,
+#            docs/soc-v128-review.md B2/B3/O1/O2, docs/soc-accuracy-turnover.md §5.
+#            NOISE (firmware only, diag2 [M]):
+#            (a) wifi output_power 20 -> 11 dBm (TB-2: unlit sd 5.15 -> 1.84 mA,
+#                ENERGY 0.449 -> 0.231 W; Q moved -2.2 mA with the noise).
+#            (b) ADC 0xFFFC -> 0xFDC5: bus 2074 us, shunt 4120 us, temp 50 us,
+#                AVG 256. Shunt time per reading x2 at the same 1.6 s cycle
+#                (TB-5: sd ratio 0.735, CI 0.670-0.806, predicted 0.707).
+#            SOC (CORE):
+#            (c) SOC = 100 + net / C, net = CHARGE since the anchor, with CE applied
+#                to charge in (O1: recon_coul_eff), the I_off term (soc_offset_ma)
+#                and the SD model. No deadband. Ladder (review B3): confirmed
+#                anchor > provisional anchor (seeded so SOC is continuous: from the
+#                last CHARGE SOC, else the SW ledger) > SW-ledger movement from the
+#                last CHARGE SOC while CHARGE is invalid. Never NAN. "SOC Source"
+#                names the rung. The V1.27 ledger stays as "SOC (SW Ledger)".
+#                Review 2026-09-25: the hours in the I_off term are carried across
+#                a reboot (saved in 0.1 h steps, + uptime until HA time is valid).
+#            (d) B2a: SHUNT_CAL, ADC_CONFIG and TEMP_LIMIT are checked on every
+#                CHARGE poll against this boot's readback; a runtime INA228 reset
+#                publishes nothing, says so, and reboots so the boot check bridges.
+#                Review 2026-09-25: after 3 such reboots in a row the next waits
+#                for 30 min of uptime (<= 2/h, not ~1/min), cleared after 1 h held.
+#                B2b: the "first boot on sentinel firmware" branch is retired
+#                (sentinel_established). B2c: CHARGE counts only if read within
+#                180 s. A reset that cannot be bridged invalidates BOTH anchors.
+#            (e) O2: the full-charge anchor needs the CV current to have tapered to
+#                <= anchor_taper_max_a (10 A; LiTime stops at 6.48 A [M]).
+#                Review 2026-09-25: a CV reading counts only once the next 5 s
+#                reading is also CV, so the one averaged reading that straddles a
+#                mid-CV charger stop cannot pass O2 (host test S4c).
+#            (f) max_current 200 -> 400 A (one substitution drives the driver, the
+#                CHARGE/ENERGY conversion and PWR_LIMIT, now 0x0960). The 350 A
+#                plausibility guard can trip at last. LSB 0.763 mA, still finer than
+#                the ADC's 0.833 mA step. The first V1.28 boot rescales the bridge
+#                offsets by the register's count (hw_lsb_a), so HW Net Charge and
+#                HW Energy continue without a step.
+#            OBSERVABILITY:
+#            (g) CHARGE bracket since the anchor, sign-split per poll: Ah in/out,
+#                Wh in/out (dQ x V_bus - NOT the ENERGY register, which counts |P|
+#                per conversion: +2.2 Wh/day of noise in the quiet state, +8.3 when
+#                noisy [D]), hours, mean net current; per-session charge Ah/Wh; the
+#                anchor closure at each full charge; RECON (Last Unseen Drain,
+#                Recommended SD Rate, Suggested Offset Current) now from CHARGE
+#                brackets between two clean anchors, sigma with the offset term.
+#                The V1.27 ledger RECON is still logged, no longer published.
+#            (h) Readbacks: INA228 SHUNT_CAL/ADC_CONFIG, Wi-Fi power-save mode and
+#                TX power from the driver; an idle ENERGY-rate noise gauge + state.
+#            (i) Comments: survival sleep ~100 mA -> ~25 mA; reset_on_boot is now
+#                load-bearing; CURRENT_LSB literals replaced by the substitution.
+#
 #   V1.27 — Boot reset-check result PUBLISHED (2026-09-18). The V1.25/V1.26
 #            on_boot INA228 check only LOGGED its outcome, ~0.2 s into boot
 #            with serial off and Wi-Fi not yet up, so no one could read it:
@@ -301,6 +360,9 @@ substitutions:
   # Logged as recommended self_discharge_pct_per_month. Writes nothing to SOC.
   # Quality is duration-driven, not size-driven — trust long brackets.
   recon_coul_eff:           "0.99"   # coulombic efficiency (Ah_out/Ah_in)
+                                     # V1.28 (O1): ALSO applied to SOC - each Ah of
+                                     # charge in counts as recon_coul_eff Ah (the
+                                     # conservative side; 1.0 turns it off).
   recon_min_ah_in:          "1.0"    # Ah; skip reconciliation below this charge size.
                                      # V1.25: was 20.0, which discarded the best bracket
                                      # there is — long idle, closed by a SMALL top-up
@@ -311,6 +373,21 @@ substitutions:
   recon_min_days:           "14.0"   # d; brackets shorter than this are LOGGED ONLY —
                                      # never written to the two recon entities (V1.25).
                                      # Same 14 d as the LOW-CONFIDENCE label (one constant).
+
+  # --- V1.28: SOC from the INA228 CHARGE register ----------------------------
+  ina_max_current_a:        "400.0"  # A; INA228 range. CURRENT_LSB = this / 2^19 [S: ESPHome
+                                     # ina2xx_base.cpp: ldexp(max_current, -19)]. ONE source for
+                                     # max_current, the CHARGE/ENERGY conversion and PWR_LIMIT.
+                                     # Decimal REQUIRED (lambdas append f / divide as double).
+  soc_offset_ma:            "0.0"    # mA; I_off - a constant drain the shunt does not see or
+                                     # misreads. SOC subtracts I_off x hours since the anchor
+                                     # (positive = SOC lower). Set it from "Suggested Offset
+                                     # Current" after a clean full-to-full bracket.
+  anchor_taper_max_a:       "10.0"   # A; O2 - a full-charge anchor needs the CV current to have
+                                     # tapered to <= this before the charger stopped. LiTime
+                                     # stops at 6.48 A (C/77) [M: commissioning report].
+  ina_offset_max_ma:        "2.67"   # mA; INA228 offset limit 1 uV / 375 uOhm [S: TI SLYS021A
+                                     # p1]. RECON sigma term (x hours of the bracket).
 
   # --- Voltage thresholds ----------------------------------------------------
   # absorption_voltage and float_voltage: reference only — not used in any lambda.
@@ -369,15 +446,17 @@ esphome:
   name: ${device_name}
   friendly_name: ${friendly_name}
   comment: ${device_description}
+  includes:
+    - "<esp_wifi.h>"   # V1.28: esp_wifi_get_ps / esp_wifi_get_max_tx_power readbacks
   project:
     name: "wkcollis1.battery-bank-monitor"
-    version: "1.27"
+    version: "1.28"
   on_boot:
     - priority: -200
       then:
         - logger.log:
             level: INFO
-            format: "Battery Bank Monitor V1.27 boot -- INA228 @ 0x40, DS18B20 on GPIO10"
+            format: "Battery Bank Monitor V1.28 boot -- INA228 @ 0x40, DS18B20 on GPIO10"
         # Start panel dark — wakes on button press only. turn_off() not setup() (issue #1393).
         - lambda: 'id(panel).turn_off();'
         # alert_reason shows "none" from boot (V1.21) — not "unknown" until first alert
@@ -422,48 +501,56 @@ esphome:
             // the HW data through a monitor power loss). hw_charge_ah/hw_energy_wh
             // report register + a persisted offset and persist their last value;
             // on a reset the offset becomes that saved value, so the counters carry
-            // on from where they stopped and the anchor stays valid. "Confirmed" =
-            // sentinel gone AND CHARGE near 0; a sentinel gone with CHARGE still
-            // counting is the first boot on sentinel firmware (never written — no
-            // reset). Unreadable, or nothing saved to bridge from: invalidate, as
-            // V1.25. Neither ledger sees charge that moved while the monitor was
-            // off, or HW charge since the last save: <= 10 mAh (save step) + ~2 min
-            // of flow (60 s read + 60 s flash commit) — ~10.3 mAh at idle
-            // [D: 10 + 8.66 mA x 120 s / 3600], 1.0 Ah at 30 A [D: 30 x 120 / 3600].
+            // on from where they stopped and the anchor stays valid. Unreadable, or
+            // nothing saved to bridge from: invalidate. Neither ledger sees charge
+            // that moved while the monitor was off, or HW charge since the last
+            // save: <= 10 mAh (save step) + ~2 min of flow (60 s read + 60 s flash
+            // commit) — ~10.3 mAh at idle [D: 10 + 8.66 mA x 120 s / 3600], 1.0 Ah
+            // at 30 A [D: 30 x 120 / 3600].
+            // V1.28 (review B2b): the V1.26 "sentinel gone but CHARGE still counting
+            // = first boot on sentinel firmware" branch is RETIRED. V1.25-V1.27
+            // established the sentinel, so once sentinel_established is set a
+            // missing sentinel always means a reset. The old 0.5 Ah test assumed the
+            // check ran ~3 s after power-up; a reset caught by a poll during an 80 A
+            // charge reaches 2.9 Ah [D: 80 x 2.18 x 60 / 3600] and was misread.
+            // V1.28: CHARGE sources SOC (CORE). A reset that is not bridged
+            // invalidates BOTH anchors; SOC then carries on from the last CHARGE
+            // SOC through a provisional anchor (soc_estimate, review B3).
             {
               uint8_t reg = 0x10;
               uint8_t b[2] = {0, 0};
               bool ok = (id(bus_a).write(0x40, &reg, 1, false) == i2c::ERROR_OK) &&
                         (id(bus_a).read(0x40, b, 2) == i2c::ERROR_OK);
               uint16_t tl = ((uint16_t) b[0] << 8) | b[1];
-              // V1.26: raw CHARGE through the sensor's own read (one copy of the
+              // Raw registers through the sensors' own reads (one copy of each
               // conversion). hw_anchor_checked is still false: reads, no publish.
               id(hw_charge_ah).update();
+              id(hw_energy_wh).update();     // V1.28: raw ENERGY for the LSB migration
               float raw_ah = id(hw_charge_raw_ah);
+              float raw_wh = id(hw_energy_raw_wh);
+              bool anchored = !isnan(id(hw_charge_anchor_ah)) || !isnan(id(hw_prov_anchor_ah));
               // V1.27: the outcome is also PUBLISHED (ina228_reset_check). This runs
               // ~0.2 s into boot, before Wi-Fi is up and with serial off, so the log
-              // line alone reaches no one: Bill's 16:11 Restart streamed its first
-              // line 5.8 s after the reboot [M]. One message, two sinks.
+              // line alone reaches no one. One message, two sinks.
               char rc[256];
               if (ok && tl == 0x7FFE) {
                 snprintf(rc, sizeof(rc),
-                  "INA228 kept power across this boot (TEMP_LIMIT sentinel intact) - HW anchor %s",
-                  isnan(id(hw_charge_anchor_ah)) ? "not yet seeded" : "still valid");
+                  "INA228 kept power across this boot (TEMP_LIMIT sentinel intact) - SOC anchor %s",
+                  anchored ? "still valid" : "not yet seeded");
                 ESP_LOGI("bank.hwcheck", "%s", rc);
               } else if (!ok || isnan(raw_ah)) {
                 snprintf(rc, sizeof(rc),
-                  "INA228 reset check could not run (TEMP_LIMIT read %s, CHARGE read %s) - HW anchor %s; SW-HW delta Unknown until the next full-charge anchor",
+                  "INA228 reset check could not run (TEMP_LIMIT read %s, CHARGE read %s) - SOC anchor %s; SOC carries on from the last CHARGE SOC",
                   ok ? "ok" : "FAILED", isnan(raw_ah) ? "FAILED" : "ok",
-                  isnan(id(hw_charge_anchor_ah)) ? "was not seeded" : "INVALIDATED");
+                  anchored ? "INVALIDATED" : "was not seeded");
                 ESP_LOGW("bank.hwcheck", "%s", rc);
                 id(hw_charge_anchor_ah) = NAN;
-              } else if (fabsf(raw_ah) > 0.5f) {
-                // 0.5 Ah: a restarted register cannot reach it before this check.
-                // Power-up to here is ~1-3 s [I]; 3 s even at the 350 A plausibility
-                // limit is 0.29 Ah [D: 350 x 3 / 3600].
+                id(hw_prov_anchor_ah) = NAN;
+              } else if (!id(sentinel_established)) {
+                // Legacy only: a chip that never had the sentinel written.
                 snprintf(rc, sizeof(rc),
-                  "TEMP_LIMIT=0x%04X but CHARGE kept counting (%.3f Ah): no INA228 reset - first boot writing the sentinel; HW anchor %s",
-                  tl, raw_ah, isnan(id(hw_charge_anchor_ah)) ? "not yet seeded" : "still valid");
+                  "TEMP_LIMIT=0x%04X and the sentinel was never established: first boot writing it, no reset assumed - SOC anchor %s",
+                  tl, anchored ? "still valid" : "not yet seeded");
                 ESP_LOGI("bank.hwcheck", "%s", rc);
               } else if (!isnan(id(hw_charge_saved_ah))) {
                 id(hw_charge_offset_ah) = id(hw_charge_saved_ah);
@@ -471,21 +558,95 @@ esphome:
                   id(hw_energy_offset_wh) = id(hw_energy_saved_wh);
                 id(hw_bridge_count) += 1;
                 snprintf(rc, sizeof(rc),
-                  "INA228 power-on reset (TEMP_LIMIT=0x%04X, CHARGE=%.4f Ah): counters BRIDGED from the last saved %.3f Ah / %.1f Wh - HW anchor %s (bridge #%d this cycle)",
+                  "INA228 power-on reset (TEMP_LIMIT=0x%04X, CHARGE=%.4f Ah): counters BRIDGED from the last saved %.3f Ah / %.1f Wh - SOC anchor %s (bridge #%d this cycle)",
                   tl, raw_ah, id(hw_charge_saved_ah), id(hw_energy_saved_wh),
-                  isnan(id(hw_charge_anchor_ah)) ? "not yet seeded" : "KEPT", id(hw_bridge_count));
+                  anchored ? "KEPT" : "not yet seeded", id(hw_bridge_count));
                 ESP_LOGW("bank.hwcheck", "%s", rc);
               } else {
                 snprintf(rc, sizeof(rc),
-                  "INA228 power-on reset (TEMP_LIMIT=0x%04X, CHARGE=%.4f Ah) and no saved value to bridge from - HW anchor %s; SW-HW delta Unknown until the next full-charge anchor",
-                  tl, raw_ah, isnan(id(hw_charge_anchor_ah)) ? "was not seeded" : "INVALIDATED");
+                  "INA228 power-on reset (TEMP_LIMIT=0x%04X, CHARGE=%.4f Ah) and no saved value to bridge from - SOC anchor %s; SOC carries on from the last CHARGE SOC",
+                  tl, raw_ah, anchored ? "INVALIDATED" : "was not seeded");
                 ESP_LOGW("bank.hwcheck", "%s", rc);
                 id(hw_charge_anchor_ah) = NAN;
+                id(hw_prov_anchor_ah) = NAN;
+              }
+              // V1.28: CURRENT_LSB migration. With reset_on_boot: false the CHARGE
+              // and ENERGY registers keep their RAW COUNT when max_current changes,
+              // but each count now means a different current [S: ESPHome
+              // ina2xx_base.cpp: SHUNT_CAL is rewritten at setup, RSTACC is not set].
+              // Re-read at the new LSB, the history would scale by new/old (x2 for
+              // 200 -> 400 A: HW Net Charge would step by its whole accumulated
+              // value). hw_lsb_a holds the LSB the offsets were built on; when it
+              // differs, rescale the offsets by the register's own count:
+              //   old value = R x LSB_old + off_old = R x LSB_new + off_new
+              //   off_new   = off_old + raw_now x (LSB_old / LSB_new - 1)
+              // raw_now is R x LSB_new (hw_charge_raw_ah). Counts taken between the
+              // driver's SHUNT_CAL write and this read (~1-3 s) are mis-scaled by
+              // the same factor: ~0.01 mAh at idle [D: 10 mA x 3 s].
+              {
+                const float lsb_now = ${ina_max_current_a}f / 524288.0f;
+                const float lsb_old = id(hw_lsb_a);
+                if (fabsf(lsb_old - lsb_now) > 1e-9f) {
+                  if (!isnan(raw_ah) && !isnan(raw_wh)) {
+                    const float k = lsb_old / lsb_now - 1.0f;
+                    id(hw_charge_offset_ah) += raw_ah * k;
+                    id(hw_energy_offset_wh) += raw_wh * k;
+                    ESP_LOGW("bank.hwcheck",
+                      "CURRENT_LSB %.6g -> %.6g A: bridge offsets rescaled by the registers' %.4f Ah / %.1f Wh so HW Net Charge / HW Energy continue",
+                      lsb_old, lsb_now, raw_ah, raw_wh);
+                  } else {
+                    id(hw_charge_anchor_ah) = NAN;
+                    id(hw_prov_anchor_ah) = NAN;
+                    ESP_LOGW("bank.hwcheck",
+                      "CURRENT_LSB %.6g -> %.6g A but the registers were unreadable: HW series may step once; SOC anchor invalidated, SOC carries on",
+                      lsb_old, lsb_now);
+                  }
+                  id(hw_lsb_a) = lsb_now;
+                }
               }
               id(hw_anchor_checked) = true;
               id(ina228_reset_check).publish_state(rc);   // V1.27
             }
             wr16(0x10, 0x7FFE, "TEMP_LIMIT");   // V1.25: POR sentinel (see above)
+            id(sentinel_established) = true;    // V1.28 (B2b)
+
+            // V1.28 (B2a): capture this boot's INA228 configuration as the reference
+            // the CHARGE poll checks every 60 s. Read from the chip rather than
+            // hard-coded: the driver TRUNCATES 13107.2e6 x LSB x R to an integer, so
+            // it may be 3749 or 3750 [S: ina2xx_base.cpp configure_shunt_]. A POR
+            // restores SHUNT_CAL 1000h and ADC_CONFIG FB68h [S: SLYS021A §7.6.1].
+            {
+              auto rd16 = [](uint8_t r, uint16_t &out) -> bool {
+                uint8_t bb[2] = {0, 0};
+                if (id(bus_a).write(0x40, &r, 1, false) != i2c::ERROR_OK) return false;
+                if (id(bus_a).read(0x40, bb, 2) != i2c::ERROR_OK) return false;
+                out = ((uint16_t) bb[0] << 8) | bb[1];
+                return true;
+              };
+              uint16_t sc = 0, ac = 0;
+              bool ok2 = rd16(0x02, sc) && rd16(0x01, ac);
+              id(ina_expect_shunt_cal) = sc;
+              id(ina_expect_adc_config) = ac;
+              id(ina_expect_valid) = ok2;
+              // Design values: 0xFDC5 = MODE F | VBUSCT 2074 us | VSHCT 4120 us |
+              // VTCT 50 us | AVG 256 (the ina2xx block); SHUNT_CAL = 13107.2e6 x
+              // (max_current / 2^19) x 375 uOhm = 3750 at 400 A.
+              const uint16_t sc_design = (uint16_t) (13107.2e6f * (${ina_max_current_a}f / 524288.0f) * 0.000375f);
+              bool as_designed = ok2 && ac == 0xFDC5 && sc + 2 >= sc_design && sc <= sc_design + 2;
+              char cr[200];
+              snprintf(cr, sizeof(cr),
+                "SHUNT_CAL=%u (design %u) ADC_CONFIG=0x%04X (design 0xFDC5)%s",
+                sc, sc_design, ac,
+                !ok2 ? " - READ FAILED: runtime reset check off this boot" :
+                (as_designed ? "" : " - NOT AS DESIGNED"));
+              if (as_designed) ESP_LOGI("bank.hwcheck", "%s", cr);
+              else             ESP_LOGW("bank.hwcheck", "%s", cr);
+              id(ina228_config_readback).publish_state(cr);
+            }
+            // V1.28: publish the HW counters now that the offset is decided, so SOC
+            // leaves its boot fallback at once instead of after the first 60 s poll.
+            id(hw_charge_ah).update();
+            id(hw_energy_wh).update();
 
             // Limit registers first, then DIAG_ALRT to arm — all big-endian MSB first.
             // BUVL (0x0F): bus under-voltage — 12.20 V / 3.125 mV = 3904 = 0x0F40
@@ -500,10 +661,15 @@ esphome:
             //   ever fire on an impossible +250 A charge — the 80 A LiTime can't reach it).
             //   −250 A → −93.75 mV / 5 µV = −18750 → two's complement 0xB6C2
             wr16(0x0D, 0xB6C2, "SUVL");
-            // PWR_LIMIT (0x11): power over-limit — 1500 W / 0.3125 W = 4800 = 0x12C0
-            //   (PWR_LIMIT LSB = 256 × Power LSB = 256 × 3.2 × (200 A / 2^19) = 0.3125 W.
-            //   POWER register is magnitude — POL covers both directions.)
-            wr16(0x11, 0x12C0, "PWR_LIMIT");
+            // PWR_LIMIT (0x11): power over-limit, 1500 W. PWR_LIMIT LSB = 256 × POWER
+            //   LSB = 256 × 3.2 × CURRENT_LSB. V1.28: 400 A / 2^19 -> 0.625 W -> 2400 =
+            //   0x0960 (V1.27 at 200 A: 0.3125 W -> 0x12C0). Computed from the one
+            //   substitution so it cannot drift from max_current again.
+            //   POWER register is magnitude — POL covers both directions.
+            {
+              const float pwr_lsb = 256.0f * 3.2f * (${ina_max_current_a}f / 524288.0f);
+              wr16(0x11, (uint16_t) lroundf(1500.0f / pwr_lsb), "PWR_LIMIT");
+            }
 
             // DIAG_ALRT (0x0B): 0xA000 = ALATCH(bit15) + SLOWALERT(bit13) ONLY.
             // The limit-violation bits (POL=2, BUSUL=3, BUSOL=4, SHNTUL=5, SHNTOL=6,
@@ -551,7 +717,18 @@ wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
   fast_connect: true
+  # V1.28: the driver's actual mode is published as "WiFi Power Save (Driver)".
+  # B1 (Bill, 2026-09-25): the XIAO runs in modem sleep despite this setting —
+  # radio off moved the shunt only +2.3 mA against >= 11.4 mA for a receiver
+  # that stays on (diag2 TB-1). Left unchanged so the readback tests that.
+  # Forcing true no-sleep would add ~12-16 mA of real drain for no noise gain.
   power_save_mode: none
+  # V1.28: 11 dBm (was the 20 dBm default). diag2 TB-2 [M]: unlit noise fell
+  # from sd 5.15 mA / ENERGY 0.449 W at 20 dBm to 1.84 mA / 0.231 W at 11 dBm,
+  # the lit-OLED floor, and Q moved -2.2 mA with it. The knee is between 17
+  # and 14 dBm; no disconnect in 48 min at <= 14 dBm. ESPHome also caps the
+  # PHY calibration power at ceil(11) = 11 dBm [S: wifi/__init__.py].
+  output_power: 11dB
   reboot_timeout: 0s  # same rationale as api reboot_timeout above
   ap:
     ssid: "${friendly_name} Fallback"
@@ -769,6 +946,46 @@ script:
     then:
       - delay: ${display_timeout}
       - lambda: 'id(panel).turn_off();'
+
+  # V1.28: the ONE place a SOC anchor is set - full charge (src 1, clean), the
+  # manual button (2) and a provisional seed (3 ledger, 4 carried, 5 assumed).
+  # Starts a new CHARGE bracket: the Ah/Wh in/out accumulators, the hours and
+  # the I_off / CE terms all count from here. No delay: runs to completion
+  # inside the caller's execute().
+  - id: soc_anchor_set
+    mode: queued
+    parameters:
+      anchor_ah: float
+      src: int
+      clean: bool
+    then:
+      - lambda: |-
+          if (src >= 3) {
+            id(hw_prov_anchor_ah) = anchor_ah;
+          } else {
+            id(hw_charge_anchor_ah) = anchor_ah;
+            id(hw_prov_anchor_ah) = NAN;
+          }
+          id(soc_anchor_src) = src;
+          id(brk_clean) = clean;
+          id(brk_in_ah) = 0.0f;  id(brk_out_ah) = 0.0f;
+          id(brk_whin) = 0.0f;   id(brk_whout) = 0.0f;
+          id(brk_in_saved) = 0.0f;  id(brk_out_saved) = 0.0f;
+          id(brk_whin_saved) = 0.0f; id(brk_whout_saved) = 0.0f;
+          id(hours_since_anchor) = 0.0f;
+          id(hours_since_anchor_saved) = 0.0f;
+          id(hours_boot_base) = -(float) millis() / 3600000.0f;   // hours run on from 0 without HA time
+          auto t = id(ha_time).now();
+          id(anchor_epoch) = t.is_valid() ? (uint32_t) t.timestamp : 0u;   // 0 = set at first valid time
+          id(soc_unclamped) = NAN;
+
+  # V1.28 (B2a): a runtime INA228 reset was detected on a CHARGE poll. Reboot so
+  # the boot check bridges it (2 s lets the log line and the text sensor leave).
+  - id: ina_reset_reboot
+    mode: single
+    then:
+      - delay: 2s
+      - lambda: 'App.safe_reboot();'
 
 globals:
 
@@ -1030,6 +1247,174 @@ globals:
     initial_value: '0'      # resets bridged since the last full-charge anchor —
     restore_value: yes      # printed in CYCLE CONFIRM, cleared at every anchor
 
+  # ── V1.28: SOC from the INA228 CHARGE register ────────────────────────────
+  # NVS: 15 more restored values (45 + 12 integrations). NVS is 0x70000 = 112
+  # pages [S: generated partitions.csv]; each is one small entry. The bracket
+  # accumulators persist in steps (10 mAh / 0.1 Wh), like hw_charge_saved_ah:
+  # ~1 save per accumulator per hour at idle [D: 10 mA -> 10 mAh per 60 min].
+  - id: hw_prov_anchor_ah
+    type: float
+    initial_value: 'NAN'    # provisional anchor (review B3). Used only while
+    restore_value: yes      # hw_charge_anchor_ah is NAN; a clean full charge replaces it
+  - id: soc_anchor_src
+    type: int
+    initial_value: '0'      # 0 none, 1 full charge, 2 manual, 3 prov. from ledger,
+    restore_value: yes      # 4 prov. carried from last CHARGE SOC, 5 prov. assumed 100 %
+  - id: brk_clean
+    type: bool
+    initial_value: 'false'  # the current bracket started at an absorption-confirmed
+    restore_value: yes      # full charge (only such brackets feed RECON)
+  - id: anchor_epoch
+    type: uint32_t
+    initial_value: '0'      # HA time of the current anchor; 0 = not yet known
+    restore_value: yes
+  - id: soc_last_good
+    type: float
+    initial_value: 'NAN'    # last CHARGE-based SOC, persisted in 0.05 % steps — the
+    restore_value: yes      # carry-forward seed after a reset that could not be bridged
+  - id: brk_in_saved
+    type: float
+    initial_value: '0.0'
+    restore_value: yes
+  - id: brk_out_saved
+    type: float
+    initial_value: '0.0'
+    restore_value: yes
+  - id: brk_whin_saved
+    type: float
+    initial_value: '0.0'
+    restore_value: yes
+  - id: brk_whout_saved
+    type: float
+    initial_value: '0.0'
+    restore_value: yes
+  - id: last_session_ah
+    type: float
+    initial_value: 'NAN'    # CHARGE Ah into the bank, last charge session (no deadband)
+    restore_value: yes
+  - id: last_session_wh
+    type: float
+    initial_value: 'NAN'
+    restore_value: yes
+  - id: last_closure_ah
+    type: float
+    initial_value: 'NAN'    # CHARGE SOC error at the last anchor, Ah (>0 = read high)
+    restore_value: yes
+  - id: last_offset_suggest_ma
+    type: float
+    initial_value: 'NAN'    # RECON (CHARGE): constant-drain equivalent of U, mA
+    restore_value: yes
+  - id: hw_lsb_a
+    type: float
+    initial_value: '3.814697265625e-4'   # the LSB the bridge offsets were built on.
+    restore_value: yes      # Initial value = V1.27's 200 A / 2^19, so the first V1.28
+                            # boot migrates them to 400 A / 2^19 (on_boot).
+  - id: sentinel_established
+    type: bool
+    initial_value: 'true'   # V1.25-V1.27 wrote the TEMP_LIMIT sentinel on every boot
+    restore_value: yes      # (review B2b: a missing sentinel now always = reset)
+  # Transient
+  - id: brk_in_ah           # live bracket accumulators (seeded from *_saved at boot)
+    type: float
+    initial_value: '0.0'
+    restore_value: no
+  - id: brk_out_ah
+    type: float
+    initial_value: '0.0'
+    restore_value: no
+  - id: brk_whin
+    type: float
+    initial_value: '0.0'
+    restore_value: no
+  - id: brk_whout
+    type: float
+    initial_value: '0.0'
+    restore_value: no
+  - id: brk_loaded
+    type: bool
+    initial_value: 'false'  # *_saved copied into the live accumulators this boot
+    restore_value: no
+  - id: hw_prev_ah
+    type: float
+    initial_value: 'NAN'    # previous CHARGE reading; NAN after boot (first delta skipped)
+    restore_value: no
+  - id: hw_last_good_ms
+    type: uint32_t
+    initial_value: '0'      # millis() of the last published CHARGE read (B2c)
+    restore_value: no
+  - id: hw_energy_raw_wh
+    type: float
+    initial_value: 'NAN'    # raw ENERGY register Wh as last read (LSB migration)
+    restore_value: no
+  - id: ina_expect_shunt_cal
+    type: uint16_t
+    initial_value: '0'
+    restore_value: no
+  - id: ina_expect_adc_config
+    type: uint16_t
+    initial_value: '0'
+    restore_value: no
+  - id: ina_expect_valid
+    type: bool
+    initial_value: 'false'  # set once this boot's readback succeeded (B2a reference)
+    restore_value: no
+  - id: ina_reset_seen
+    type: bool
+    initial_value: 'false'  # a runtime reset is acted on once per boot
+    restore_value: no
+  - id: ina_reset_reboots
+    type: int
+    initial_value: '0'      # B2a reboots in a row (rate limit); cleared after 1 h of held config
+    restore_value: yes
+  - id: hours_since_anchor
+    type: float
+    initial_value: '0.0'
+    restore_value: no
+  - id: hours_since_anchor_saved
+    type: float
+    initial_value: '0.0'    # hours_since_anchor as last saved (0.1 h steps): carried across a reboot
+    restore_value: yes
+  - id: hours_boot_base
+    type: float
+    initial_value: 'NAN'    # hours_since_anchor - uptime h; seeded from the saved value at boot
+    restore_value: no
+  - id: soc_unclamped
+    type: float
+    initial_value: 'NAN'    # CHARGE SOC before the 0..100 clamp (anchor closure)
+    restore_value: no
+  - id: fb_active
+    type: bool
+    initial_value: 'false'  # SOC is on the ledger-movement fallback
+    restore_value: no
+  - id: fb_soc_ref
+    type: float
+    initial_value: 'NAN'
+    restore_value: no
+  - id: soc_live
+    type: float
+    initial_value: 'NAN'    # last CHARGE SOC this boot, unrounded (fallback reference;
+    restore_value: no       # soc_last_good is only saved in 0.05 % steps)
+  - id: fb_ledger_ref
+    type: float
+    initial_value: 'NAN'
+    restore_value: no
+  - id: absorb_tail_min_a
+    type: float
+    initial_value: 'NAN'    # O2: lowest charge current seen in CV this session
+    restore_value: no
+  - id: absorb_tail_pending_a
+    type: float
+    initial_value: 'NAN'    # O2: last CV reading, committed only when the next is CV too
+    restore_value: no
+  - id: sess_in_start
+    type: float
+    initial_value: '0.0'
+    restore_value: no
+  - id: sess_whin_start
+    type: float
+    initial_value: '0.0'
+    restore_value: no
+
 
 interval:
 
@@ -1063,6 +1448,24 @@ interval:
                 float i = id(ina228_current).state;
                 if (i > id(charge_peak_a_raw))
                   id(charge_peak_a_raw) = i;   // Most-positive = highest charge A
+      # V1.28 (O2): lowest current while in CV (Absorption Phase pressed) =
+      # how far the charge tapered before the charger stopped.
+      # Review 2026-09-25 (host test S4c): a reading is committed only when the
+      # NEXT 5 s reading is also in CV. The one 1.6 s-averaged conversion that
+      # straddles a charger stop reads between I_cv and 0 while Absorption Phase
+      # is still held on by its 30 s delayed_off; committed directly, a stop at
+      # 30 A read 8 A and anchored a false 100 %. The reading after a stop is
+      # <= charge_threshold_a, which clears the pending one uncommitted.
+      - lambda: |-
+          const float i = id(ina228_current).state;
+          if (id(battery_fully_charged).state && i > ${charge_threshold_a}f) {
+            const float p = id(absorb_tail_pending_a);
+            if (!isnan(p) && (isnan(id(absorb_tail_min_a)) || p < id(absorb_tail_min_a)))
+              id(absorb_tail_min_a) = p;
+            id(absorb_tail_pending_a) = i;
+          } else {
+            id(absorb_tail_pending_a) = NAN;
+          }
       - if:
           condition:
             lambda: 'return id(ina228_current).state < ${discharge_threshold_a}f;'
@@ -1232,6 +1635,22 @@ interval:
           else if (active)  on = true;         // solid — charge/discharge in progress
           if (on) id(led_out).turn_on(); else id(led_out).turn_off();
 
+  # V1.28: what the Wi-Fi driver is actually doing (B1: modem sleep despite
+  # power_save_mode: none; TX cap 11 dBm). esp_wifi_* fail before Wi-Fi starts.
+  - interval: 300s
+    then:
+      - lambda: |-
+          wifi_ps_type_t ps;
+          const char *m = "ERR";
+          if (esp_wifi_get_ps(&ps) == ESP_OK)
+            m = (ps == WIFI_PS_NONE) ? "NONE" :
+                (ps == WIFI_PS_MIN_MODEM) ? "MIN_MODEM (modem sleep, DTIM)" :
+                (ps == WIFI_PS_MAX_MODEM) ? "MAX_MODEM (modem sleep, listen interval)" : "OTHER";
+          id(wifi_ps_readback).publish_state(m);
+          int8_t q = 0;
+          if (esp_wifi_get_max_tx_power(&q) == ESP_OK)
+            id(wifi_txp_readback).publish_state(q * 0.25f);   // 0.25 dBm units
+
   # 60s health log — single-line diagnostic snapshot.
   - interval: 60s
     then:
@@ -1262,16 +1681,25 @@ sensor:
     model: INA228
     address: 0x40
     shunt_resistance: 0.000375 ohm # Ω (375 µΩ = 75 mV / 200 A) — unit suffix required per ESPHome docs example
-    max_current: 200.0 A           # — unit suffix required per ESPHome docs example; sets INA228 LSB scaling
+    max_current: ${ina_max_current_a} A   # V1.28: 400 A (was 200 A). Unit suffix required. Sets
+                                   # CURRENT_LSB = 400 / 2^19 = 0.763 mA, still finer than the ADC's
+                                   # own 0.833 mA step (312.5 nV / 375 µΩ), so nothing is lost; and
+                                   # the 350 A plausibility guard can now trip (±200 A range could not).
     adc_range: 0                   # 0 = ±163.84 mV full scale (mandatory); 1 = ±40.96 mV (clips at ~109 A)
-    reset_on_boot: false           # Preserve INA228 internal energy/charge accumulators across reboot.
-                                   # Our SOC tracking uses ESPHome integration sensors (not INA228 hardware
-                                   # accumulators) — this setting does not affect primary SOC data.
-                                   # Set false for future-proofing if charge:/energy: sub-sensors are added.
-    # Pinned explicitly — cycle = 128×(4120+4120+4120)µs ≈ 1.58s. 128× averaging
-    # keeps noise floor below 50mA threshold. 2s > 1.58s → every poll is a fresh sample.
-    adc_time: 4120us
-    adc_averaging: 128
+    reset_on_boot: false           # LOAD-BEARING since V1.28: SOC is the CHARGE register against an
+                                   # anchor. Resetting the accumulators at boot would restart CHARGE
+                                   # at 0 on every reboot and invalidate the anchor each time.
+    # V1.28: 0xFDC5 — bus 2074 µs, shunt 4120 µs, temperature 50 µs, AVG 256.
+    # Cycle = 256 × (2074+4120+50) µs = 1.598 s (was 128 × 3 × 4120 µs = 1.582 s);
+    # 2 s > 1.598 s, so every poll is still a fresh sample. Shunt integration per
+    # reading doubles (0.527 -> 1.055 s): diag2 TB-5 sd ratio 0.735 [M], predicted
+    # 1/√2. Bus time per reading unchanged (0.527 -> 0.531 s). CHARGE and ENERGY
+    # accumulate per conversion, so AVG does not touch them (TB-3: Q flat, AVG 1-128).
+    adc_time:
+      bus_voltage: 2074us
+      shunt_voltage: 4120us
+      temperature: 50us
+    adc_averaging: 256
     update_interval: 2s
     current:
       name: "Battery Current"
@@ -1304,7 +1732,7 @@ sensor:
       accuracy_decimals: 1
       device_class: power
       state_class: measurement
-      # LSB ≈ 1.22mW (3.2×CURRENT_LSB). ±0.61mW vs ±2.5mW from V×I at low loads.
+      # LSB = 3.2 × CURRENT_LSB ≈ 2.44 mW at 400 A (V1.28; 1.22 mW at 200 A).
     temperature:
       name: "INA228 Die Temperature"
       id: ina228_die_temp
@@ -1551,8 +1979,20 @@ sensor:
     state_class: total_increasing
     restore: true
 
-  # SOC Coulomb counter. Anchor = 100% at each confirmed full charge.
-  # Drift ±5% over 2–3 weeks without an anchor.
+  # SOC (V1.28): INA228 CHARGE register against an anchor, review B3 ladder:
+  #   1 confirmed anchor - absorption-confirmed full charge (tapered, O2) or the
+  #     manual button;
+  #   2 provisional anchor - seeded so SOC is continuous at that instant: from
+  #     the last CHARGE SOC (after a reset that could not be bridged), else from
+  #     the SW ledger (first V1.28 boot: the ledger then reads high by its own
+  #     error until the next full charge - never baked in, "SOC Source" says so);
+  #   3 SW-ledger MOVEMENT from the last CHARGE SOC, only while CHARGE is invalid
+  #     (B2c: no good read for 180 s, or this boot's check has not run);
+  #   never NAN (turnover §5 decision 1).
+  # net = (hw - A) + (CE - 1) x Ah_in since A - I_off x h - SD model
+  # SOC = 100 + net / C x 100, clamped 0..100.
+  # Driven by hw_charge_ah's on_value (no poll-to-poll lag, turnover decision 3)
+  # and by its own 30 s poll (fallback, text).
   - platform: template
     name: "State of Charge"
     id: soc_estimate
@@ -1562,18 +2002,122 @@ sensor:
     device_class: battery
     state_class: measurement
     lambda: |-
+      const float C = ${validated_capacity_ah}f;
+      float sd = id(self_discharge_ah).state;
+      if (isnan(sd)) sd = 0.0f;
+      // SW ledger SOC (the V1.27 formula): reference and fallback.
+      float lo = id(ah_discharged_cycle).state, li = id(ah_charged_cycle).state;
+      float ledger = (isnan(lo) || isnan(li)) ? NAN : 100.0f - ((lo - li + sd) / C * 100.0f);
+      if (!isnan(ledger)) ledger = ledger > 100.0f ? 100.0f : (ledger < 0.0f ? 0.0f : ledger);
+      // Hours since the anchor (HA time); late-seed the epoch if it was unknown.
+      // Review 2026-09-25: carried across a reboot. Until HA time is valid the
+      // hours run on from the saved value (0.1 h steps) plus uptime - they
+      // were 0, which dropped the I_off term - and a late-seeded epoch keeps
+      // the hours already run. (host test S10)
+      {
+        auto t = id(ha_time).now();
+        bool anchored = !isnan(id(hw_charge_anchor_ah)) || !isnan(id(hw_prov_anchor_ah));
+        const float up_h = (float) millis() / 3600000.0f;
+        if (anchored && isnan(id(hours_boot_base))) id(hours_boot_base) = id(hours_since_anchor_saved);
+        if (t.is_valid()) {
+          uint32_t now = (uint32_t) t.timestamp;
+          if (anchored && id(anchor_epoch) == 0u)
+            id(anchor_epoch) = now - (uint32_t) ((id(hours_boot_base) + up_h) * 3600.0f);
+          if (id(anchor_epoch) != 0u && now >= id(anchor_epoch)) {
+            id(hours_since_anchor) = (float) (now - id(anchor_epoch)) / 3600.0f;
+            id(hours_boot_base) = id(hours_since_anchor) - up_h;
+          }
+        } else if (anchored) {
+          id(hours_since_anchor) = id(hours_boot_base) + up_h;
+        }
+        if (anchored && fabsf(id(hours_since_anchor) - id(hours_since_anchor_saved)) >= 0.1f)
+          id(hours_since_anchor_saved) = id(hours_since_anchor);
+      }
+      float hw = id(hw_charge_ah).state;
+      bool fresh = id(hw_anchor_checked) && id(hw_last_good_ms) != 0u &&
+                   (millis() - id(hw_last_good_ms)) < 180000u && !isnan(hw);   // B2c
+      float soc;
+      int code;   // SOC Source: 1-5 = anchor source (CHARGE), 6/7 = fallback
+      if (fresh) {
+        id(fb_active) = false;
+        if (isnan(id(hw_charge_anchor_ah)) && isnan(id(hw_prov_anchor_ah))) {
+          // B3: provisional anchor, seeded so SOC is continuous right now.
+          float seed; int src;
+          if (!isnan(id(soc_last_good))) { seed = id(soc_last_good); src = 4; }
+          else if (!isnan(ledger))       { seed = ledger;            src = 3; }
+          else                            { seed = 100.0f;            src = 5; }
+          float a_p = hw - sd - (seed - 100.0f) / 100.0f * C;   // net(a_p) = seed - 100 %
+          id(soc_anchor_set).execute(a_p, src, false);
+          ESP_LOGW("bank.soc",
+            "Provisional SOC anchor at %.2f%% from %s (CHARGE %.4f Ah, anchor %.4f Ah) - an absorption-confirmed full charge replaces it",
+            seed, src == 4 ? "the last INA228 CHARGE SOC" : (src == 3 ? "the SW ledger" : "NO reference (assumed full)"),
+            hw, a_p);
+        }
+        float a = !isnan(id(hw_charge_anchor_ah)) ? id(hw_charge_anchor_ah) : id(hw_prov_anchor_ah);
+        float net = (hw - a)
+                  + (${recon_coul_eff}f - 1.0f) * id(brk_in_ah)        // O1: CE on charge in
+                  - ${soc_offset_ma}f / 1000.0f * id(hours_since_anchor)   // I_off
+                  - sd;                                                // SD model (inert at 0)
+        float unc = 100.0f + net / C * 100.0f;
+        id(soc_unclamped) = unc;
+        soc = unc > 100.0f ? 100.0f : (unc < 0.0f ? 0.0f : unc);
+        id(soc_live) = soc;
+        if (isnan(id(soc_last_good)) || fabsf(soc - id(soc_last_good)) >= 0.05f)
+          id(soc_last_good) = soc;   // persisted in 0.05 % steps (~20 h apart at idle)
+        code = id(soc_anchor_src);
+      } else {
+        id(soc_unclamped) = NAN;
+        if (!id(fb_active)) {
+          id(fb_active) = true;
+          id(fb_soc_ref) = !isnan(id(soc_live)) ? id(soc_live) : id(soc_last_good);
+          id(fb_ledger_ref) = ledger;
+        }
+        if (!isnan(id(fb_soc_ref)) && !isnan(ledger) && !isnan(id(fb_ledger_ref))) {
+          soc = id(fb_soc_ref) + (ledger - id(fb_ledger_ref));
+          soc = soc > 100.0f ? 100.0f : (soc < 0.0f ? 0.0f : soc);
+          code = 6;
+        } else if (!isnan(id(fb_soc_ref))) { soc = id(fb_soc_ref); code = 6; }
+        else if (!isnan(ledger))           { soc = ledger;         code = 7; }
+        else return {};   // nothing at all yet (first 0.2 s of a first boot): hold, never NAN
+      }
+      static int last_code = -1;
+      if (code != last_code) {
+        last_code = code;
+        const char *t =
+          code == 1 ? "INA228 CHARGE - anchored at a full charge" :
+          code == 2 ? "INA228 CHARGE - anchored by the manual Mark-as-Full button" :
+          code == 3 ? "INA228 CHARGE - provisional anchor from the SW ledger (reads high by the ledger's error until the next full charge)" :
+          code == 4 ? "INA228 CHARGE - provisional anchor carried from the last CHARGE SOC (INA228 reset not bridged)" :
+          code == 5 ? "INA228 CHARGE - provisional anchor ASSUMED 100% (no reference)" :
+          code == 6 ? "SW ledger movement from the last CHARGE SOC - INA228 CHARGE invalid" :
+          code == 7 ? "SW ledger - INA228 CHARGE invalid and no CHARGE SOC yet" : "unknown";
+        id(soc_source).publish_state(t);
+        ESP_LOGI("bank.soc", "SOC source -> %s", t);
+      }
+      return soc;
+    update_interval: 30s
+
+  # V1.28: the V1.27 SW ledger SOC, kept for comparison (and as the fallback's
+  # movement). Deadbanded at ±50 mA: it books ~none of the idle drain.
+  - platform: template
+    name: "SOC (SW Ledger)"
+    id: soc_ledger_sensor
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    icon: "mdi:battery-outline"
+    entity_category: diagnostic
+    state_class: measurement
+    lambda: |-
       float ah_out = id(ah_discharged_cycle).state;
       float ah_in  = id(ah_charged_cycle).state;
       if (isnan(ah_out) || isnan(ah_in)) return NAN;
-      // Self-discharge model hook (inert at default 0.0).
       float sd = id(self_discharge_ah).state;
       if (isnan(sd)) sd = 0.0f;
-      float net_discharged = ah_out - ah_in + sd;
-      float soc = 100.0f - (net_discharged / ${validated_capacity_ah}f * 100.0f);
+      float soc = 100.0f - ((ah_out - ah_in + sd) / ${validated_capacity_ah}f * 100.0f);
       if (soc > 100.0f) soc = 100.0f;
       if (soc <   0.0f) soc = 0.0f;
       return soc;
-    update_interval: 30s
+    update_interval: 60s
 
   # Runtime remaining at current discharge rate. NaN when not discharging.
   - platform: template
@@ -1642,6 +2186,8 @@ sensor:
     update_interval: 60s
 
   # ── V1.23: INA228 hardware accumulators via RAW register reads ─────────────
+  # V1.28: HW Net Charge is now CORE — it sources SOC (soc_estimate). The text
+  # below describes its V1.23 origin as a cross-check.
   # Independent integration-method cross-check for the coulomb ledger: silicon
   # accumulates every 1.58 s conversion continuously; firmware integrates 2 s
   # left-rectangle with 0.05 A deadbands. Divergence = software integration
@@ -1649,11 +2195,11 @@ sensor:
   # RAW reads on bus_a deliberately — configuring the driver's energy:/charge:
   # sub-sensors would make it read DIAG_ALRT every cycle and destroy the ALERT
   # latch ownership (see alert handler). Plain register reads touch no latch.
-  # Conversion per ESPHome ina2xx_base source: CURRENT_LSB = 200 A / 2^19 =
-  # 3.814697265625e-4 A (MUST track max_current in the ina2xx block);
-  # Charge[C] = signed40(REG 0x0A) x CURRENT_LSB; Energy[J] = 51.2 x
-  # CURRENT_LSB x unsigned40(REG 0x09). 40-bit span at this LSB = ±58,000 Ah:
-  # overflow is a non-issue.
+  # Conversion per ESPHome ina2xx_base source: CURRENT_LSB = max_current / 2^19.
+  # V1.28: from the ina_max_current_a substitution (400 A -> 7.62939453125e-4 A;
+  # V1.27 hard-coded 200 A's 3.814697265625e-4). Charge[C] = signed40(REG 0x0A)
+  # x CURRENT_LSB; Energy[J] = 51.2 x CURRENT_LSB x unsigned40(REG 0x09). 40-bit
+  # span at 400 A = ±116,000 Ah: overflow is a non-issue.
   # V1.26: both report register + a persisted offset, so a bridged INA228
   # power-on reset (on_boot) continues the series instead of restarting at 0.
   - platform: template
@@ -1665,6 +2211,55 @@ sensor:
     state_class: measurement
     entity_category: diagnostic
     lambda: |-
+      // V1.28 (review B2a): runtime INA228 reset check, every poll, BEFORE CHARGE
+      // is read or saved. A POR restores SHUNT_CAL 1000h, ADC_CONFIG FB68h and
+      // TEMP_LIMIT 7FFFh [S: SLYS021A §7.6.1]; every current then reads 4096 /
+      // 3750 = 1.09x off and CHARGE restarts at 0 — silently, because the
+      // watchdog watches bus voltage. On a mismatch: publish nothing, save
+      // nothing, say so, and reboot; the boot check then bridges from the saved
+      // value. An unreadable register only skips this poll (B2c ages it out).
+      if (id(ina_expect_valid)) {
+        auto rd16 = [](uint8_t r, uint16_t &out) -> bool {
+          uint8_t bb[2] = {0, 0};
+          if (id(bus_a).write(0x40, &r, 1, false) != i2c::ERROR_OK) return false;
+          if (id(bus_a).read(0x40, bb, 2) != i2c::ERROR_OK) return false;
+          out = ((uint16_t) bb[0] << 8) | bb[1];
+          return true;
+        };
+        uint16_t sc = 0, ac = 0, tl = 0;
+        if (!rd16(0x02, sc) || !rd16(0x01, ac) || !rd16(0x10, tl)) return {};
+        if (sc != id(ina_expect_shunt_cal) || ac != id(ina_expect_adc_config) || tl != 0x7FFE) {
+          // Review 2026-09-25: reboot rate limit. A chip that keeps resetting
+          // would otherwise reboot the node about once a minute. After 3 reset
+          // reboots in a row the next waits for 30 min of uptime (<= 2/h [D]);
+          // meanwhile CHARGE is not used and current reads 1.09x (above). The
+          // run of reboots ends after 1 h with the config held. 3 / 30 / 60 are
+          // design choices, not measurements. is_running(): a component.update
+          // (charger stop, manual anchor) inside the 2 s delay is not a second
+          // reset. (host test S2b)
+          const bool may_reboot = id(ina_reset_reboots) < 3 || millis() >= 1800000u;
+          if (!id(ina_reset_seen) || (may_reboot && !id(ina_reset_reboot).is_running())) {
+            id(ina_reset_seen) = true;
+            char m[220];
+            if (may_reboot)
+              snprintf(m, sizeof(m),
+                "INA228 reset while running (SHUNT_CAL=%u ADC_CONFIG=0x%04X TEMP_LIMIT=0x%04X; expected %u / 0x%04X / 0x7FFE) - CHARGE not used; rebooting to bridge (reset reboot %d in a row)",
+                sc, ac, tl, id(ina_expect_shunt_cal), id(ina_expect_adc_config), id(ina_reset_reboots) + 1);
+            else
+              snprintf(m, sizeof(m),
+                "INA228 reset while running (SHUNT_CAL=%u ADC_CONFIG=0x%04X TEMP_LIMIT=0x%04X; expected %u / 0x%04X / 0x7FFE) - CHARGE not used; reboot deferred to 30 min uptime (%d reset reboots in a row)",
+                sc, ac, tl, id(ina_expect_shunt_cal), id(ina_expect_adc_config), id(ina_reset_reboots));
+            ESP_LOGE("bank.hwcheck", "%s", m);
+            id(ina228_reset_check).publish_state(m);
+            if (may_reboot) {
+              id(ina_reset_reboots) += 1;
+              id(ina_reset_reboot).execute();
+            }
+          }
+          return {};
+        }
+        if (id(ina_reset_reboots) != 0 && millis() >= 3600000u) id(ina_reset_reboots) = 0;
+      }
       uint8_t reg = 0x0A;
       uint8_t b[5];
       id(hw_charge_raw_ah) = NAN;   // V1.26: NAN unless this read succeeds
@@ -1673,20 +2268,49 @@ sensor:
       int64_t raw = ((int64_t) b[0] << 32) | ((int64_t) b[1] << 24) |
                     ((int64_t) b[2] << 16) | ((int64_t) b[3] << 8) | (int64_t) b[4];
       if (raw & (1LL << 39)) raw -= (1LL << 40);   // sign-extend 40-bit
-      id(hw_charge_raw_ah) = (float) ((double) raw * 3.814697265625e-4 / 3600.0);
+      id(hw_charge_raw_ah) = (float) ((double) raw * (${ina_max_current_a} / 524288.0) / 3600.0);
       // V1.26: nothing is published (or saved) until this boot's reset check
       // has decided the offset — on_boot calls update() before that, to read.
       if (!id(hw_anchor_checked)) return {};
       float ah = id(hw_charge_raw_ah) + id(hw_charge_offset_ah);   // bridged
       if (isnan(id(hw_charge_saved_ah)) || fabsf(ah - id(hw_charge_saved_ah)) >= 0.01f)
         id(hw_charge_saved_ah) = ah;   // persisted in 10 mAh steps
+      id(hw_last_good_ms) = millis();  // V1.28 (B2c)
       return ah;
     update_interval: 60s
     # V1.25: the delta is computed HERE, at the instant of the register read.
     # On its own 60 s poller it could sit up to 60 s from this read — up to
     # 1.33 Ah of pure timing skew at 80 A [D: 80 A × 60 s / 3600].
     on_value:
+      # V1.28: the CHARGE bracket since the anchor, sign-split per poll (no
+      # deadband). Wh = dQ × V_bus at the poll, NOT the ENERGY register (|P| per
+      # conversion: idle noise reads as energy). The split loses <= 10 mAh per
+      # reboot (step saves) and the first poll after boot; SOC uses hw - A, which
+      # is exact, so only the O1 CE term (1 % of Ah in) ever sees that.
+      - lambda: |-
+          if (!id(brk_loaded)) {
+            id(brk_loaded) = true;
+            id(brk_in_ah) = id(brk_in_saved);   id(brk_out_ah) = id(brk_out_saved);
+            id(brk_whin)  = id(brk_whin_saved); id(brk_whout)  = id(brk_whout_saved);
+          }
+          float prev = id(hw_prev_ah);
+          id(hw_prev_ah) = x;
+          if (isnan(prev)) return;
+          float d = x - prev;
+          float v = id(ina228_voltage).state;
+          if (d > 0.0f) {
+            id(brk_in_ah) += d;
+            if (!isnan(v)) id(brk_whin) += d * v;
+          } else {
+            id(brk_out_ah) -= d;
+            if (!isnan(v)) id(brk_whout) -= d * v;
+          }
+          if (fabsf(id(brk_in_ah)  - id(brk_in_saved))    >= 0.01f) id(brk_in_saved)    = id(brk_in_ah);
+          if (fabsf(id(brk_out_ah) - id(brk_out_saved))   >= 0.01f) id(brk_out_saved)   = id(brk_out_ah);
+          if (fabsf(id(brk_whin)   - id(brk_whin_saved))  >= 0.1f)  id(brk_whin_saved)  = id(brk_whin);
+          if (fabsf(id(brk_whout)  - id(brk_whout_saved)) >= 0.1f)  id(brk_whout_saved) = id(brk_whout);
       - component.update: cycle_integration_delta
+      - component.update: soc_estimate   # V1.28: SOC follows each CHARGE read
 
   - platform: template
     name: "HW Energy (INA228)"
@@ -1703,13 +2327,43 @@ sensor:
       if (id(bus_a).read(0x40, b, 5) != i2c::ERROR_OK) return {};
       uint64_t raw = ((uint64_t) b[0] << 32) | ((uint64_t) b[1] << 24) |
                      ((uint64_t) b[2] << 16) | ((uint64_t) b[3] << 8) | (uint64_t) b[4];
+      id(hw_energy_raw_wh) = (float) (51.2 * (${ina_max_current_a} / 524288.0) * (double) raw / 3600.0);
       if (!id(hw_anchor_checked)) return {};   // V1.26: see hw_charge_ah
-      float wh = (float) (51.2 * 3.814697265625e-4 * (double) raw / 3600.0)
-                 + id(hw_energy_offset_wh);      // V1.26: bridged
+      float wh = id(hw_energy_raw_wh) + id(hw_energy_offset_wh);   // V1.26: bridged
       if (isnan(id(hw_energy_saved_wh)) || fabsf(wh - id(hw_energy_saved_wh)) >= 0.1f)
         id(hw_energy_saved_wh) = wh;   // persisted in 0.1 Wh steps
       return wh;
     update_interval: 60s
+    # V1.28: idle ENERGY rate as a live noise gauge. ENERGY sums |P| per raw
+    # conversion, so at idle its rate is set by the per-conversion error, not by
+    # the ~0.14 W the bank really delivers [D: 10.5 mA × 13.30 V]. diag2 [M]:
+    # 0.22-0.24 W quiet (white OLED, TX <= 14 dBm), 0.42-0.50 W noisy (20 dBm),
+    # 0.99 W radio off. Quiet vs noisy moves the CHARGE drain by 1.3-2.6 mA.
+    on_value:
+      - lambda: |-
+          static float p_wh = NAN;
+          static uint32_t p_ms = 0;
+          static float ema = NAN;
+          uint32_t now = millis();
+          float i = id(ina228_current).state;
+          if (!isnan(p_wh) && now != p_ms) {
+            float dt_h = (float) (now - p_ms) / 3600000.0f;
+            float w = (x - p_wh) / dt_h;
+            if (!isnan(i) && fabsf(i) < 0.5f) {
+              if (dt_h > 0.008f && dt_h < 0.05f) {   // 30 s .. 3 min between reads
+                ema = isnan(ema) ? w : 0.2f * w + 0.8f * ema;   // ~5 min
+                id(ina_noise_gauge).publish_state(ema);
+                id(ina_noise_state).publish_state(
+                  ema <= 0.25f ? "quiet" : (ema >= 0.40f ? "noisy" : "elevated"));
+              }
+            } else if (!isnan(i)) {
+              ema = NAN;
+              id(ina_noise_gauge).publish_state(NAN);
+              id(ina_noise_state).publish_state("n/a (bank not idle)");
+            }
+          }
+          p_wh = x;
+          p_ms = now;
 
   # SW net (this cycle) minus HW net since last anchor. Expected small and
   # stable (deadband/cadence term); NAN until an anchor has seeded the snapshot.
@@ -1730,6 +2384,139 @@ sensor:
       float sw = id(ah_charged_cycle).state - id(ah_discharged_cycle).state;
       return sw - (hw - a);
     update_interval: never   # V1.25: driven by hw_charge_ah on_value (see there)
+
+  # ── V1.28: the CHARGE bracket since the current SOC anchor ─────────────────
+  # For the full-to-full comparison: what left and entered the bank per the
+  # INA228 CHARGE register (no deadband), and what the monitor saw as the idle
+  # drain. Reset at every anchor (full charge, manual, provisional).
+  - platform: template
+    name: "Ah In Since Anchor"
+    unit_of_measurement: "Ah"
+    accuracy_decimals: 3
+    icon: "mdi:battery-arrow-up"
+    state_class: measurement
+    entity_category: diagnostic
+    lambda: 'return id(brk_loaded) ? id(brk_in_ah) : NAN;'
+    update_interval: 60s
+
+  - platform: template
+    name: "Ah Out Since Anchor"
+    unit_of_measurement: "Ah"
+    accuracy_decimals: 3
+    icon: "mdi:battery-arrow-down"
+    state_class: measurement
+    entity_category: diagnostic
+    lambda: 'return id(brk_loaded) ? id(brk_out_ah) : NAN;'
+    update_interval: 60s
+
+  - platform: template
+    name: "Wh In Since Anchor"
+    unit_of_measurement: "Wh"
+    accuracy_decimals: 1
+    icon: "mdi:lightning-bolt"
+    state_class: measurement
+    entity_category: diagnostic
+    lambda: 'return id(brk_loaded) ? id(brk_whin) : NAN;'
+    update_interval: 60s
+
+  - platform: template
+    name: "Wh Out Since Anchor"
+    unit_of_measurement: "Wh"
+    accuracy_decimals: 1
+    icon: "mdi:lightning-bolt-outline"
+    state_class: measurement
+    entity_category: diagnostic
+    lambda: 'return id(brk_loaded) ? id(brk_whout) : NAN;'
+    update_interval: 60s
+
+  - platform: template
+    name: "Hours Since Anchor"
+    unit_of_measurement: "h"
+    accuracy_decimals: 1
+    icon: "mdi:timer-sand"
+    entity_category: diagnostic
+    lambda: |-
+      bool anchored = !isnan(id(hw_charge_anchor_ah)) || !isnan(id(hw_prov_anchor_ah));
+      return (anchored && id(anchor_epoch) != 0u) ? id(hours_since_anchor) : NAN;
+    update_interval: 60s
+
+  # Net CHARGE per hour since the anchor. Over an idle bracket this is the
+  # standing drain the shunt sees (monitor + inverter off-draw + offset + DC).
+  - platform: template
+    name: "Mean Net Current Since Anchor"
+    unit_of_measurement: "mA"
+    accuracy_decimals: 2
+    icon: "mdi:current-dc"
+    state_class: measurement
+    entity_category: diagnostic
+    lambda: |-
+      // From the bracket accumulators, not hw - A: a provisional anchor carries
+      // its seed deficit in A (host replay: -27.8 mA read for a true -8.8 mA).
+      bool anchored = !isnan(id(hw_charge_anchor_ah)) || !isnan(id(hw_prov_anchor_ah));
+      float h = id(hours_since_anchor);
+      if (!anchored || !id(brk_loaded) || id(anchor_epoch) == 0u || h < 1.0f) return NAN;
+      return (id(brk_in_ah) - id(brk_out_ah)) / h * 1000.0f;
+    update_interval: 60s
+
+  # CHARGE SOC error at the last anchor (> 0 = SOC read high = drain it did not
+  # see, or CE below recon_coul_eff). After a provisional start it also holds
+  # that start's error - e.g. the SW ledger's at the first V1.28 boot.
+  - platform: template
+    name: "Last Anchor Closure"
+    unit_of_measurement: "Ah"
+    accuracy_decimals: 3
+    icon: "mdi:scale-balance"
+    entity_category: diagnostic
+    lambda: 'return id(last_closure_ah);'
+    update_interval: 300s
+
+  # RECON (CHARGE), clean full-to-full brackets >= recon_min_days only: the
+  # constant drain that closes the bracket. Candidate for soc_offset_ma.
+  - platform: template
+    name: "Suggested Offset Current"
+    unit_of_measurement: "mA"
+    accuracy_decimals: 2
+    icon: "mdi:tune-variant"
+    entity_category: diagnostic
+    lambda: 'return id(last_offset_suggest_ma);'
+    update_interval: 300s
+
+  - platform: template
+    name: "Last Charge Session Ah (CHARGE)"
+    unit_of_measurement: "Ah"
+    accuracy_decimals: 3
+    icon: "mdi:battery-charging"
+    entity_category: diagnostic
+    lambda: 'return id(last_session_ah);'
+    update_interval: 300s
+
+  - platform: template
+    name: "Last Charge Session Wh (CHARGE)"
+    unit_of_measurement: "Wh"
+    accuracy_decimals: 1
+    icon: "mdi:battery-charging-outline"
+    entity_category: diagnostic
+    lambda: 'return id(last_session_wh);'
+    update_interval: 300s
+
+  # Published by hw_energy_wh's on_value (idle only).
+  - platform: template
+    name: "INA228 Noise Gauge"
+    id: ina_noise_gauge
+    unit_of_measurement: "W"
+    accuracy_decimals: 3
+    icon: "mdi:waveform"
+    state_class: measurement
+    entity_category: diagnostic
+
+  # Published by the 300 s Wi-Fi readback interval.
+  - platform: template
+    name: "WiFi TX Power (Driver)"
+    id: wifi_txp_readback
+    unit_of_measurement: "dBm"
+    accuracy_decimals: 2
+    icon: "mdi:antenna"
+    entity_category: diagnostic
 
   - platform: template
     name: "Apparent Ri Sample Count"
@@ -1940,7 +2727,9 @@ sensor:
     accuracy_decimals: 2
     icon: "mdi:battery-alert-variant-outline"
     entity_category: diagnostic
-    lambda: 'return (id(last_anchor_epoch) != 0 && id(last_recommended_sd_rate) != 0.0f) ? id(last_unseen_drain_ah) : NAN;'
+    # V1.28: written only by the CHARGE RECON (clean brackets); no longer tied to
+    # the ledger's last_anchor_epoch.
+    lambda: 'return (id(last_recommended_sd_rate) != 0.0f) ? id(last_unseen_drain_ah) : NAN;'
     update_interval: 300s
 
   - platform: template
@@ -1986,6 +2775,33 @@ text_sensor:
     id: ina228_reset_check
     entity_category: diagnostic
     icon: "mdi:chip"
+
+  # V1.28: which rung of the SOC ladder is live (published on change).
+  - platform: template
+    name: "SOC Source"
+    id: soc_source
+    icon: "mdi:source-branch"
+
+  # V1.28: SHUNT_CAL / ADC_CONFIG as read back at boot (the B2a reference).
+  - platform: template
+    name: "INA228 Config Readback"
+    id: ina228_config_readback
+    entity_category: diagnostic
+    icon: "mdi:chip"
+
+  # V1.28: quiet / elevated / noisy from the idle ENERGY rate.
+  - platform: template
+    name: "INA228 Noise State"
+    id: ina_noise_state
+    entity_category: diagnostic
+    icon: "mdi:waveform"
+
+  # V1.28: the Wi-Fi driver's actual power-save mode (B1 check).
+  - platform: template
+    name: "WiFi Power Save (Driver)"
+    id: wifi_ps_readback
+    entity_category: diagnostic
+    icon: "mdi:wifi-cog"
 
   # Bank State — HA automation trigger. Priority (first match):
   #   FAULT > OVERVOLTAGE > EMERGENCY > CRITICAL > WARNING >
@@ -2236,6 +3052,10 @@ binary_sensor:
       - lambda: |-
           id(charge_session_start_v) = id(ina228_voltage).state;
           id(charge_peak_a_raw)      = 0.0f;   // Reset; 5s interval seeds peak from CC phase
+          id(absorb_tail_min_a)      = NAN;    // V1.28 (O2): CV taper tracker
+          id(absorb_tail_pending_a)  = NAN;
+          id(sess_in_start)          = id(brk_in_ah);   // V1.28: CHARGE session totals
+          id(sess_whin_start)        = id(brk_whin);
           ESP_LOGI("bank",
             "Charge session started | V_start=%.3fV | SOC~%.1f%% | Cycle Ah_in so far: %.2f",
             id(ina228_voltage).state,
@@ -2247,6 +3067,20 @@ binary_sensor:
       # absorption_reached is set by the absorption_phase binary sensor; once set
       # it persists until this on_release fires and clears it.
       then:
+        # V1.28: a fresh CHARGE read first, so the session totals, the closure
+        # and the anchor use this instant's register, not one up to 60 s old.
+        - component.update: hw_charge_ah
+        - lambda: |-
+            // V1.28: this session's charge per the INA228 CHARGE register (no
+            // deadband) - the number to hold against the drain it replaced.
+            float s_in = id(brk_in_ah) - id(sess_in_start);
+            float s_wh = id(brk_whin) - id(sess_whin_start);
+            if (s_in < 0.0f) { s_in = id(brk_in_ah); s_wh = id(brk_whin); }   // re-anchored mid-session
+            id(last_session_ah) = s_in;
+            id(last_session_wh) = s_wh;
+            ESP_LOGI("bank",
+              "Charge session (INA228 CHARGE, no deadband): %.3f Ah / %.1f Wh in | CV tail min %.2f A (anchor needs <= %.1f A)",
+              s_in, s_wh, id(absorb_tail_min_a), ${anchor_taper_max_a}f);
         - if:
             condition:
               lambda: |-
@@ -2257,7 +3091,21 @@ binary_sensor:
                 // Threshold -1.0A gives 1A headroom for minor standby loads (monitor
                 // self-consumption ~0.1A is well clear of this guard).
                 if (id(ina228_current).state < -1.0f) return false;
-                return id(absorption_reached);
+                if (!id(absorption_reached)) return false;
+                // V1.28 (review O2): absorption for 60 s is not a full charge. A
+                // generator that stops mid-CV, then > 60 s near 0 A, used to anchor
+                // 100 % on a truncated charge - in exactly the outage cycle. Require
+                // the CV current to have tapered first. LiTime stops at 6.48 A [M].
+                // Limit: the INA228 sees NET current, so loads running during CV
+                // make the taper look deeper than the charger's.
+                float tail = id(absorb_tail_min_a);
+                if (isnan(tail) || tail > ${anchor_taper_max_a}f) {
+                  ESP_LOGW("bank",
+                    "Full-charge anchor REFUSED (O2): CV current only tapered to %.2f A (needs <= %.1f A) - charger stopped mid-absorption; treated as a partial charge",
+                    tail, ${anchor_taper_max_a}f);
+                  return false;
+                }
+                return true;
             then:
               - lambda: |-
                   id(absorption_reached) = false;  // Clear before any yields
@@ -2303,9 +3151,10 @@ binary_sensor:
 
                   // ---- V1.23: hardware-register confirming calculation ----
                   // Silicon CHARGE accumulator vs software coulomb ledger for
-                  // the completed cycle, then re-seed the anchor snapshot.
+                  // the completed cycle. V1.28: the anchor itself is re-seeded
+                  // below, through soc_anchor_set, after the closure.
+                  float hw_now = id(hw_charge_ah).state;   // V1.28: read at this release
                   {
-                    float hw_now = id(hw_charge_ah).state;   // <=60 s stale; I~0 at anchor
                     float hw_anchor = id(hw_charge_anchor_ah);
                     if (!isnan(hw_now) && !isnan(hw_anchor)) {
                       float sw_net = ah_in - ah_out;
@@ -2320,11 +3169,65 @@ binary_sensor:
                         "CYCLE CONFIRM seeded at this anchor (hw=%.3f) — comparison from next cycle.",
                         hw_now);
                     }
-                    if (!isnan(hw_now)) id(hw_charge_anchor_ah) = hw_now;
                     id(hw_bridge_count) = 0;   // V1.26: count is per anchor-to-anchor cycle
                   }
 
+                  // ---- V1.28: anchor closure and the CHARGE reconciliation ----
+                  // Closure = the CHARGE SOC's own error at a KNOWN 100 %: net since
+                  // the anchor, with CE (O1), I_off and the SD model applied, should
+                  // be 0 here. > 0 = SOC read high = drain it did not see (or CE
+                  // below recon_coul_eff). U = the whole constant drain the bracket
+                  // needed = closure + what I_off and the SD model already took.
+                  {
+                    const float C = ${validated_capacity_ah}f;
+                    float unc = id(soc_unclamped);   // set by this release's CHARGE read
+                    float closure = isnan(unc) ? NAN : (unc - 100.0f) / 100.0f * C;
+                    id(last_closure_ah) = closure;
+                    float h = id(hours_since_anchor);
+                    float sd_now = id(self_discharge_ah).state;
+                    if (isnan(sd_now)) sd_now = 0.0f;
+                    float b_in = id(brk_in_ah), b_out = id(brk_out_ah);
+                    int src = id(soc_anchor_src);
+                    const char *start = src == 1 ? "clean full charge" : (src == 2 ? "manual anchor" : "provisional anchor");
+                    // CE only means something between two clean full charges.
+                    float ce = (id(brk_clean) && src == 1 && b_in > 0.5f) ? 100.0f * b_out / b_in : NAN;
+                    ESP_LOGI("bank.anchor",
+                      "ANCHOR CLOSURE | %.3f Ah (CHARGE SOC read %.2f%% at a full bank) | %.1f h since the %s | CHARGE in %.3f Ah / out %.3f Ah, Wh in %.1f / out %.1f | CE %.2f%% (clean brackets only)",
+                      closure, unc, h, start, b_in, b_out, id(brk_whin), id(brk_whout), ce);
+                    if (id(brk_clean) && src == 1 && !isnan(closure) && h >= 1.0f) {
+                      float U = closure + ${soc_offset_ma}f / 1000.0f * h + sd_now;
+                      float days = h / 24.0f;
+                      // 1 sigma: shunt ±1 % on both integrals, CE ±0.5 % on the charge
+                      // term, and (V1.28) the INA228 offset limit over the bracket
+                      // (review §6.2 item 5: ±2.67 mA × 1,440 h = 3.8 Ah is not "mAh").
+                      float off_ah = ${ina_offset_max_ma}f / 1000.0f * h;
+                      float sigma = sqrtf((0.01f*b_in)*(0.01f*b_in) + (0.01f*b_out)*(0.01f*b_out)
+                                        + (0.005f*b_in)*(0.005f*b_in) + off_ah*off_ah);
+                      float rate = (U / C) * 100.0f * (30.4375f / days);
+                      float i_sug = U / h * 1000.0f;   // mA, constant-drain equivalent
+                      bool publish = (days >= ${recon_min_days}f);
+                      if (publish) {
+                        id(last_unseen_drain_ah)     = U;
+                        id(last_recommended_sd_rate) = rate;
+                        id(last_offset_suggest_ma)   = i_sug;
+                      }
+                      const char *quality =
+                        (!publish) ? "LOW-CONFIDENCE (short interval) - LOGGED ONLY" :
+                        (fabsf(U) < 2.0f * sigma) ? "NOISE-LIMITED (U within 2sigma)" : "OK";
+                      ESP_LOGI("bank.recon",
+                        "RECON (CHARGE) | U=%.3f Ah (±%.3f 1sigma) over %.1f d = %.2f mA constant | suggest soc_offset_ma = %.2f (now %.2f) | quality: %s",
+                        U, sigma, days, i_sug, i_sug, ${soc_offset_ma}f, quality);
+                    } else {
+                      ESP_LOGI("bank.recon",
+                        "RECON (CHARGE) not measured: this bracket began at a %s - the closure above is that start's error plus any unseen drain. The next clean full charge starts a measuring bracket.",
+                        start);
+                    }
+                  }
+
                   // ---- Self-discharge reconciliation (V1.10 — OBSERVABILITY, logs only) ----
+                  // V1.28: this is the SW-LEDGER bracket, now LOGGED ONLY. The two
+                  // entities come from the CHARGE RECON above; the ledger misses the
+                  // idle drain (±50 mA deadband), so its U is that drain, not unseen.
                   // U = unseen drain = (recon_coul_eff × ah_in) − ah_out  [DC Ah that left
                   // the bank without crossing the shunt: intrinsic self-discharge + any
                   // INA228 offset]. Working in Ah cancels charger efficiency and the
@@ -2357,16 +3260,12 @@ binary_sensor:
                       // A 2-day discharge-test bracket scaled x15 to "%/month" would
                       // otherwise overwrite a 60-day idle measurement on the display
                       // with nothing but the coulombic-efficiency error [D].
-                      bool publish = (days >= ${recon_min_days}f);
-                      if (publish) {
-                        id(last_unseen_drain_ah)     = U;
-                        id(last_recommended_sd_rate) = rate;
-                      }
+                      bool publish = (days >= ${recon_min_days}f);   // V1.28: label only
                       const char* quality =
-                        (!publish) ? "LOW-CONFIDENCE (short interval) - LOGGED ONLY, entities keep the previous bracket" :
+                        (!publish) ? "LOW-CONFIDENCE (short interval)" :
                         (fabsf(U) < 2.0f*sigma) ? "NOISE-LIMITED (U within 2sigma)" : "OK";
                       ESP_LOGI("bank.recon",
-                        "RECON | U=%.2f Ah (±%.2f 1sigma) over %.1f d | suggest self_discharge_pct_per_month = %.2f | quality: %s",
+                        "RECON (SW ledger, log only) | U=%.2f Ah (±%.2f 1sigma) over %.1f d | ledger-equivalent rate %.2f %%/mo | quality: %s",
                         U, sigma, days, rate, quality);
                       ESP_LOGI("bank.recon",
                         "  (current substitution = %.2f %%/mo; edit to apply — SOC not auto-changed)",
@@ -2388,6 +3287,22 @@ binary_sensor:
                     ESP_LOGW("bank.recon",
                       "Reconciliation skipped: HA time not synced; last_anchor_epoch unchanged.");
                   }
+
+                  // ---- V1.28: re-anchor SOC at this full charge (clean bracket) ----
+                  id(absorb_tail_min_a) = NAN;
+                  id(absorb_tail_pending_a) = NAN;
+                  if (!isnan(hw_now)) {
+                    id(soc_anchor_set).execute(hw_now, 1, true);
+                  } else {
+                    // CHARGE unreadable at the anchor: SOC re-seeds provisionally at
+                    // 100 % on the next good read (carry-forward rung).
+                    id(hw_charge_anchor_ah) = NAN;
+                    id(hw_prov_anchor_ah) = NAN;
+                    id(soc_last_good) = 100.0f;
+                    id(brk_clean) = false;
+                    ESP_LOGW("bank.anchor",
+                      "Full charge confirmed but CHARGE unreadable: SOC re-seeds a provisional anchor at 100%% on the next good read");
+                  }
               # Reset cycle counters — SOC anchored to 100%
               - sensor.integration.reset: ah_discharged_cycle
               - sensor.integration.reset: ah_charged_cycle
@@ -2401,6 +3316,8 @@ binary_sensor:
                   // survive to falsely anchor a later, unrelated partial charge to 100%.
                   bool was_set = id(absorption_reached);
                   id(absorption_reached) = false;
+                  id(absorb_tail_min_a) = NAN;   // V1.28 (O2)
+                  id(absorb_tail_pending_a) = NAN;
                   // V1.19: discard any accumulated CV time — a partial session is not a
                   // valid charger-health sample (the trend metric is only meaningful
                   // across COMPLETED absorption profiles). last_absorption_min untouched.
@@ -2665,12 +3582,30 @@ button:
     name: "Mark as Fully Charged (Reset Cycle Counters)"
     entity_category: diagnostic
     on_press:
+      - component.update: hw_charge_ah   # V1.28: anchor on this instant's CHARGE
       - lambda: |-
           // Manual anchor IS a full-charge event: clear any pending absorption flag and
           // reset the cycle-level discharge peak tracker, mirroring the automatic path.
-          // V1.23: re-seed the hardware-charge anchor snapshot (manual path).
-          if (!isnan(id(hw_charge_ah).state))
-            id(hw_charge_anchor_ah) = id(hw_charge_ah).state;
+          // V1.28: SOC anchors through soc_anchor_set, labelled "manual" (review B3:
+          // a one-tap 100 % must not look like a measured full charge). Its bracket
+          // is not clean, so it never feeds RECON.
+          {
+            float unc = id(soc_unclamped);
+            ESP_LOGW("bank.anchor",
+              "MANUAL ANCHOR | CHARGE SOC read %.2f%% (closure %.3f Ah vs 100%%) - set to 100%% without absorption confirmation",
+              unc, isnan(unc) ? NAN : (unc - 100.0f) / 100.0f * ${validated_capacity_ah}f);
+            float hw = id(hw_charge_ah).state;
+            if (!isnan(hw)) {
+              id(soc_anchor_set).execute(hw, 2, false);
+            } else {
+              id(hw_charge_anchor_ah) = NAN;
+              id(hw_prov_anchor_ah) = NAN;
+              id(soc_last_good) = 100.0f;
+              id(brk_clean) = false;
+            }
+          }
+          id(absorb_tail_min_a) = NAN;
+          id(absorb_tail_pending_a) = NAN;
           id(hw_bridge_count) = 0;   // V1.26: new anchor-to-anchor cycle
           id(absorption_reached) = false;
           id(discharge_peak_a_raw) = 0.0f;
