@@ -1,5 +1,23 @@
 # Battery-bank SOC: noise root cause and INA228 accuracy (deep dive)
 
+**Rev 4, 2026-09-25 (evening).** Adds **§10**, an independent reading of the
+V1.27-diag2 run (TB-1 to TB-5, 43 windows) against the raw exports. What
+changed (R13 items 11–17 in §7):
+
+- **The noise is load-driven (A), and a firmware setting removes it.** At
+  ≤ 14 dBm TX power the unlit noise falls to the lit-OLED floor. A lit
+  white frame does the same, a black frame does nothing, and radio-off and a
+  1 ms loop make it worse. Linear antenna pickup (B) fits none of that.
+- **TB-1 refutes the static-offset reading of B1.** Radio off moved the shunt
+  reading +2.3 mA, not the ≥ 13.9 mA an offset reading needs. The "true SOC
+  ~88–90 %" figure is withdrawn.
+- **B1 is now "the ESP draws far less than its datasheet" or "the monitor's
+  return bypasses the shunt".** TB-4's white-vs-lit pair leans toward bypass.
+  One DMM reading (P-1) or a 100 Ω preload (P-5) decides. If the datasheet
+  draw holds, the two readings differ by ~10 SOC points.
+- **V1.28:** add `output_power: 11dB`. 0xFDC5 is confirmed. The black-frame
+  stopgap is dropped.
+
 **Rev 3, 2026-09-25.** This revision adds three things:
 
 - **Photos** of the enclosure and carrier. They show the INA228 input terminal
@@ -54,6 +72,14 @@ Bill's call (R14).
 ---
 
 ## 0. Answers
+
+> **Rev 4 status.** §10 supersedes these bullets where they disagree:
+>
+> - **§0.1:** "lit, it adds a steady ~8–9 mA" is withdrawn (R13 item 13).
+>   The second suspect (B) is out as the main path.
+> - **§0.2:** the offset explanation and the ~88–90 % figure are withdrawn
+>   (R13 item 11).
+> - **§0.3:** TB-1 to TB-5 are done. The next step is §10.6.
 
 ### 0.1 The noise source
 
@@ -781,7 +807,10 @@ integrates as if it were drain. The P-4, §6.4 and stopgap fixes remove it.
 
 6. **Re-zero** after any shunt, lug, monitor-wiring or router move (§3.5).
 
-7. **Optional stopgap.** A "noise-suppression" mode keeps the panel on with a
+7. **Optional stopgap. Superseded by Rev 4:** the black frame failed TB-4(b)
+   3/3. Use `output_power: 11dB` instead (§10.5 item 1). The original text
+   follows.
+   A "noise-suppression" mode keeps the panel on with a
    black frame at contrast 0, or whichever TB-4 variant proves sufficient.
    - Cost: the panel-on current, CHARGE-counted. At most ~2.5 mA × 730 h =
      1.8 Ah/mo of real drain (0.46 %/mo) if a lit page were needed.
@@ -831,7 +860,9 @@ integrates as if it were drain. The P-4, §6.4 and stopgap fixes remove it.
 | state | idle SOC error | basis |
 |---|---|---|
 | today, SW ledger, quiet | 1.34 %/mo low against the measured drain | turnover |
-| V1.28 as designed, if B1 is an offset | 2.8–3.7 %/mo high | §4 |
+| V1.28 as designed, if B1 is an offset | 2.8–3.7 %/mo high. **Refuted by TB-1 (§10.4)** | §4 |
+| V1.28, if the monitor's return bypasses the shunt (§10.4 reading ii) | 4.3–5.0 %/mo high at the datasheet draw; P-1 gives the real figure | §10.4 |
+| V1.28 + `output_power: 11dB`, if the ESP draws little (§10.4 reading i) | ≤ 0.48 %/mo from the between-state DC error, less once it stays in one state; + invisible | §10.4 |
 | V1.28, if B1 closes | ≤ 0.49 %/mo + wander + noisy DC ≤ 0.16 %/mo + invisible | review §4, §3 |
 | V1.28 + P-1 zero | ~0.1 %/mo + ±0.28 %/mo wander + noisy DC + invisible | [D] |
 | + filter / lead dress, if they remove wander and DC | ~0.1 %/mo + invisible | acceptance: ENERGY ~0.23 W or lower unlit; §3.5 table flat across a move |
@@ -858,6 +889,40 @@ integrates as if it were drain. The P-4, §6.4 and stopgap fixes remove it.
    become A (buck), B (radio), C (router, effectively out).
 10. **Wiring summary §4.2.** The sense pair should be twisted; the photo
     suggests it is not inside the enclosure [P, to confirm].
+
+**Rev 4 (from the diag2 run, §10):**
+
+11. **§0.2 and §4, "a static in-situ offset of +5.7–7.5 µV": refuted by
+    TB-1.** A static offset cancels in the radio on/off step, so the step
+    should still have been ≥ 13.9 mA. It was +2.3 mA. "True SOC ~88–90 %" is
+    withdrawn (§10.4).
+12. **Item 1 above** ("Report 08-26 §7.1: the DTIM premise is wrong, monitor
+    23.5–27.4 mA"): **now unsettled.**
+    - TB-1 shows the radio moves the shunt reading by only ~2.3 mA.
+    - Either the 08-26 figure was right in size (§10.4 reading i), or the
+      datasheet draw is real but unseen (reading ii).
+    - P-1 decides.
+13. **§0.1 and the §3.3 table, "lit, it adds a steady ~8–9 mA at 3.3 V
+    [D]": withdrawn.**
+    - That derivation read the lit-page Q shift as panel current.
+    - The black frame gives most of the shift (−1.30 of −1.75 mA) with no
+      pixels lit.
+    - The white frame gives no more than the lit page.
+14. **§3.6 table, "plus the panel-on current, ~0.3 mA at the bank".**
+    - The measured black-frame shift is −1.30 ± 0.32 mA.
+    - Whether that is current or DC error is unresolved (§10.4).
+15. **Review §8.2, "direct evidence against the bypass hypothesis in B1":
+    not evidence.**
+    - The 09-22 shift (−3.2 mA as the noise dropped) has the same signature
+      as TB-2, which moved Q −2.6 mA with no load added.
+    - Bypass is reopened. The review's owner should amend §8.2.
+16. **Run sheet, TB-1 row "a step of a few mA → the ESP draws far less than
+    its datasheet": incomplete.**
+    - Bypass is the other reading. The run sheet left it out because Bill had
+      ruled bypass out by construction.
+    - Run sheet TB-2 rows: none fits. The shape is a threshold (§10.2).
+17. **§3.3, mechanism B ("second"): out as the main path.** TB-1, TB-4 and
+    the TB-2 shape each contradict linear antenna pickup (§10.3).
 
 ---
 
@@ -903,6 +968,9 @@ integrates as if it were drain. The P-4, §6.4 and stopgap fixes remove it.
 
 ## 9. Suggested order
 
+**Rev 4:** TB-1 to TB-5 are done. §10.6 replaces this list. The Rev 3 list is
+kept below for the record.
+
 1. **TB-4 and P-5.** Cheap, and they decide A vs the panel vs presence.
 2. **TB-1.** Settles B1's sign test, and radio vs not.
 3. **P-1, lit and unlit.** Sets `I_off`.
@@ -914,3 +982,399 @@ integrates as if it were drain. The P-4, §6.4 and stopgap fixes remove it.
    - §6.2 items 1–6 (and 7 if wanted)
    - plus B2, B3, O1 and O2
    - then turnover gates 2–6
+
+---
+
+## 10. Diag2 results, 2026-09-25: an independent reading
+
+**Sources:**
+
+- `INA228 Monitor/diag-test-results.md`, which holds the 43 RESULT lines.
+  Its times are local (UTC−4); this section uses UTC.
+- The exports in `INA228 Monitor/diag2-export-2026-09-25/`: the 2-s current,
+  the HW Net Charge and HW Energy counters, AP info and status.
+
+**Build and timing.** V1.27-diag2 (config hash `0xbecf144a`) ran from 14:10
+to 20:21 UTC. V1.27 (`0x6b05d980`) was reinstalled afterwards.
+
+**Scope.** The results file reads each label against the run sheet and
+goes no further. This section does the interpretation.
+
+### 10.1 Is the data sound?
+
+- **Q and E agree with HA's own counters in all 42 online windows** [M/D].
+  - The comparison uses the HW Net Charge and HW Energy rows nearest each
+    window's ends. The rows come every 60 s.
+  - Q agrees within **0.40 mA** (mean difference −0.01 mA), and E within
+    0.033 W.
+- **The Wi-Fi-off window is confirmed without the device's arithmetic** [M/D].
+  - The charge counter moved −1.049 mAh between 15:10:38.8 and the first
+    value after the reconnect.
+  - Readings run on a 60-s cadence at :38.8, so that value was most likely
+    read at 15:20:38.8 while offline. Then
+    −1.049 mAh × 3600 / 600 s = **−6.29 mA**.
+  - Taken to 15:20:59.9 instead, the figure is −6.08 mA.
+  - The device reported −6.38 mA.
+- **`wifi.disable` really stops the radio.**
+  - ESPHome 2026.9.0 sets `WIFI_MODE_NULL`, which calls `esp_wifi_stop()`
+    [S: `wifi_component_esp_idf.cpp`, `wifi_mode_()`].
+  - HA showed the device unavailable from 15:12:51 to 15:20:59 [M].
+- **The TX-power steps were applied.** AP info read back 20.00, 17.00, 14.00,
+  11.00 and 8.50 dBm at the steps [M].
+- **The link held at low power.** In 48 min at ≤ 14 dBm there was no
+  disconnect. The longest gap in the 2-s record was 8 s, which is HA dropping
+  repeated values [M].
+- **The yardstick for a "real" shift.**
+  - The 15 TB-4 base windows scatter with Q sd **0.37 mA** (−9.30 to
+    −8.11 mA).
+  - Their E averages 0.463 W (sd 0.015) [M].
+
+### 10.2 What each test shows
+
+All shifts are against the bracketing base windows (TB-4), the 20 dBm
+window (TB-2) or the mean of the two ON windows (TB-1) [M/D].
+
+| condition | ΔQ, mA (less drain = +) | ΔE, W | 2-s sd ratio |
+|---|---|---|---|
+| TB-4 lit page (n = 3) | −1.75 ± 0.17 | −0.207 | 0.50 |
+| TB-4 black frame (n = 3) | −1.30 ± 0.32 | −0.038 | 1.05 |
+| TB-4 white frame (n = 3) | −1.58 ± 0.14 | −0.241 | 0.36 |
+| TB-4 1 ms loop (n = 3) | **+1.70** ± 0.24 | +0.153 | 1.24 |
+| TB-2 17 dBm | −0.96 | −0.102 | 0.80 |
+| TB-2 14 dBm | −2.01 | −0.210 | 0.41 |
+| TB-2 11 dBm | −2.21 | −0.218 | 0.36 |
+| TB-2 8.5 dBm | −2.58 | −0.218 | 0.35 |
+| TB-1 radio off | **+2.32** | **+0.513** | **1.67** |
+
+**The ENERGY gauge now has calibration points** [M]. They replace the §6.3
+values:
+
+- 0.22–0.24 W: white frame, or TX ≤ 14 dBm
+- 0.25–0.26 W: lit page
+- 0.42–0.50 W: unlit at 20 dBm, with coexistence OFF
+- 0.60–0.63 W: 1 ms loop
+- 0.99 W: radio off
+
+**TB-4: the load suppresses the noise, not the panel.**
+
+- The black frame fails the §3.6 criteria 3/3: 5-min sd 5.40–5.78 mA
+  (limit ≤ 3), and E 0.425–0.433 W (limit ≤ 0.25).
+- The white frame passes 3/3: sd 1.72–2.01, E 0.222–0.226.
+- The lit page passes on sd (2.58–2.74) and misses E narrowly
+  (0.254–0.260).
+- **The suppression grows with the number of lit pixels.** The sd ratio runs
+  1.05 (none lit), then 0.50 (a text page), then 0.36 (all lit).
+- §3.6 wrote down this outcome in advance: "the load level drives it. A
+  holds, and P-5 is the hardware twin."
+- **A burstier CPU load makes it worse.** The 1 ms loop raised sd ×1.24 and
+  E by 0.15 W.
+
+**TB-2: a threshold, not linear pickup.**
+
+- The floor is taken as the 8.5 dBm sd, 1.81 mA. The excess sd is
+  √(sd² − 1.81²):
+
+  | TX | 20 | 17 | 14 | 11 dBm |
+  |---|---|---|---|---|
+  | excess sd, mA | 4.82 | 3.71 | 1.06 | 0.33 |
+  | ratio to the step above | — | 0.77 | **0.29** | 0.31 |
+
+- Pickup that is linear in the antenna's field would scale with √P: ×0.708
+  for each 3 dB.
+- The 20 → 17 step is close to that. The **17 → 14 step is 2.5× steeper.**
+  The 14 → 11 ratio (0.31) sits at the floor, so it is not a meaningful slope.
+- **The 17 dBm window is intermittent** [M]. Its 2-min sd ranges 3.2–5.2 mA,
+  with sk 0.81 and ek 1.98. It sits on the threshold.
+- **The effect is fast and reversible** [M]. Restoring 20 dBm at 17:41:40
+  brought both the noise and the Q shift back within ~2–4 min:
+
+  | 2-min bin from | 17:38 | 17:40 | 17:42 | 17:44 |
+  |---|---|---|---|---|
+  | sd, mA | 1.70 | 3.95 | 4.39 | 5.63 |
+  | mean, mA | −10.62 | −9.95 | −8.91 | −8.38 |
+
+  A thermal cause could not move this fast.
+
+**TB-1: radio off doubles the per-conversion noise.**
+
+- The noise rose: sd ×1.67, E ×2.08.
+- **The per-conversion error inferred from E** [D: Gaussian inversion at
+  13.30 V; heavy tails make it an underestimate]:
+
+  | state | σ per conversion | predicted 2-s sd, σ / √128 | observed 2-s sd |
+  |---|---|---|---|
+  | quiet (8.5 dBm) | 18.7 mA | 1.66 mA | 1.81 mA |
+  | unlit, 20 dBm | 43.7 mA | 3.86 mA | 5.45 mA |
+  | radio off | 92.9 mA | 8.21 mA | 8.16 mA |
+
+- **Reading the table:**
+  - With the radio off, the error averages like white noise.
+  - In the unlit radio-on state, the observed sd is 1.4× the white-noise
+    prediction. That excess is the correlated part that TB-3 sees.
+- The +2.32 mA step is B1's test (§10.4).
+
+**TB-3: the error is correlated over 50–200 ms.**
+
+- **Q and E are flat across AVG 1–128** (Q −8.34 to −8.93, E 0.471–0.482)
+  [M]. CHARGE and ENERGY accumulate per conversion, and AVG does not touch
+  them [S: DS §7.3.1]. So **V1.28's CHARGE-based SOC does not depend on AVG.**
+- **The 2-s sd against the white prediction from AVG 1** (64.3 / √N):
+
+  | AVG | 4 | 16 | 64 | 128 |
+  |---|---|---|---|---|
+  | observed / predicted | 1.38 | 1.68 | 0.74 | 1.11 |
+
+  One shunt conversion takes 12.36 ms. So the error is correlated over 4–16
+  conversions (≈ 50–200 ms) and has decorrelated by ~1 s.
+- **Caveats:**
+  - The base windows alone wander ±20 % in sd, so the 64-vs-128 ordering
+    means nothing.
+  - At AVG 1 the tails are heavy: ek 4.77, one reading at −331.5 mA.
+- **AVG ≤ 16 is unusable for the CURRENT channel** [M]. It produced 66
+  bank-state flips.
+
+**TB-5: 0xFDC5 does what §6.2 item 2 predicted.**
+
+- The sd ratio is **0.735** against BASE. The normal-theory 95 % CI is
+  0.670–0.806 [D: F-ratio, n = 450 each; lag-1 autocorrelation ≈ 0 per the
+  results file].
+- The prediction was 1/√2 = 0.707. Against RESTORED the ratio is 0.660, and
+  against the mean of the two bases 0.696.
+- **Q and E are unchanged** (−8.96 / −8.96 mA; 0.4610 / 0.4615 W), as they
+  must be.
+- Vsd rose 0.090 → 0.098 mV. That is inside the 0.045–0.106 mV range of
+  the other AVG-128 windows.
+
+### 10.3 The noise source, updated
+
+| mechanism | black fails, white passes | 1 ms loop worse | TB-2 threshold | radio off worse | quieter in API gaps (§3.7) |
+|---|---|---|---|---|---|
+| **A. U3 buck; its operating point is set by its load** | ✓ steady pixel load | ✓ burstier load | ✓ if the TX burst's load step drives it; a mode change is naturally a threshold [I] | ✓ lighter load, deeper light-load mode [I] | ✓ fewer TX bursts |
+| **B. Linear antenna pickup** | ✗ no RF change | ✗ no RF change | ✗ not ∝ field | ✗ no field at all | ✓ |
+| **C. Router** | ✗ | ✗ | ✗ | ✗ | ✗ (already out, §3.1) |
+
+**A leads, and B is out as the main path.** Under A, the data show two
+components [I]:
+
+1. **TX-burst driven.**
+   - It is correlated over ~50–200 ms and heavy-tailed.
+   - It disappears at ≤ 14 dBm, or when a steady load is added.
+2. **White per conversion.**
+   - About 18 mA in the quiet state, which is ~9× the chip's ~2 mA.
+   - It grows as the load falls: ~93 mA with the radio off.
+
+**Still unknown:**
+
+- where the interference enters: P-2a and P-2b
+- whether U3 actually mode-hops: P-6
+- **what the lit pixels' current does at the shunt** (§10.4). The pixel load
+  sits on the 3.3 V rail wherever its current returns, so A holds either way.
+
+**The DC part is state-dependent and not a function of noise alone** [M]:
+
+- The black frame moved Q by −1.30 mA with the noise unchanged.
+- TX ≤ 14 dBm moved it by −2.0 to −2.6 mA while the noise collapsed.
+- **So no single "Q vs E" correction exists.** The practical answer is to
+  keep the monitor in one state, the quiet one (§10.5).
+- Which state is closer to the truth is unknown. P-2a measures the quiet
+  state's DC part directly.
+
+### 10.4 B1: TB-1 refutes the offset. Two readings remain
+
+**What the step should have been**, if the monitor's return runs through the
+shunt and the receiver is on continuously:
+
+1. **The receiver setting.** `power_save_mode: none` becomes
+   `esp_wifi_set_ps(WIFI_PS_NONE)` [S: ESPHome `wifi_apply_power_save_()`].
+2. **Radio on:** 84 mA [S: C3 Table 5-7, RX HT20. The table's heading says
+   "Peak"].
+3. **Radio off:** 16–28 mA [S: C3 Table 5-8, Modem-sleep at 160 MHz, CPU
+   idle to running].
+4. **Δ at 3.3 V:** 84 − 28 = 56 mA to 84 − 16 = 68 mA.
+5. **At the bank**, Δ × 3.3 V / (η × 13.30 V):
+
+   | η | 1 | 0.9 | 0.8 |
+   |---|---|---|---|
+   | step | **13.9–16.9 mA** | 15.4–18.7 mA | 17.4–21.1 mA |
+
+**Measured:** +2.32 mA [M].
+
+- The counters alone give **+2.4 to +2.7 mA** [D]:
+  - ON windows: −8.67 and −8.81 mA over 600 s each.
+  - OFF window: −6.29 or −6.08 mA (§10.1).
+
+**The offset reading is refuted:**
+
+- A static offset (§4, item 2) cancels in a step. It still predicts
+  ≥ 13.9 mA.
+- To survive, the Wi-Fi-off window would need a DC error of **−11.6 mA or
+  more** (13.9 − 2.32), reading *more* drain than is real.
+- Every other high-noise window read **less** drain:
+  - 20 dBm vs 8.5 dBm: +2.6 mA
+  - 1 ms loop: +1.7 mA, despite the extra CPU load
+- The offset reading and its ~88–90 % SOC are withdrawn (R13 item 11).
+
+**What is left must hide most of the radio's ~56–68 mA from the shunt:**
+
+- **(i) The ESP draws far less than its datasheet.**
+  - The radio would add only 2.32 × 13.30 × η / 3.3 = **7.5–8.4 mA** at
+    3.3 V (η 0.8–0.9).
+  - That is an RF duty of ~11–13 % [D: 7.5 / 68 to 8.4 / 63]. In other
+    words, modem-sleep behaviour despite `WIFI_PS_NONE`.
+  - B1 would then close with no offset. The quiet reading of 10.3–10.8 mA is
+    33–39 mA at 3.3 V for the whole monitor
+    [D: 10.3 × 13.30 × 0.8 / 3.3 to 10.8 × 13.30 × 0.9 / 3.3].
+  - The Seeed figure found in a search, "normal mode 24 mA" for the XIAO
+    ESP32-C3, is of that order. The Seeed PDF itself is blocked here, so the
+    test conditions are unknown [S, weak].
+- **(ii) Most of the monitor's supply current bypasses the shunt.**
+  - It would return to battery-negative by a path that skips the shunt.
+  - Bill says this is impossible by construction. Wiring summary §4.4 routes
+    GND → negative busbar (the load side).
+  - The shunt's ~10 mA would then be other load-side draw (the inverter off,
+    for example), plus offset and DC error.
+- **In either case**, part of the +2.32 mA may itself be DC error, since the
+  radio-off window was the noisiest.
+
+**TB-4 tilts toward (ii) but does not settle it** [M/D]:
+
+- **White minus lit, same run.** Both frames are display-on and both are
+  quiet.
+  - The differences are +0.28, +0.09 and +0.30 mA: **+0.22 ± 0.12 mA**, less
+    drain with more pixels.
+  - **Under (i) it should be ≤ −0.7 mA.**
+    1. ESPHome's default contrast 1.0 → 0xFF [S: `ssd1306_base`].
+    2. At that contrast a full-white module of this type draws 5–20 mA at
+       3.3 V [S, uncertain: an Adafruit figure seen only in a search
+       summary; the page is blocked here].
+    3. A text page lights well under half the pixels [I].
+    4. So white adds ≥ 2.5 mA at 3.3 V, which is ≥ 0.69 mA at the bank
+       (η 0.9).
+  - **So one of three holds:**
+    - the pixel current does not reach the shunt (ii);
+    - the pixels draw < ~0.3 mA, which is implausible;
+    - a DC error moves by ≥ +0.9 mA with pixel count, at equal noise [I].
+- **Black minus bases:** −1.30 ± 0.32 mA with the noise unchanged.
+  - Under (i), this is the panel-on current: ≈ 4.5 mA at 3.3 V
+    [D: 1.30 / 0.292, η 0.85].
+  - Under (ii), it is a DC-error change without a noise change.
+- **The 09-22 shift is not evidence either way** (R13 item 15).
+
+**What decides it:**
+
+- **P-1** (§5.2): a DMM in series with TB1 BATT_RAW, on V1.27 as installed,
+  with the panel dark.
+  - **(i)** predicts ≤ ~13 mA: the shunt's 10.3–10.8 mA plus at most the
+    2.67 mA offset limit.
+  - **(ii)** predicts **21–28 mA** (§4).
+- **If P-1 reads ≥ 20 mA, find the return.**
+  - Where does the TB1 GND wire land?
+  - Does it carry the P-1 current? The mV drop along it tells: 18 AWG is
+    ≈ 21 mΩ/m, so ~0.5 mV per metre at 25 mA.
+  - All of it on TB1 GND means the lug lands on the battery side of the
+    shunt.
+  - Less than all means a second return. Candidates:
+    - the DS18B20 cable (commissioning H2 had a short in its field wiring)
+    - the enclosure or its mounting
+    - the antenna coax
+- **P-5 at 100 Ω instead** (no break in the power path).
+  - 3.3 V / 100 Ω = 33 mA, which is 9.1–10.2 mA at the bank (η 0.9–0.8).
+    The resistor dissipates 0.11 W; use ¼ W or larger.
+  - **On V1.27 at 20 dBm**, a steady load also moves the DC state, as the
+    white frame did (−1.3 to −1.8 mA):
+    - **(i)** predicts a shunt step of about **−10.4 to −12.0 mA**.
+    - **(ii)** predicts about **−1.3 to −1.8 mA**.
+  - **On V1.28 at 11 dBm** the monitor is already quiet, so the DC term
+    should drop out:
+    - **(i)** predicts −9.1 to −10.2 mA.
+    - **(ii)** predicts ~0.
+  - A result in between gives the fraction seen.
+
+**What each reading means for SOC** [D, conditional]:
+
+- **(i):**
+  - Neither the offset term nor the offset reading of B1 applies.
+  - The turnover's ~96.7 % ± 1.1 % stands.
+  - What remains is the between-state DC error: ≤ 2.6 mA, or ≤ 0.48 %/mo
+    (2.6 × 0.184).
+- **(ii), at the datasheet draw of 23.5–27.4 mA:**
+  - The unseen drain is **4.3–5.0 %/mo**.
+  - Since the 07-16 anchor (1,686 h) that is 39.6–46.2 Ah, or 10.0–11.6 %
+    of 397 Ah. The true SOC would be **~85–87 %**, not ~96.7 %.
+  - The firmware cannot see it. §6.2 item 1's `I_off` must carry it until
+    the return is fixed.
+
+### 10.5 V1.28 changes from this run
+
+1. **`wifi: output_power: 11dB`.** New; firmware only. It replaces §6.2
+   item 7.
+   - **Why 11 dBm:**
+     - The knee is between 17 and 14 dBm.
+     - 14 dBm is at the edge of the floor (E 0.2386 against 0.231).
+     - 11 dBm leaves 3 dB below 14, and 2.5 dB above ESPHome's minimum of
+       8.5.
+   - **Syntax:** valid range 8.5–20.5 dB. ESPHome also caps the PHY
+     calibration power at ceil(11) = 11 dBm [S: ESPHome 2026.9.0
+     `wifi/__init__.py`].
+   - **Link:**
+     - 48 min at ≤ 14 dBm with no disconnect [M].
+     - The downlink RSSI was −36 to −39 dBm over 09-22 → 09-25 [M, §3.5].
+     - The uplink margin is inferred, not measured [I]. Watch WiFi Signal
+       and API disconnects for a week.
+   - **Expected unlit:**
+     - 2-s sd ~1.8–2.1 mA
+     - E ~0.23 W
+     - positive readings ~0
+     - Q in the state shared by the TX-low and lit windows, −10.3 to
+       −10.8 mA
+   - **It has no panel current, no burn-in and no person present.** The
+     black frame failed.
+2. **ADC timing 0xFDC5** (§6.2 item 2): confirmed by TB-5.
+   - Combined with item 1, expect a 2-s sd of ~1.3 mA (1.8 / √2).
+   - That assumes the quiet-state error averages like white noise at the
+     1-s scale. The combination was not tested together [I].
+3. **`I_off`** (§6.2 item 1): keep the mechanism, but its meaning changes.
+   - It is no longer a thermal-EMF offset; that reading is refuted.
+   - Under (ii), it is the unseen monitor draw.
+   - Under (i), it is ~0 plus the INA228's own offset (P-2a).
+   - Set it from P-1, P-5 and P-2a, not from B1's gap.
+4. **Keep §6.2 items 3–6:** `max_current` 400 A, B2c, RECON and re-zero.
+   - For RECON σ, use the measured between-state DC error, 1.3–2.6 mA [M].
+   - With item 1 in place, only the within-state residual remains.
+5. **Two things not to do** [M]:
+   - Don't lower the main loop interval below the 16 ms default. At 1 ms the
+     sd rose ×1.24 and Q moved +1.7 mA.
+   - Any mode that turns Wi-Fi off doubles the per-conversion noise and moves
+     Q by ~+2 mA. Budget for it or avoid it.
+6. **Never set AVG < 64 on the CURRENT channel.** TB-3 produced bank-state
+   flips.
+7. **Hardware (§6.4): same order.**
+   - The filter and lead dress are still needed for the quiet-state residual,
+     σ ≈ 18 mA per conversion.
+   - A clean chip would put E at about 0.14 W at this drain
+     [D: 13.30 V × 10.5 mA].
+   - Under (ii), fixing the return comes first.
+
+### 10.6 Next steps (replaces §9)
+
+Physical work is Bill's call (R14); V1.28 waits on his go (R12).
+
+1. **Decide B1 (i) vs (ii): P-1, or P-5 at 100 Ω** (§10.4). The two readings
+   differ by ~10 SOC points if the datasheet draw holds. One reading settles
+   it.
+2. **V1.28** with §10.5 items 1–4 and the rest of §6.2, plus B2, B3, O1 and
+   O2. Carry `I_off` from step 1.
+3. **P-2a/P-2b in the quiet state.** They show where the residual enters and
+   set the offset part of `I_off`.
+4. **P-4 and the §6.4 filter.**
+   - Acceptance: quiet-state E moving from 0.23 W toward 0.14 W.
+   - Then a deliberate move shows a flat §3.5 table.
+5. **If (ii): fix the return.**
+   - Repeat the P-5 step to show the load is now seen.
+   - Re-anchor at the next full charge.
+
+**Data still wanted:**
+
+- a photo of where TB1 GND lands
+- a photo of the DS18B20 mount and cable run
+- §8.2 items 1–4, still open
