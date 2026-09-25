@@ -545,6 +545,24 @@ own heating, and it changed 4× at the rewire. The ambient coefficient,
 
 ### 5.1 One diagnostic build (firmware only, controlled at runtime from HA)
 
+**Built:** `INA228 Monitor/battery-bank-monitor-diag.yaml` (V1.27-diag1). The
+run sheet, with install steps, run order, how to read results and exports,
+is `INA228 Monitor/diag-test-runsheet.md`.
+
+**Validation, on ESPHome 2026.9.0:**
+
+- blast radius: only 3 version lines changed
+- config valid
+- codegen OK
+- all 42 DIAG lambdas compile against stubs of the real signatures
+
+**Not validated here:** the full compile. The sandbox could not reach
+`api.registry.platformio.org`, so Device Builder's compile is the final gate.
+
+**Deviation from the plan below:** TB-4(d) uses a **1 ms** loop interval,
+not 0. At 0, ESPHome's loop never sleeps, which would starve the idle task
+and risk a watchdog reset.
+
 **When:** run it now, in the quiet state. **Scope:** keep it separate from
 V1.28. **Gate:** `esp-firmware-validation`.
 
