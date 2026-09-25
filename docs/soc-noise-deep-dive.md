@@ -1322,6 +1322,68 @@ two loads on the 3.3 V rail at their documented sizes:
 
 (ii) explains both with one cause. (i) explains only the radio.
 
+**How (ii) could happen physically** [S: Bill's
+`Battery_Bank-Monitor-THT-V2 - Rev 1.kicad_pcb`, netlist read 2026-09-25]:
+
+- **GND leaves the board on only two field cables:**
+  - TB1 pin 1, to the negative busbar
+  - TB2 pin 1, the DS18B20 cable
+- **Everything else stays inside the enclosure:**
+  - J1 (OLED) and J2 (button)
+  - the GND test pad
+- **The INA228 socket U2 carries only +3V3, GND, SCL, SDA and ALERT**
+  (pins 1–4 and 8). Pins 5–7 connect to nothing, so the breakout's
+  VIN+/VIN−/VBUS leads never meet board ground.
+  - Those leads carry only the INA228's input currents.
+  - A return through a sense lead would show anyway: 20 mA through even 5 mΩ
+    of lead is 100 µV, a 267 mA error.
+- **H1–H4 are unplated (`np_thru_hole`, no net),** so standoffs cannot
+  ground the board.
+- **So the board has no bypass path. If (ii) is real, it is at the far end of
+  one of the two cables:**
+  - **(a) The TB1 GND lug lands on the battery side of the shunt** rather
+    than the busbar: the battery-side bolt, the battery-side Kelvin screw, a
+    battery post or an interconnect.
+    - That bypasses the shunt fully, and it matches TB-1.
+    - Wiring summary §4.4 warns about exactly this landing.
+    - Big currents still read correctly, because the charger and the
+      inverter land on the load side. So commissioning's 78.6 A and
+      Kill-A-Watt checks could not catch it.
+    - The 08-04 and 08-31 rewires were chances for the lug to move [I].
+  - **(b) The DS18B20 cable touches battery-negative potential at the probe
+    end**, through a sleeve bonded to its GND wire or through damaged
+    insulation.
+    - The return current then splits by resistance.
+    - TB-1 needs ≤ 20 % to go through TB1 GND, so the TB1 GND path would
+      have to be ≥ 4× the probe path's resistance.
+    - That is ≥ ~0.4–1.2 Ω against a 24–26 AWG probe cable of 1–2 m
+      (0.1–0.3 Ω) [I: lengths unknown]. A healthy 18 AWG TB1 GND
+      (≈ 21 mΩ/m) can't reach that, so (b) also needs a bad TB1 GND joint.
+    - A contact that shifts when things are moved would also produce §3.5's
+      1–3 mA zero steps [I].
+    - Commissioning H2 found a short in this field wiring once.
+- **Checks, cheapest first** (R14):
+  1. **Follow the TB1 GND wire to its lug.**
+  2. **Unplug TB2 for 10 min.**
+     - The DS18B20 reads NaN, which the firmware handles.
+     - Any current the probe cable was carrying moves to TB1 GND, and the
+       shunt reading steps more negative by that amount.
+     - The SE of a 10-min mean is ~0.3 mA even in the noisy state.
+     - With TB2 unplugged, an ohmmeter from the cable's GND pin to battery
+       negative should read open.
+  3. **Loaded mV check for (a)**, with a steady ≥ 10 A inverter load:
+     - Measure from the TB1 GND screw to the busbar, and to the battery post.
+     - A busbar landing reads ~0 and ≥ 3.75 mV respectively
+       (10 A × 0.375 mΩ, plus cable).
+     - A battery-side landing reads the reverse.
+  4. **A free natural experiment, if the date is known.**
+     - ESPHome's ESP32 default is `power_save_mode: light`, which is modem
+       sleep [S: ESPHome `wifi/__init__.py`].
+     - If `none` was added at a flash after 07-17, a monitor on the shunt
+       should have stepped the drain by (74 − 24) × 3.3 / (η × 13.30) =
+       **12–16 mA** at that flash (η 1–0.8).
+     - The 60-s HW-charge history in the repo covers that period.
+
 **What decides it:**
 
 - **Cheapest: read the driver's actual power-save mode** (firmware only).
