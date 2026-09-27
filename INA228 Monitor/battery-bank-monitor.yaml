@@ -1,5 +1,5 @@
 # ============================================================================
-# Battery Bank Monitor V1.28 — PRODUCTION Configuration
+# Battery Bank Monitor V1.29 — PRODUCTION Configuration
 #   CORE (backup readiness — must be correct): V/I/T acquisition, stale-bus FAULT
 #     watchdog, 3-tier low-voltage alarms + overvoltage guard, bank_state machine,
 #     runtime-remaining, and SOC (INA228 CHARGE register against a full-charge
@@ -15,8 +15,9 @@
 #     VBUS driven from positive busbar via inline-fused lead at breakout terminal block.
 #   Source-level reviewed against ESPHome 2026.5.x; V1.28 validated against
 #     ESPHome 2026.9.0 (config, codegen, host g++ of every lambda; the real
-#     compile is Device Builder's). Flash-ready after credentials are set in
-#     secrets.yaml. Apparent Ri (V1.8) remains PROVISIONAL.
+#     compile is Device Builder's). V1.29 validated the same way (config,
+#     codegen, host g++ of the new display lambdas). Flash-ready after
+#     credentials are set in secrets.yaml. Apparent Ri (V1.8) remains PROVISIONAL.
 # ============================================================================
 # Purpose : Full instrumentation for 12V/500Ah LiFePO4 battery bank with
 #           Giandel 1500W inverter and LiTime 80A charger. Reports V/I/P,
@@ -24,7 +25,9 @@
 #           session metrics, and round-trip efficiency to Home Assistant via Wi-Fi.
 #
 # Hardware: XIAO ESP32-C3 + Adafruit INA228 breakout (5832 or 6349) + DS18B20
-#           + Pololu D24V7F3 (3.3V buck)
+#           + Pololu D24V7F3 (3.3V buck) + Adafruit 938 OLED (J1)
+#           + Adafruit VEML7700 light sensor (4162), chained from the OLED's
+#             second STEMMA QT port — V1.29, replaces the J2 wake button
 #           on Battery_Bank-Monitor-THT V2 PCB (OSH Park).
 #           Wiring per: battery-bank-monitor-wiring-summary-v1.8.md (low-side topology)
 #
@@ -90,6 +93,46 @@
 #   float_voltage 13.26 V, no BP-65, no survival sleep.
 #
 # Changelog:
+#   V1.29 — Light wake replaces the button; V/I/P page; pages cycle every 30 s
+#            (2026-09-27). DISPLAY ONLY: no CORE path reads the panel, the
+#            light sensor or the new entities.
+#            (a) Adafruit VEML7700 (4162, I2C 0x10, fixed) chained from the
+#                OLED's second STEMMA QT port replaces the J2/GPIO4 wake/cycle
+#                button. J2 unpopulated, GPIO4 unused, R3 pull-up harmless.
+#                Wake = a dark -> light edge (>= light_wake_on_lux; re-armed
+#                at <= light_wake_off_lux) held 2 s, which rejects the status
+#                LED's 1 s slow-flash pulses should they reach the sensor. An
+#                edge while lit advances a page, like the old second press, and
+#                restarts the sleep timer. The panel sleeps display_timeout
+#                after the last edge, so a room left lit does not hold it on
+#                (burn-in). In a lit room: cover the sensor ~1 s, uncover.
+#                Fixed gain and time, not the driver's auto mode: auto mode
+#                reconfigures before every reading, 4 integration times per
+#                gain/time step [S: veml7700.cpp], ~7.2 s per dark reading
+#                [D: 4 x 0.4 + 0.8 + 1.6 + 3.2 s]. 1x / 100 ms = 0.0576 lx per
+#                count, full scale ~3775 lx [D: (800/100) x (2/1) x 0.0036].
+#                Wake latency <= 0.5 s poll + 0.1 s integration + 2 s hold.
+#            (b) "Display Button" is gone, and it was HA's only record of the
+#                lit OLED, which moves the INA228 noise and drain readings
+#                (docs/soc-noise-deep-dive.md §3.1, TB-4). New "Display Lit"
+#                (panel on/off, every path) keeps that record. Also new:
+#                "Display Light Level" (lux; on a > 2 lx change or once a
+#                minute), "Display Light Detected" (the qualified edge state)
+#                and switch "Display Light Wake" (turn OFF for diag/noise runs
+#                that need the panel dark; restored at boot, default ON).
+#            (c) New page ②: V (3 dp), I (3 dp), P (2 dp), signed (+ = charging),
+#                in font_soc (24), the largest size whose widest case
+#                "-6992.00 W" still fits (16 V x 437 A, the ADC limit; ink ends
+#                at x=123) [M: host render with ESPHome's glyph code]. Ink rows
+#                4-20 / 24-40 / 44-60: the 13 spare rows go 4 top, 3, 3, 3
+#                bottom. Old pages ②-④ are now ③-⑤. Page ① unchanged.
+#            (d) Pages cycle every display_page_period (30 s) and wrap; the
+#                clock restarts at each wake or advance. 5 pages = 150 s a lap,
+#                two laps per 5-min wake.
+#            (e) light_wake_on_lux 20 / light_wake_off_lux 5 are PROVISIONAL:
+#                set them from "Display Light Level" after install (room dark
+#                with the OLED lit and the LED flashing, then the lights on).
+#
 #   V1.28 — SOC from the INA228 CHARGE register; noise fixes from the diag2 run
 #            (2026-09-25). Scope and evidence: docs/soc-noise-deep-dive.md §10.7,
 #            docs/soc-v128-review.md B2/B3/O1/O2, docs/soc-accuracy-turnover.md §5.
@@ -416,7 +459,15 @@ substitutions:
   i_max_plausible_a:        "350.0"  # A; above = saturated channel → freeze + FAULT
 
   # --- Display ---------------------------------------------------------------
-  display_timeout:          "5min"   # auto-sleep from last button press
+  display_timeout:          "5min"   # auto-sleep, counted from the last light-wake edge
+  display_page_period:      "30s"    # V1.29: each page shows this long, then the next (wraps)
+  # V1.29 light wake (VEML7700). Lux at the sensor, behind its window. Decimal
+  # REQUIRED (lambdas append f). PROVISIONAL: set both from the "Display Light
+  # Level" history after install - room dark with the OLED lit and the status
+  # LED flashing (must stay below off), then the lights on (must clear on).
+  light_wake_on_lux:        "20.0"   # lx; rising to >= this (held 2 s) = a wake
+  light_wake_off_lux:       "5.0"    # lx; must fall to <= this to re-arm the next wake
+  light_poll:               "500ms"  # VEML7700 poll; wake latency <= this + 100 ms + 2 s hold
 
   # --- Current thresholds (Option B: positive = charging) -------------------
   # 50 mA ≈ 60× INA228 quantization step (312.5 nV ÷ 375 µΩ = 0.83 mA).
@@ -450,14 +501,14 @@ esphome:
     - "<esp_wifi.h>"   # V1.28: esp_wifi_get_ps / esp_wifi_get_max_tx_power readbacks
   project:
     name: "wkcollis1.battery-bank-monitor"
-    version: "1.28"
+    version: "1.29"
   on_boot:
     - priority: -200
       then:
         - logger.log:
             level: INFO
-            format: "Battery Bank Monitor V1.28 boot -- INA228 @ 0x40, DS18B20 on GPIO10"
-        # Start panel dark — wakes on button press only. turn_off() not setup() (issue #1393).
+            format: "Battery Bank Monitor V1.29 boot -- INA228 @ 0x40, DS18B20 on GPIO10"
+        # Start panel dark — wakes on a light-wake edge only (V1.29). turn_off() not setup() (issue #1393).
         - lambda: 'id(panel).turn_off();'
         # alert_reason shows "none" from boot (V1.21) — not "unknown" until first alert
         - lambda: 'id(alert_reason).publish_state("none");'
@@ -753,6 +804,13 @@ time:
 
 # I2C: SDA=GPIO6 (D4), SCL=GPIO7 (D5). INA228 onboard pull-ups. Address 0x40
 # (A0/A1 OPEN — do NOT bridge A0 as on UPS board which uses 0x41).
+# V1.29: bus_a also carries the OLED (0x3D, via J1) and the VEML7700 (0x10,
+# chained from the OLED's second STEMMA QT port). Three pull-up sets, the
+# VEML7700's assumed 10 kΩ like the others [its value not confirmed]:
+# 10 kΩ / 3 = 3.33 kΩ; sink 3.3 V / 3.33 kΩ = 1.0 mA vs the 3 mA limit;
+# τ = 3.33 kΩ × 60-80 pF [estimate] = 200-267 ns vs 1000 ns at 100 kHz.
+# A VEML7700 or QT-cable fault that holds SDA/SCL also stops the INA228 reads
+# (stale-bus FAULT: loud, not silent). The old GPIO button could not do that.
 i2c:
   sda: GPIO6
   scl: GPIO7
@@ -770,33 +828,35 @@ one_wire:
 
 # ============================================================================
 # FONTS (V1.16) — four sizes for the local panel display.
-# font_soc(24)     Page ① SOC line
-# font_runtime(28) Page ② big runtime value
-# font_body(12)    Body text across all pages (voltage, current, watts, state)
-# font_hdr(10)     Small headers and sub-body lines (Pages ② ④)
+# font_soc(24)     Page ① SOC + voltage lines; page ② (V1.29) V / I / P lines
+# font_runtime(28) not drawn by any page (V1.29 check)
+# font_body(12)    Body text on pages ① ③ ④ ⑤
+# font_hdr(10)     not drawn by any page (V1.29 check)
 # Roboto (Google Fonts) is fetched by ESPHome at compile time and baked into
 # the binary; keep the font tables small.
 # ============================================================================
 font:
   - file: "gfonts://Roboto"
-    id: font_soc          # Page ①  SOC line
+    id: font_soc          # Pages ①②  SOC / V lines; V / I / P lines
     size: 24
   - file: "gfonts://Roboto"
-    id: font_runtime      # Page ②  big runtime value
+    id: font_runtime      # not drawn by any page (V1.29 check)
     size: 28
   - file: "gfonts://Roboto"
-    id: font_body         # Pages ①②③④  body lines (voltage, current, watts, slope, state, charge)
+    id: font_body         # Pages ①③④⑤  body lines (current, watts, slope, state, charge)
     size: 12
   - file: "gfonts://Roboto"
-    id: font_hdr          # Pages ②④  small header / sub-body lines
+    id: font_hdr          # not drawn by any page (V1.29 check)
     size: 10
 
 # ============================================================================
-# DISPLAY (V1.17) — Adafruit 938 SSD1306 128x64, I2C 0x3D, on bus_a (shared w/ INA228).
-# OFF by default (on_boot turns it off); woken by the GPIO4 button (see binary_sensor).
+# DISPLAY (V1.17; V1.29 light wake + page ②) — Adafruit 938 SSD1306 128x64, I2C 0x3D,
+# on bus_a (shared w/ INA228). OFF by default (on_boot turns it off); woken by the
+# VEML7700 light sensor (binary_sensor room_lit -> script display_wake).
 # Sleep/wake via turn_on()/turn_off() ONLY — never setup() (ESPHome issue #1393).
-# Four pages, button-cycled (display.page.show_next). update_interval 1s is cheap:
-# the panel is dark almost always, and a lit page refreshes its values each second.
+# Five pages, each shown display_page_period (30 s) by script display_page_cycle
+# (display.page.show_next, wraps). update_interval 1s is cheap: the panel is dark
+# almost always, and a lit page refreshes its values each second.
 # ============================================================================
 display:
   - platform: ssd1306_i2c
@@ -837,7 +897,30 @@ display:
             it.printf(68, 52, id(font_body), "%.1fW", fabsf(p));
           }
 
-      # ── Page ②: Runtime — remaining + slope + curve + SOC cue ──────────────
+      # ── Page ②: V / I / P, full precision (V1.29) ─────────────────────────
+      # font_soc (Roboto 24): digit and capital ink is rows y+6..y+22 of the
+      # text box, 17 px [M: host render with ESPHome's glyph code]. 3 x 17 =
+      # 51 of 64 rows; the 13 spare go 4 top / 3 / 3 / 3 bottom, so the ink is
+      # rows 4-20, 24-40, 44-60 and the baselines are rows 21, 41, 61.
+      # Widest case "-6992.00 W" (16 V x 437 A, the INA228's limit) ends at
+      # x=123 of 127; "-437.000 A" at 117. V and I 3 dp (the HA sensors'
+      # precision: the ~-8 mA idle drain reads -0.008 A, not -0.01), W 2 dp.
+      # Signed like HA: + = charging, - = discharging.
+      - id: page_vip
+        lambda: |-
+          float v = id(ina228_voltage).state;
+          if (isnan(v)) it.print(6, 21, id(font_soc), TextAlign::BASELINE_LEFT, "-- V");
+          else          it.printf(6, 21, id(font_soc), TextAlign::BASELINE_LEFT, "%.3f V", v);
+
+          float i = id(ina228_current).state;
+          if (isnan(i)) it.print(6, 41, id(font_soc), TextAlign::BASELINE_LEFT, "-- A");
+          else          it.printf(6, 41, id(font_soc), TextAlign::BASELINE_LEFT, "%.3f A", i);
+
+          float p = id(signed_power).state;
+          if (isnan(p)) it.print(6, 61, id(font_soc), TextAlign::BASELINE_LEFT, "-- W");
+          else          it.printf(6, 61, id(font_soc), TextAlign::BASELINE_LEFT, "%.2f W", p);
+
+      # ── Page ③: Runtime — remaining + slope + curve + SOC cue ──────────────
       - id: page_runtime
         lambda: |-
           it.print(6, 0, id(font_body), "RUNTIME @ LOAD");
@@ -859,7 +942,7 @@ display:
           float soc = id(soc_estimate).state;
           if (!isnan(soc)) it.printf(6, 52, id(font_body), "SOC %.0f%% stop@20%%", soc);
 
-      # ── Page ③: Health — state + fault status + temperature ────────────────
+      # ── Page ④: Health — state + fault status + temperature ────────────────
       - id: page_health
         lambda: |-
           if (id(bank_state).has_state())
@@ -882,7 +965,7 @@ display:
           if (isnan(t)) it.print(6, 52, id(font_body), "T: -- F");
           else          it.printf(6, 52, id(font_body), "T: %.1f F", t);
 
-      # ── Page ④: Charge — absorption cue ────────────────────────────────────
+      # ── Page ⑤: Charge — absorption cue ────────────────────────────────────
       - id: page_charge
         lambda: |-
           float i = id(ina228_current).state;
@@ -904,7 +987,7 @@ display:
             it.print(6, 26, id(font_body), "Mark Full button");
             it.print(6, 39, id(font_body), "if anchor missed");
           }
-  # on_boot: start dark (the panel only lights on a button press)
+  # on_boot: start dark (the panel only lights on a light-wake edge)
   # (handled in esphome: on_boot below)
 
 # ============================================================================
@@ -939,13 +1022,47 @@ output:
     id: led_out
     pin: GPIO20
 
-# Display auto-sleep. mode: restart resets the timer on each button press.
+# Display auto-sleep. mode: restart resets the timer on each light-wake edge.
 script:
   - id: display_sleep_timer
     mode: restart
     then:
       - delay: ${display_timeout}
+      - script.stop: display_page_cycle
       - lambda: 'id(panel).turn_off();'
+
+  # V1.29: the light-wake edge - what a button press did up to V1.28. Dark:
+  # light the panel on page ①. Lit: advance a page. Either way the 5-min
+  # sleep and the 30 s page clock start over.
+  - id: display_wake
+    then:
+      - if:
+          condition:
+            lambda: 'return !id(panel).is_on();'
+          then:
+            - lambda: 'id(panel).turn_on();'
+            - display.page.show: page_main
+          else:
+            - display.page.show_next: panel
+      - script.execute: display_sleep_timer
+      - script.execute: display_page_cycle
+
+  # V1.29: page cycle - each page for display_page_period, then the next
+  # (wraps after page ⑤). Runs only while the panel is lit; stopped by the
+  # sleep timer and restarted by each wake, so every page gets its full period.
+  - id: display_page_cycle
+    mode: restart
+    then:
+      - while:
+          condition:
+            lambda: 'return id(panel).is_on();'
+          then:
+            - delay: ${display_page_period}
+            - if:
+                condition:
+                  lambda: 'return id(panel).is_on();'
+                then:
+                  - display.page.show_next: panel
 
   # V1.28: the ONE place a SOC anchor is set - full charge (src 1, clean), the
   # manual button (2) and a provisional seed (3 ledger, 4 carried, 5 assumed).
@@ -2756,6 +2873,53 @@ sensor:
     name: "ESP32 Internal Temperature"
     update_interval: 60s
 
+  # V1.29: VEML7700 ambient light (Adafruit 4162; I2C 0x10, fixed), chained
+  # from the OLED's second STEMMA QT port. Its only job is the panel wake.
+  # auto_mode false: see changelog V1.29 (a) - the driver's auto mode takes
+  # ~7.2 s per reading in the dark. Fixed 1x / 100 ms = 0.0576 lx per count,
+  # full scale ~3775 lx; dark (~0-1 lx) and room light sit far apart, and a
+  # saturated reading still reads bright. The chip runs continuously (the
+  # driver leaves power saving off): ~45 uA at 3.3 V [datasheet typ, via a
+  # search summary], ~13 uA at the bank [D: 45 x (3.3 / 13.3) / 0.85].
+  # Cut the breakout's LED jumper: its power LED sits beside the photodiode.
+  - platform: veml7700
+    id: veml
+    i2c_id: bus_a
+    address: 0x10
+    auto_mode: false
+    gain: 1X
+    integration_time: 100ms
+    update_interval: ${light_poll}
+    ambient_light:
+      name: "Display Light Raw"   # the schema needs a name, even when internal
+      id: display_lux
+      internal: true    # 2 readings/s; HA gets the throttled copy below
+      on_value:
+        - lambda: |-
+            // Hysteresis: lit at >= on, dark again at <= off. Publish only on
+            // a change: re-publishing true would restart room_lit's delayed_on
+            // timer every 500 ms, so the wake would never fire.
+            static bool lit = false;
+            static bool published = false;
+            bool now = lit ? (x > ${light_wake_off_lux}f) : (x >= ${light_wake_on_lux}f);
+            if (!published || now != lit) {
+              lit = now;
+              published = true;
+              id(room_lit).publish_state(now);
+            }
+
+  # V1.29: the lux the wake logic sees, for setting the two thresholds. On a
+  # > 2 lx change or once a minute, not at the 2 Hz poll rate.
+  - platform: copy
+    source_id: display_lux
+    name: "Display Light Level"
+    entity_category: diagnostic
+    accuracy_decimals: 1
+    filters:
+      - or:
+          - throttle: 60s
+          - delta: 2.0
+
 
 text_sensor:
 
@@ -2877,34 +3041,35 @@ text_sensor:
 
 binary_sensor:
 
-  # Wake/cycle button: J2/GPIO4, R3 10k pull-up on board. 50ms debounce.
-  # 1st press → wake to page 1; subsequent presses → advance page; resets sleep timer.
-  - platform: gpio
-    id: display_button
-    name: "Display Button"
+  # V1.29: light wake - replaces the J2/GPIO4 wake/cycle button (J2 now
+  # unpopulated; GPIO4 unused; R3's pull-up to +3V3 is harmless). Published by
+  # the VEML7700 lux on_value with hysteresis. delayed_on 2 s: the status LED's
+  # slow flash is on 1.0 s, seen for at most 1.0 + 0.5 (poll) + 0.1 (integration)
+  # = 1.6 s, so a leak onto the sensor cannot wake the panel; room light waits
+  # 2 s. on_press = a dark -> light edge: wake, or advance a page if lit. The
+  # first state after boot never fires on_press (ESPHome's default for this
+  # sensor), so a reboot in a lit room leaves the panel dark until a new edge.
+  - platform: template
+    id: room_lit
+    name: "Display Light Detected"
     entity_category: diagnostic
-    pin:
-      number: GPIO4
-      mode:
-        input: true
-        pullup: true
-      inverted: true
     filters:
-      - delayed_on: 50ms
+      - delayed_on: 2s
     on_press:
-      then:
-        - if:
-            condition:
-              lambda: 'return !id(panel).is_on();'
-            then:
-              # Was dark → wake to page 1.
-              - lambda: 'id(panel).turn_on();'
-              - display.page.show: page_main
-            else:
-              # Already lit → advance to the next page (wraps at the end).
-              - display.page.show_next: panel
-        # Every press resets the 5-min auto-sleep countdown.
-        - script.execute: display_sleep_timer
+      - if:
+          condition:
+            switch.is_on: display_light_wake
+          then:
+            - script.execute: display_wake
+
+  # V1.29: the panel's on/off state, from every path that lights it. HA's only
+  # lit-OLED record was the "Display Button" history, and a lit OLED moves the
+  # INA228 noise and drain readings (docs/soc-noise-deep-dive.md §3.1, TB-4).
+  - platform: template
+    id: display_lit
+    name: "Display Lit"
+    entity_category: diagnostic
+    lambda: 'return id(panel).is_on();'
 
   # --------------------------------------------------------------------------
   # GPIO20 history: V1.11 input clamp REMOVED in V1.15 (pin was a true NC pad
@@ -3535,6 +3700,19 @@ binary_sensor:
     name: "DS18B20 Healthy"
     device_class: connectivity
     lambda: 'return !isnan(id(battery_temp).state);'
+
+
+switch:
+  # V1.29: light wake on/off. Turn OFF for diag/noise runs that need the panel
+  # dark - otherwise switching the basement light on lights it. Turning it off
+  # does not blank a lit panel; it sleeps on its timer. Restored at boot.
+  - platform: template
+    id: display_light_wake
+    name: "Display Light Wake"
+    icon: "mdi:lightbulb-auto"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
 
 
 button:
