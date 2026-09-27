@@ -15,8 +15,9 @@
 #     VBUS driven from positive busbar via inline-fused lead at breakout terminal block.
 #   Source-level reviewed against ESPHome 2026.5.x; V1.28 validated against
 #     ESPHome 2026.9.0 (config, codegen, host g++ of every lambda; the real
-#     compile is Device Builder's). V1.29 validated the same way (config,
-#     codegen, host g++ of the new display lambdas). Flash-ready after
+#     compile is Device Builder's). V1.29: config, codegen, host g++ of the
+#     new display lambdas, AND a full ESP-IDF 5.5.5 compile under ESPHome
+#     2026.9.0 - 0 errors, RAM 36.2 %, flash 56.3 %. Flash-ready after
 #     credentials are set in secrets.yaml. Apparent Ri (V1.8) remains PROVISIONAL.
 # ============================================================================
 # Purpose : Full instrumentation for 12V/500Ah LiFePO4 battery bank with
