@@ -77,6 +77,7 @@ import re
 import sys
 import urllib.error
 import urllib.request
+from typing import Any
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 SCRIPT_DIR = pathlib.Path(__file__).parent
@@ -324,7 +325,7 @@ def validate_header(csv_path: pathlib.Path, expected: list[str]) -> bool:
 # ── File info for --status ─────────────────────────────────────────────────────
 def get_file_info(csv_path: pathlib.Path) -> dict:
     """Return first_dt, last_dt, row_count, size_kb for --status display."""
-    info = {"first": None, "last": None, "count": 0, "size_kb": 0.0}
+    info: dict[str, Any] = {"first": None, "last": None, "count": 0, "size_kb": 0.0}
     if not csv_path.exists():
         return info
     info["size_kb"] = round(csv_path.stat().st_size / 1024, 1)
