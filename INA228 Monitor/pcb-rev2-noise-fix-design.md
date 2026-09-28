@@ -1,0 +1,371 @@
+# Battery_Bank-Monitor-THT-V2 Rev 2: fixing the INA228 current-channel noise (design note)
+
+**Status.** Draft, pre-fabrication. Reviewed against the Rev 2 KiCad file
+of 2026-09-28. Nothing here is built or measured on Rev 2 yet.
+
+**Problem it fixes.** On the built board (V2 Rev 1.1), the INA228 current
+reading carries interference from the on-board 3.3 V buck regulator. The
+interference adds per-conversion noise about 9× the chip's own floor, and
+it moves the zero reading by 1–3 mA whenever wiring or equipment is moved.
+
+**Companion documents.**
+
+- `battery-bank-monitor-wiring-summary-v1_10.md`: the Rev 1.1 board,
+  wiring and BOM. §4.6 has a pin-map error that this note corrects (§5.5).
+- `docs/soc-noise-deep-dive.md`: the noise investigation and the
+  2026-09-25 diag2 test results this design rests on.
+
+**Evidence tags:** [M] measured, [D] derived, [S] source or datasheet,
+[I] inference, [P] photo, [K] parsed from the KiCad board files.
+
+---
+
+## 0. Summary
+
+| | |
+|---|---|
+| **Symptom** | Excess noise and a moving zero on the INA228 current channel. The noise grows as the 3.3 V load falls. |
+| **Leading cause** | The Pololu D24V7F3 buck (U3), which runs in a light-load mode at the monitor's ~25 mA. Its switching sits near the INA228's 1 MHz sampling clock. |
+| **Rev 1.1 layout** | The INA228 breakout sits 3.8 mm from the buck. The shunt sense leads land on the breakout's own terminal block, about 1 cm from the buck's inductor, and fan out untwisted. There is no input filter. |
+| **Rev 2 fix** | Move the INA228 to the far end of the board. Bring the sense lines in at a new edge terminal block (TB3) as a routed pair. Add TI's input RC filter. Add a ceramic capacitor at the buck input. |
+| **Expected result** | Magnetic pickup largely removed (~46× less stray field at the sense path [I]). Anything left, from any path, attenuated 42 dB at 1 MHz by the filter [D]. |
+| **Not fixed** | Pickup on the external shunt leads; the INA228's own offset (±1 µV, ±2.67 mA [S]). |
+| **Status** | Six items to close before fabrication (§7), and one test to run first on the Rev 1.1 board (§8.1). |
+
+---
+
+## 1. The problem on Rev 1.1
+
+### 1.1 Symptoms
+
+All figures come from `docs/soc-noise-deep-dive.md` (§3.1, §3.5, §10.2).
+
+- **Per-conversion noise** in the quiet state is σ ≈ 18.7 mA, against about
+  2 mA for the INA228 alone [D, from the ENERGY register rate].
+  - The idle ENERGY noise gauge reads 0.231 W. A clean chip at this drain
+    would read about 0.14 W [D: 13.30 V × 10.5 mA].
+- **The zero steps by 1–3 mA** at physical events: rewiring, moving the
+  monitor, moving the router [M].
+  - That is 0.4–1.1 µV at the shunt. The INA228's drift spec is
+    ±10 nV/°C [S], so a step this large comes from outside the chip.
+  - As a SOC error: 1 mA × 720 h = 0.72 Ah/month, or 0.18 %/month of
+    397 Ah [D]. So a 1–3 mA step costs 0.18–0.54 %/month.
+- **Firmware already did what it could.** V1.28 set 11 dBm TX power and the
+  0xFDC5 ADC timing. The unlit 2-s sd fell to the lit-OLED floor, about
+  1.8 mA [M]. The remaining per-conversion error is the hardware part.
+
+### 1.2 What the tests established (diag2, 2026-09-25)
+
+| Condition | 2-s sd ratio vs baseline | 3.3 V load |
+|---|---|---|
+| Panel on, all-black frame | 1.05 (no change) | +~0 |
+| Text page lit | 0.50 | + some pixel current |
+| All-white frame | 0.36 | + full pixel current |
+| 1 ms CPU loop | 1.24 (worse) | burstier |
+| Wi-Fi radio off | 1.67 (worse); ENERGY ×2.08 | lighter |
+
+[M, deep-dive §10.2]
+
+- **The load level drives it, not the panel state.** More steady load means
+  less noise; lighter or burstier load means more.
+- **Why that points at the buck.** Pololu says the D24V7F3 switches at a
+  fixed 1.1 MHz at normal loads and lowers its frequency at light loads
+  [S: Pololu]. The monitor's ~25 mA is light load for a 600 mA regulator.
+- **Why the INA228 is vulnerable.** Its sampling runs from a 1 MHz clock
+  [S: SLYS021A §6.5, FOSC]. TI warns that transients "at or very close to the
+  sampling rate harmonics" cause problems, and recommends an input filter
+  [S: §8.1.4].
+- **Supply rejection is ruled out.** The INA228's shunt offset shifts at
+  most ±0.5 µV per volt of supply [S: §6.5]. Producing the 7.0 µV residual
+  (18.7 mA × 375 µΩ) that way would need 7.0 / 0.5 = 14 V of 3.3 V rail
+  ripple [D]. So adding supply capacitance is not the fix.
+
+### 1.3 The Rev 1.1 geometry
+
+- **Stacking.** The INA228 breakout (U2) sits directly above C1 and the
+  buck (U3) [P].
+- **Sense-lead entry.** The breakout's VIN+/VBUS/VIN− terminal block faces
+  U3, about 1 cm from its 22 µH inductor (marked "220") [P].
+- **Lead dress.** The sense wires leave the terminal block untwisted and run
+  past U3 and C4 [P]. The OLED harness also crosses the area [P].
+- **Parsed from the board file.** The breakout outline ends 3.8 mm above the
+  Pololu outline. The two are 18.5 mm centre to centre [K].
+- **No input filter**, and no ceramic capacitor at the buck input; only C5
+  (0.1 µF) plus the C4 electrolytic 5.6 mm away [K].
+
+---
+
+## 2. How the interference reaches the reading
+
+Three paths are possible. Which one dominates is **not yet measured** (§8.1).
+
+| # | Path | Mechanism | Rev 2 response |
+|---|---|---|---|
+| 1 | **Into the sense leads** | The buck's magnetic field induces a voltage in the loop that the untwisted VIN+/VIN− fan-out forms beside U3 | Removed by distance plus a tight routed pair; the filter then attenuates any residual |
+| 2 | **Onto the breakout itself** | The same field couples into the breakout's short input traces and the chip | Removed by distance (29.3 mm body gap) |
+| 3 | **Through the shunt** | The board's return current runs through the shunt in the low-side topology, so the buck's high-frequency ripple is a real voltage across the shunt | Only the RC filter (−42 dB at 1 MHz) and C6 reach it; routing cannot |
+
+---
+
+## 3. Design changes, Rev 1.1 → Rev 2
+
+| Change | Rev 1.1 | Rev 2 | Purpose |
+|---|---|---|---|
+| INA228 socket (U2) | (32.08, 31.00), rotated −90° | (27.50, 8.67), top edge, rotated 0° | Distance from the buck (paths 1 and 2) |
+| Sense entry | Breakout's own terminal block, facing U3 | **TB3**, Phoenix PT 1.5/3-3.5-H, top-left corner (5.0, 7.5–14.5): pin 1 VBus, 2 VIN−, 3 VIN+ | Keeps the external leads away from U3 and the other harnesses |
+| Sense routing | Loose wires | On-board traces to U2 header pins 5–7 | Small, fixed loop over the ground plane |
+| Input filter | None | R5, R6 (10 Ω), C7 (1 µF), C8 (100 pF), §4 | Attenuates all paths, including path 3 |
+| Buck input ceramic | None (C5 0.1 µF only) | **C6, 10 µF X7R**, 7.5 mm from the U3 VIN pin | Keeps switching current local instead of flowing through the TB1 leads and the shunt |
+| Wake button (J2, R3) | GPIO4 button | Removed | Matches firmware V1.29 (VEML7700 light wake) |
+| J1 (OLED / VEML7700) | Right edge | (21.0, 9.0), top edge | Board re-flow; see §7 item 6 for routing |
+| Mounting holes | H1–H4 | H2–H4 (TB3 occupies the H1 corner) | See §7 item 6 |
+
+All positions are in mm, from the KiCad files [K].
+
+---
+
+## 4. Input filter
+
+### 4.1 Circuit (TI SLYS021A §8.1.4, Fig. 8-1)
+
+```
+TB3.3  VIN+RAW ── R5 10 Ω ──┬────────┬──── U2.7  VIN+
+                            │        │
+                         C7 1 µF  C8 100 pF      (J3 zero jumper, proposed §7.1)
+                            │        │
+TB3.2  VIN−RAW ── R6 10 Ω ──┴────────┴──── U2.6  VIN−
+
+TB3.1  VBus ─────────────────────────────── U2.5  VBUS   (fused 100–250 mA at the busbar)
+```
+
+- **Both capacitors go across the pair only.** Capacitors from each input
+  to ground are left out on purpose: any mismatch between them would turn
+  common-mode noise into a differential error.
+- **Order along the path:** resistors, then the 1 µF, then the 100 pF
+  closest to the pins.
+
+### 4.2 Parts
+
+| Ref | Part | Decoded | Status |
+|---|---|---|---|
+| R5, R6 | YAGEO **CFR-25JT-52-10R** | 10 Ω ±5%, ¼ W carbon film; −500 to +350 ppm/°C; body 6.3 × 2.4 mm; 0.55 mm leads; fits the DIN0207 7.62 mm footprint | Confirmed from the datasheet [S] |
+| C7 | TDK **FK14X7R1H105K**(R020) | 1 µF ±10%, 50 V, X7R, dipped radial, 2.5 mm lead spacing | Value, voltage and dielectric confirmed [S]. **Body size and the R020 suffix not yet confirmed** (datasheet not obtained) |
+| C8 | KEMET **C315C101G1G5TA** | 100 pF ±2%, 100 V, C0G; 2.54 mm lead spacing; body ≤ 3.81 × 3.14 × 2.54 mm; tinned steel-core leads | Confirmed from the datasheet [S] |
+
+### 4.3 Numbers
+
+| Quantity | Calculation | Result |
+|---|---|---|
+| Corner frequency | 1 / (2π × 20 Ω × 1 µF) | **7.96 kHz** |
+| Attenuation at 1 MHz | 20·log₁₀(1 MHz / 7.96 kHz) | **42 dB** |
+| Gain error | 20 Ω / (92 kΩ + 20 Ω), with 92 kΩ the INA228 input impedance [S] | 0.022% |
+| Worst bias-current offset | 2.5 nA [S] × 10.5 Ω | 26 nV = 0.07 mA at 375 µΩ |
+| Resistor thermal noise | √(4kT × 10 Ω) | 0.41 nV/√Hz each |
+| Filter time constant | 20 Ω × 1 µF | 20 µs, against 4.12 ms conversions; no effect on readings or ALERT |
+| C7 leakage | Assumed ≥ 100 MΩ (not from TDK): 75 mV / 100 MΩ × 20 Ω | ≤ 15 nV = 0.04 mA |
+| C7 self-resonance | Assumed ~3 nH of lead inductance: 1 / (2π√(3 nH × 1 µF)) | ~2.9 MHz [I] |
+| C8 self-resonance | Assumed ~3 nH: 1 / (2π√(3 nH × 100 pF)) | ~290 MHz [I]; covers C7 above a few MHz |
+| Sense-trace resistance | 1 oz copper assumed; VIN+ 11.3 mm @ 0.25 + 10.3 mm @ 0.20 | 48 mΩ (VIN− 53 mΩ); error 0.82 µA × 0.1 Ω = 82 pV |
+
+**Why X7R is fine for C7.** The voltage across it is at most 75 mV, so
+X7R's capacitance loss under DC bias and its microphonic effect do not
+apply. Its ±15% temperature change only moves the corner frequency.
+
+**C8's role is minor.** It covers RF, including 2.4 GHz. Antenna pickup is
+no longer the main path (deep-dive §10.3), so C8 is insurance. Mount it
+flush.
+
+**Thermocouple voltages.** R5 and R6 sit in the DC path, and 1 µV at the
+inputs reads as 2.67 mA. They are placed 3 mm apart in the same
+orientation, so any junction voltages match and cancel [K]. C7 and C8 carry
+no DC, so their steel-core leads do not matter.
+
+**Trace width.** Widening the sense or I²C traces changes nothing
+measurable. The resistance and capacitance figures above set the scale.
+Pickup is set by loop area and spacing, not width.
+
+---
+
+## 5. Layout review of Rev 2 (KiCad file, 2026-09-28)
+
+### 5.1 Distance from the buck
+
+| | Rev 1.1 | Rev 2 |
+|---|---|---|
+| Breakout body to Pololu body | 3.8 mm [K] | **29.3 mm** [K] |
+| Breakout centre to Pololu centre | 18.5 mm [K] | 48.0 mm [K] |
+| Sense entry to Pololu | ~10 mm, terminal block to inductor [P] | 43.8 mm, TB3 courtyard to Pololu outline [K] |
+| Nearest sense copper to Pololu outline | Loose wires past U3 [P] | 35.8 mm (U2 pin 7) [K] |
+
+- **Field estimate.** A small inductor's stray field falls roughly as
+  1/r³. (35.8 / 10)³ ≈ 46×, about 33 dB less at the nearest sense copper
+  [I].
+- **How much to trust it.** The 1/r³ rule is rough at 10 mm. The Rev 2
+  distance is measured to the Pololu outline, so the true distance to its
+  inductor is somewhat larger. Whether the Pololu's inductor is shielded is
+  unknown.
+
+### 5.2 Loops
+
+- **After the filter** (C8 to U2 pins 6 and 7): about 3 mm of trace,
+  enclosing **8.5 mm²** [K].
+- **Before the filter** (TB3 → R5/R6 → C7): **69.5 mm²** [K]. This loop sits
+  ahead of the filter, which attenuates what it picks up. It could still be
+  tightened (§7.5).
+
+### 5.3 Coupling to other nets
+
+Nearest approach of each net, centre to centre. No net runs within 1.5 mm
+of either section [K].
+
+| Net | To the unfiltered section | To the filtered section |
+|---|---|---|
+| SDA | > 4 mm | 1.82 mm (at the socket pins; unavoidable) |
+| VBus | 2.47 mm | 2.55 mm |
+| ALERT | > 4 mm | 2.54 mm |
+| LED | > 4 mm | 3.65 mm |
+
+An earlier Rev 2 draft ran SDA 0.88 mm and VBus 0.42 mm from the pair for
+16–25 mm. This version fixes that.
+
+### 5.4 Ground plane and power paths
+
+- **Ground.** The bottom-layer ground fill is unbroken under all sense
+  traces. The only uncovered spots are normal clearance cut-outs around
+  pads, and nothing is routed on the bottom layer [K].
+- **3.3 V to the XIAO.** The run from U3 is 1.5 mm wide and about 52 mm
+  long, so 17 mΩ. A 300 mA Wi-Fi transmit peak dips it by 5 mV [D].
+
+### 5.5 Pin map: correction to the wiring summary
+
+- **The actual header order** on the Adafruit INA228 (5832), from Adafruit's
+  silkscreen photo [S]: VIN, GND, SCL, SDA, **VBUS, VIN−, VIN+**, ALRT.
+- **Rev 2 is correct:** U2 pin 5 = VBus, pin 6 = VIN−, pin 7 = VIN+ [K].
+- **The wiring summary is wrong.** Its §4.6 says pin 6 = VIN+ and
+  pin 7 = VIN−. That never mattered on Rev 1.1, where pins 5–7 are not
+  connected. It needs correcting (§9).
+- **The breakout ships with its own terminal block soldered on**
+  [S: Adafruit]. It stays connected to the same nets. Leave it empty.
+
+---
+
+## 6. What Rev 2 does not fix
+
+- **The external shunt leads.** The 20 cm or so of lead from the shunt to TB3
+  still needs a tight twist, routed away from the 200 A cables and the J1
+  harness.
+- **The INA228's own offset**, ±1 µV max, which is ±2.67 mA [S]. §7.1 adds a
+  way to measure it in place.
+- **Ripple through the shunt is attenuated, not removed.** The filter takes
+  it down 42 dB at 1 MHz and C6 reduces it at the source.
+- **SOC math is unchanged.** The CHARGE register already integrates
+  zero-mean noise to zero. What Rev 2 improves is the DC part (the 1–3 mA
+  zero steps), the 2-s current readout, and the ENERGY register.
+
+---
+
+## 7. Open items before fabrication
+
+In priority order.
+
+1. **Add a zero-test jumper (J3).** Place an unpopulated 2-pin 2.54 mm
+   header across VIN+/VIN− at C8.
+   - Fitting a jumper shorts the INA228's filtered inputs, which gives its
+     real zero in place, at any time, without touching field wiring. This
+     is the P-2a measurement, and the input for `soc_offset_ma`.
+   - It is safe with the shunt connected: at most 75 mV / 20 Ω = 3.75 mA
+     flows through R5/R6, which is 0.28 mW.
+2. **C6: use a 50 V part instead of 25 V.** V_FUSED reaches 14.6 V, no surge
+   suppressor is fitted (wiring summary item G), and X7R loses capacitance
+   under DC bias.
+3. **Value fields.** R5, R6, C7, C8 and TB3 still show the footprint name
+   instead of the part value. Set them so the BOM exports correctly (the same
+   hygiene as wiring-summary item L).
+4. **Silkscreen.**
+   - Add VBUS / VIN− / VIN+ labels at TB3.
+   - The back silk still reads "Rev_1 … Rev 1.1 … Push Button … June 2026".
+     Update it, and add BOM lines for R5, R6, C7 and C8 (and C6 at 50 V).
+   - Optionally, mark the breakout's own terminal block "do not use".
+5. **Optional: tighten the unfiltered pair.** Run VIN+RAW and VIN−RAW side by
+   side from TB3 to R5/R6. The loop would shrink from 69.5 mm² to about
+   30 mm², the floor set by TB3's 3.5 mm pitch and the 3 mm resistor
+   spacing.
+6. **Mechanical.**
+   - Confirm in the 3D viewer that TB3's wire openings face the board edge.
+     The same check is open for TB1.
+   - Check that the FK14 body fits the C_Disc 5.0 mm footprint.
+   - Three mounting holes remain. Check the corner doesn't flex when TB3's
+     screws are tightened, and that the enclosure still fits.
+   - R2 and C3 sit under the XIAO: solder them first and check height
+     clearance.
+7. **Refill zones, run KiCad's own DRC, then regenerate the Gerbers.**
+
+---
+
+## 8. Verification plan
+
+### 8.1 Before fabrication, on the Rev 1.1 board
+
+These show which path dominates, and so how much of Rev 2's benefit to
+expect (deep-dive §3.4, §5.2).
+
+| Test | Action | Reading |
+|---|---|---|
+| P-2a | Short VIN+ to VIN− at the breakout terminal block | Noise remains → paths 1–2 on the board. Rev 2's distance fixes it. |
+| P-2b | Short at the shunt end, leads kept | Noise remains → pickup in the leads. Rev 2's routing plus twisted leads fix it. Noise gone → path 3; Rev 2's filter and C6 are what help. |
+| P-4 | Twist the leads to the terminal; route away from U3/C4 | Previews the routing benefit (but not the distance benefit) |
+
+### 8.2 After building Rev 2
+
+Firmware V1.29, 11 dBm, bank idle.
+
+1. **Sign check.** A discharge reads negative (Option B). The pin order is
+   now right by construction; this confirms it.
+2. **Zero, with the J3 jumper fitted.** Record the reading: it is the
+   INA228's in-place offset. Use it with the recharge bracket to set
+   `soc_offset_ma`.
+3. **Noise, with the jumper removed.**
+
+   | Metric | Rev 1.1 (V1.28 / 11 dBm) | Rev 2 target (proposed) |
+   |---|---|---|
+   | ENERGY idle gauge | 0.231 W [M] | ≤ 0.20 W, trending toward 0.14 W |
+   | Per-conversion error from ENERGY | ~18.7 mA [D] | Toward ~2 mA |
+   | "Noisy" episodes (gauge ≥ 0.40 W) | Occur whenever TX power or the router changes | None |
+
+4. **Zero-move test.** Move the harnesses and the enclosure on purpose. The
+   drain step should be under 0.3 mA, against 1–3 mA on Rev 1.1.
+5. **Lit vs dark OLED.** The difference should be only the OLED's real
+   current, about 2.5 mA at the bank [D], with no change in the noise
+   gauge.
+
+---
+
+## 9. Follow-ups
+
+- **Wiring summary** (`battery-bank-monitor-wiring-summary-v1_10.md`):
+  - New revision entry for PCB Rev 2.
+  - §3.1 BOM: add R5, R6, C7, C8 and TB3; remove J2, R3 and the 1505
+    button; C6 at 50 V.
+  - §4.6: new connector map, and the pin-map correction from §5.5.
+  - §6.6: light wake replaces the button.
+  - §8.5: a Rev 2 verification record.
+- **Firmware:** no change required. Rev 2 has no J2, which matches V1.29.
+  The J3 zero procedure could be added to the commissioning steps.
+
+---
+
+## 10. References
+
+- TI INA228 datasheet SLYS021A (`INA228 Monitor/ina228.pdf`): §6.5
+  (92 kΩ input impedance, ±0.5 µV/V supply rejection, 2.5 nA bias current,
+  1 MHz clock); §8.1.4 and Fig. 8-1 (input filter: ≤ 100 Ω, 0.1–1 µF).
+- Pololu D24V7F3 product page: 1.1 MHz switching, lower frequency at light
+  load. <https://www.pololu.com/product/5592>
+- Adafruit INA228 guide, pinouts and photos (header order; terminal block on
+  the top edge). <https://learn.adafruit.com/adafruit-ina228-i2c-power-monitor/pinouts>
+- YAGEO CFR datasheet (V.3, 2024-04-03); KEMET C1049 Goldmax C0G datasheet
+  (2025-08-05); TDK FK series catalog (General, up to 50 V).
+- `docs/soc-noise-deep-dive.md` §3.1–§3.5, §6.4, §10.2–§10.6.
+- KiCad files: `Battery_Bank-Monitor-THT-V2_-_Rev_1.kicad_pcb` (Rev 1.1) and
+  `Battery_Bank-Monitor-THT-V2_-_Rev_2.kicad_pcb` (2026-09-28). Neither is
+  in this repository.
