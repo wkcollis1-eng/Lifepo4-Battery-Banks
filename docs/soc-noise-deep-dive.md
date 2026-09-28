@@ -1,5 +1,16 @@
 # Battery-bank SOC: noise root cause and INA228 accuracy (deep dive)
 
+**Rev 4.2, 2026-09-28.** Bill ran P-2a, P-2b and P-4 on the Rev 1.1 board,
+plus a 1 A load check. The results live in
+`INA228 Monitor/pcb-rev2-noise-fix-design.md` §8.1 and are not copied here.
+What changed (R13 items 20–24 in §7):
+
+- **The pickup entered at the untwisted fan-out beside U3.** Twisting the
+  last couple of inches took the 2-s scatter to the quantization floor.
+- **The twist also moved the idle zero by about +10 mA**, for a reason not
+  yet known. P-1 now decides B1 (§10.4) and the FAQ's monitor-draw figure.
+- **ENERGY sums |P| at 1 A but reads low near zero** (§3.1 note).
+
 **Rev 4, 2026-09-25 (evening).** Adds **§10**, an independent reading of the
 V1.27-diag2 run (TB-1 to TB-5, 43 windows) against the raw exports. What
 changed (R13 items 11–17 in §7):
@@ -251,6 +262,17 @@ Per-minute rates from the 60-s `HW Energy` / `HW Net Charge` data [M]. ENERGY
 is a per-conversion noise gauge: DS §7.3.1 / Fig. 7-2 says it accumulates
 each conversion, unaveraged, and POWER is unsigned.
 
+> **Checked 2026-09-28** (Rev 2 note §8.1). At a 1.05 A load, ENERGY
+> matched the 2-s V × |I| to within 0.28 % over four clean minutes (paired
+> t = 5.55, df 3, p = 0.012) [M]. Near zero it reads **low**. Over an hour
+> at idle it read 0.0097 W, which is 0.72 mA at 13.50 V [D], while CHARGE
+> read −2.54 mA [M]. A register that summed |P| faithfully could not read
+> below the magnitude of the mean current [D: E|X| ≥ |E X|]. So small
+> per-conversion contributions are lost, by a mechanism not known [I]. The
+> gauge still ranks noise. But a σ or a "real power" subtraction derived
+> from it (§10.2, §10.7 item 8) assumes a fidelity near zero that the
+> register does not have.
+
 | press (UTC) | before: ENERGY / drain / drain scatter | lit: ENERGY / drain / drain scatter | after: ENERGY / drain |
 |---|---|---|---|
 | 09-11 18:22:52 (noisy) | 0.884 W / −8.95 / 1.94 mA | **0.280 W** (0.23 once settled) / **−10.25** / 0.42 mA | 0.944 W / −9.33 |
@@ -380,9 +402,13 @@ in §5.
   - noise persists → **board-level pickup:** the buck's or ESP's field on
     the breakout
   - noise gone → it is in the leads or the shunt. Go to P-2b.
-- **P-2b, short the inputs at the shunt end, leads kept:**
+- **P-2b, put both inputs on one shunt terminal, leads kept** (move one
+  lead onto the other lead's screw; R13 item 20):
   - noise persists → **pickup in the lead loop**
   - noise gone → **HF ripple through the shunt itself**
+
+**Run 2026-09-28** (Rev 2 note §8.1). The noise persisted in P-2b, and P-4
+then located it in the untwisted fan-out beside U3.
 
 ### 3.5 The zero moves with the RF/physical environment
 
@@ -718,12 +744,20 @@ the carrier's **3V3** and **GND** test points [P] for 10 min, then remove it.
 **P-2a and P-2b: shorts.** At the INA228 terminal block, then at the shunt
 end (§3.4).
 
+- At the shunt end, move one sense lead onto the other lead's screw. A wire
+  across the two screws shorts nothing (R13 item 20).
+- While a lead is off the shunt, the input floats and the counters book
+  false charge.
+- **Run 2026-09-28:** Rev 2 note §8.1.
+
 **P-4: dress the input wires.**
 
 - Twist VIN+/VIN− tightly right into the terminal.
 - Route them away from U3/C4 and from the OLED harness.
 - Compare noise before and after.
 - It is cheap. Under A, it may be most of the fix.
+- **Run 2026-09-28:** it took the 2-s scatter to the quantization floor
+  (Rev 2 note §8.1).
 
 **P-6 (optional): an oscilloscope, if one is available.**
 
@@ -945,6 +979,34 @@ integrates as if it were drain. The P-4, §6.4 and stopgap fixes remove it.
     little" dependent on lit area.
     - The lit-page comparison is now the main TB-4 evidence.
     - The white-vs-lit pair is demoted.
+
+**Rev 4.2 (the Rev 1.1 physical tests, 2026-09-28; results in the Rev 2
+note §8.1):**
+
+20. **§3.4 and §5.2, P-2b as "short the inputs at the shunt end": the first
+    run, done that way, was a null test.**
+    - A wire held across the two shunt screws sits in parallel with
+      375 µΩ. 10 AWG copper has that resistance in about 11 cm [D], so the
+      wire shorted nothing.
+    - The in-session reading "path 3 excluded", drawn from it, was
+      retracted the same day.
+    - §3.4 and §5.2 now say to move one lead onto the other lead's screw.
+      The redo was run that way.
+21. **In-session claim, "0.7–1.1 mA of the P-2b redo's slow scatter came
+    through the shunt": withdrawn.** The twisted input, with the shunt
+    current flowing, shows none of it. It was loop pickup, changed by the
+    new landing.
+22. **Item 10 above, "the photo suggests it is not [twisted] inside the
+    enclosure [P, to confirm]": confirmed.** Bill, 2026-09-28: the external
+    run is a twisted pair, but the last couple of inches inside the
+    enclosure were not. They are now twisted, and that is where the pickup
+    entered.
+23. **Rev 2 note §0 and §6, "pickup on the external shunt leads" as not
+    fixed by Rev 2: moot.** That run was already twisted, and with it in
+    place the scatter is at the floor.
+24. **§3.1, "ENERGY is a per-conversion noise gauge", and §10.7 item 8's
+    subtraction of 0.140 W real power: they hold at load, not near zero.**
+    See the §3.1 note.
 
 ---
 
@@ -1187,7 +1249,8 @@ components [I]:
 
 **Still unknown:**
 
-- where the interference enters: P-2a and P-2b
+- where the interference enters: P-2a and P-2b. **Answered 2026-09-28:**
+  the untwisted fan-out beside U3 (Rev 2 note §8.1).
 - whether U3 actually mode-hops: P-6
 - **what the lit pixels' current does at the shunt** (§10.4). The pixel load
   sits on the 3.3 V rail wherever its current returns, so A holds either way.
@@ -1200,6 +1263,9 @@ components [I]:
   keep the monitor in one state, the quiet one (§10.5).
 - Which state is closer to the truth is unknown. P-2a measures the quiet
   state's DC part directly.
+  - P-2a read −0.80 mA over 3 minutes, with a hand-held wire [M]. P-4 then
+    moved the idle DC by about +10 mA (Rev 2 note §8.1), so P-1 is now the
+    test that decides.
 
 ### 10.4 B1: TB-1 refutes the offset. Two readings remain
 

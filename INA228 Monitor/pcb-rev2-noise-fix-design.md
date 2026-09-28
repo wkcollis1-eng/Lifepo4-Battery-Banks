@@ -29,8 +29,8 @@ it moves the zero reading by 1–3 mA whenever wiring or equipment is moved.
 | **Rev 1.1 layout** | The INA228 breakout sits 3.8 mm from the buck. The shunt sense leads land on the breakout's own terminal block, about 1 cm from the buck's inductor, and fan out untwisted. There is no input filter. |
 | **Rev 2 fix** | Move the INA228 to the far end of the board. Bring the sense lines in at a new edge terminal block (TB3) as a routed pair. Add TI's input RC filter. Add a ceramic capacitor at the buck input. |
 | **Expected result** | Magnetic pickup largely removed (~46× less stray field at the sense path [I]). Anything left, from any path, attenuated 42 dB at 1 MHz by the filter [D]. |
-| **Not fixed** | Pickup on the external shunt leads; the INA228's own offset (±1 µV, ±2.67 mA [S]). |
-| **Status** | Six items to close before fabrication (§7), and one test to run first on the Rev 1.1 board (§8.1). |
+| **Not fixed** | The INA228's own offset (±1 µV, ±2.67 mA [S]). The external shunt run was listed here too. It is already a twisted pair, and with it in place §8.1 found the 2-s scatter at the quantization floor. |
+| **Status** | Six items to close before fabrication (§7). The §8.1 tests ran on the Rev 1.1 board on 2026-09-28. The pickup entered at the untwisted fan-out beside U3 (path 1), and twisting it there took the 2-s scatter to the floor. The twist also moved the idle zero by about 10 mA, which is unexplained (§8.1). |
 
 ---
 
@@ -97,7 +97,11 @@ All figures come from `docs/soc-noise-deep-dive.md` (§3.1, §3.5, §10.2).
 
 ## 2. How the interference reaches the reading
 
-Three paths are possible. Which one dominates is **not yet measured** (§8.1).
+Three paths are possible. **Path 1 dominated on Rev 1.1** [M, 2026-09-28,
+§8.1]. Twisting the fan-out and moving it about 6.4 mm off U3 took the 2-s
+scatter from 1.29 mA to 0.32 mA, against a 0.22 mA quantization floor. Paths
+2 and 3 were not separated; between them they leave only the remainder above
+that floor.
 
 | # | Path | Mechanism | Rev 2 response |
 |---|---|---|---|
@@ -252,8 +256,9 @@ An earlier Rev 2 draft ran SDA 0.88 mm and VBus 0.42 mm from the pair for
 ## 6. What Rev 2 does not fix
 
 - **The external shunt leads.** The 20 cm or so of lead from the shunt to TB3
-  still needs a tight twist, routed away from the 200 A cables and the J1
-  harness.
+  is already a twisted pair [Bill, 2026-09-28]. Keep it routed away from the
+  200 A cables and the J1 harness. On Rev 1.1, with the in-enclosure end
+  twisted, it added nothing measurable above the 2-s floor (§8.1).
 - **The INA228's own offset**, ±1 µV max, which is ±2.67 mA [S]. §7.1 adds a
   way to measure it in place.
 - **Ripple through the shunt is attenuated, not removed.** The filter takes
@@ -312,8 +317,116 @@ expect (deep-dive §3.4, §5.2).
 | Test | Action | Reading |
 |---|---|---|
 | P-2a | Short VIN+ to VIN− at the breakout terminal block | Noise remains → paths 1–2 on the board. Rev 2's distance fixes it. |
-| P-2b | Short at the shunt end, leads kept | Noise remains → pickup in the leads. Rev 2's routing plus twisted leads fix it. Noise gone → path 3; Rev 2's filter and C6 are what help. |
+| P-2b | Move one sense lead onto the other lead's shunt screw, so both leads see one potential while their loop is kept | Noise remains → pickup in the leads. Rev 2's routing plus twisted leads fix it. Noise gone → path 3; Rev 2's filter and C6 are what help. |
 | P-4 | Twist the leads to the terminal; route away from U3/C4 | Previews the routing benefit (but not the distance benefit) |
+
+A wire held across the two shunt screws does not short the shunt. It sits
+in parallel with 375 µΩ, which 10 AWG copper matches in about 11 cm [D].
+The first P-2b run did that, so it was a null test (deep-dive §7, item 20).
+Moving a lead off the shunt floats the INA228 input, and the counters book
+false charge for as long as it floats (below).
+
+#### Results on Rev 1.1, 2026-09-28
+
+Firmware V1.28 at 11 dBm, bank idle except during the load check. The
+figures are [M] from HA history: the 2-s current, and per-minute rates from
+the 60-s `HW Energy` and `HW Net Charge` registers. "2-s scatter" is the sd
+of first differences / √2, so slow drift does not count toward it. Its
+floor is 0.22 mA [D: 0.763 mA LSB / √12]. Times are EDT.
+
+| window | state | ENERGY | CHARGE | 2-s n | 2-s scatter |
+|---|---|---|---|---|---|
+| 15:00:33–15:46:33 | baseline | 0.2548 W | −11.87 mA | 1380 | 1.61 mA |
+| 15:55:33–16:01:33 | first P-2b: wire held across the shunt screws (null test) | 0.2734 W | +15.17 mA | 180 | 1.51 mA |
+| 16:05:33–16:08:33 | P-2a: wire held across VIN+/VIN− at the breakout terminal block | 0.0171 W | −0.80 mA | 90 | 0.82 mA |
+| 16:21:33–16:48:33 | baseline 2 | 0.2713 W | −12.75 mA | 810 | 1.81 mA |
+| 16:56:33–17:08:33 | P-2b: both leads on one shunt screw | 0.2710 W | −15.52 mA | 360 | 1.45 mA |
+| 17:14:01–17:15:33 | leads back on the shunt, fan-out untwisted | — | −5.82 mA (2-s mean) | 46 | 1.29 mA |
+| 17:23:33–17:28:33 | P-4: fan-out twisted, ~6.4 mm off U3 | 0.0082 W | −2.34 mA | 150 | 0.23 mA |
+| 17:43:33–18:41:33 | P-4, the hour after the load check | 0.0097 W | −2.54 mA | 1740 | 0.32 mA |
+
+What each shows:
+
+- **P-2a.** Shorting at the breakout cut the scatter to 0.82 mA (F = 0.21
+  against baseline 2, df 88/808, p = 5e-16) and ENERGY to 0.0171 W. Most
+  of the noise enters upstream of the breakout's terminal.
+- **P-2b.** With the lead loop kept and the shunt voltage removed, ENERGY
+  did not move: 0.2710 against 0.2713 W (Welch t = −0.10, p = 0.92; 12 and
+  27 one-minute rates). The per-conversion noise is picked up in the lead
+  loop, not carried through the shunt, so path 3 is not the main path.
+  - The 2-s scatter did fall, 1.45 against 1.81 mA (F = 0.64, df 358/808,
+    p = 2e-6).
+  - That fall was not shunt signal: the twisted input, with the shunt in
+    circuit, reads 0.32 mA. The new landing changed the loop.
+- **P-4.** The external run was already a twisted pair. Bill twisted "the
+  last couple inches inside the enclosure" and moved them "about .25 inch
+  off of the buck" [Bill].
+  - The 2-s scatter fell from 1.29 mA to 0.32 mA (F = 0.061, df 1738/44,
+    p = 7e-101). ENERGY fell from 0.2713 W (baseline 2) to 0.0097 W.
+  - So the pickup entered in the fan-out beside U3: path 1.
+  - VBUS scatter did not change (0.082 against 0.074 mV), so the chip did
+    not become quieter in general.
+  - It is not the OLED: a lit OLED holds ENERGY near 0.23 W (deep-dive
+    §3.1), against 0.0097 W here.
+- **Load check: the twisted input reads the full shunt voltage.** An
+  inverter and an LED lamp drew −1.052 A from 17:32:24 to 17:41:20.
+  - The voltage steps give 2.07 mΩ at switch-on and 2.06 mΩ at switch-off
+    [D: ΔV/ΔI]. The commissioning report's apparent Ri is 2.185 and
+    1.818 mΩ (F5, n = 2) [M]. An input reading only part of the shunt
+    voltage would inflate this figure in proportion.
+  - Over four clean load minutes, ENERGY was 14.176/14.179/14.158/14.143 W
+    against a 2-s V × |I| of 14.238/14.212/14.191/14.176 W: 0.28 % low
+    (paired t = 5.55, df 3, p = 0.012). The shortfall is real; its cause
+    is unknown. CHARGE matched the 2-s current to within 0.6 mA.
+  - Near zero, ENERGY reads low (deep-dive §3.1 note).
+
+What this does not establish:
+
+- **Twist and distance** were changed together, so their shares are not
+  separated.
+- **A power cycle** (17:15:35–17:22:33, Bill's, for the wiring work) came
+  between the untwisted and twisted windows. The twist is taken as the
+  cause [I: falsified if untwisting the fan-out, with nothing else changed,
+  does not bring the scatter back].
+- **The first five minutes after the twist** read 0.23 mA and the later
+  hour 0.32 mA (F = 0.52, df 148/1738, p = 1e-6). Both are near the floor;
+  the difference is not explained.
+- **The zero-move test** (§8.2 step 4) has not been run on the twisted
+  board, so the 1–3 mA zero steps are not shown to be gone.
+
+**The idle zero moved by about 10 mA, and why is unknown.** Before the
+twist the idle current read −12.75 mA (baseline 2). After it, it read
+−2.54 mA, stable for the hour (six 10-min means from −2.42 to −2.48 mA)
+[M]. Twisting wires adds no load. So unless the power cycle changed the
+monitor's draw, at least one of the two readings is off by 5.1 mA or more
+[D: half of 10.21 mA]. That is outside the INA228's ±2.67 mA offset spec
+[S]. Candidates, all [I]:
+
+- rectified pickup biased the untwisted readings;
+- re-landing the leads changed a thermal EMF at a terminal;
+- B1's bypass reading (deep-dive §10.4, reading ii): if some of the
+  monitor's return shares a path with a sense lead, re-landing the leads
+  changes the split.
+
+P-1 (a DMM in series with TB1, deep-dive §5.2) decides which reading is
+right. Until it is run, the FAQ's 7.4 ± 2.4 mA monitor draw (measured on
+the untwisted leads) and the SOC's idle drain both carry this uncertainty.
+Each 1 mA is 0.72 Ah/month (§1.1).
+
+**Side effect: false charge from the lead moves.** While a lead was off the
+shunt, the counters booked:
+
+- −0.2022 Ah and +4.354 Wh, 16:49:30–16:51;
+- −0.5082 Ah and +7.77 Wh, 17:11:33–17:14:33 [D: counter differences].
+
+The −0.71 Ah stays in the SOC until the next Mark-as-Full; it is 0.14 % of
+500 Ah [D]. The power cycle was bridged as designed: "counters BRIDGED
+from the last saved -6.613 Ah / 602.9 Wh - SOC anchor KEPT" [M:
+reset_check].
+
+**For Rev 2.** Its path-1 fix (relocation and a routed pair) is aimed at
+the right path. Whether Rev 1.1 with a twisted fan-out already does enough
+is Bill's call; the zero-move test and P-1 are its inputs.
 
 ### 8.2 After building Rev 2
 
@@ -331,6 +444,12 @@ Firmware V1.29, 11 dBm, bank idle.
    | ENERGY idle gauge | 0.231 W [M] | ≤ 0.20 W, trending toward 0.14 W |
    | Per-conversion error from ENERGY | ~18.7 mA [D] | Toward ~2 mA |
    | "Noisy" episodes (gauge ≥ 0.40 W) | Occur whenever TX power or the router changes | None |
+
+   The Rev 1.1 column predates P-4. With the fan-out twisted, Rev 1.1 reads
+   0.0097 W on the gauge (§8.1), below the 0.14 W "clean chip" figure. That
+   figure assumed the register sums |P| faithfully near zero, and it does
+   not (deep-dive §3.1 note). Re-set these targets from post-P-4 Rev 1.1
+   data before judging Rev 2 against them.
 
 4. **Zero-move test.** Move the harnesses and the enclosure on purpose. The
    drain step should be under 0.3 mA, against 1–3 mA on Rev 1.1.
