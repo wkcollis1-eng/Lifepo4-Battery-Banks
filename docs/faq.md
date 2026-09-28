@@ -77,6 +77,8 @@ For example, with ~3-second median cadence:
 
 **It is now measured, not inferred: 7.4 ± 2.4 mA**, time-weighted over 41 quiescent days and 1.79 M samples at 2 s on a 375 µΩ shunt, 99.93% integrated coverage.
 
+> **Caveat, 2026-09-28.** That figure was measured with the sense leads untwisted inside the monitor's enclosure. Twisting them removed the noise, and the idle reading moved from −12.75 mA to −2.54 mA, stable for an hour [M]. Twisting wires adds no load, so unless the reboot between the two readings changed the monitor's draw, a DC error of at least 5 mA sits in one of them [D], possibly the one behind this figure. Why is not known [I]. A DMM in series with the monitor (P-1) decides it. See the [Rev 2 design note §8.1](../INA228%20Monitor/pcb-rev2-noise-fix-design.md).
+
 **And it is the monitor.** The Shelly and the DROK panel meter are retired and the inverter is off, so the INA228 monitor — powered from the busbars, its return through the shunt — is the only load on the bus. 99 mW at 13.35 V is what a Wi-Fi-associated XIAO ESP32-C3 behind an 87% buck should draw. **The bank's own external parasitic load is effectively nil.** See [report §7](../reports/LiFePO4_Report_2026-08-26.md).
 
 The earlier answer here gave 13–20 mA inferred from voltage drift, and listed direct bus-current measurement as the highest-value improvement. That measurement was made in July 2026, and the inferred band turned out to be **42–63% high** — a useful calibration on how much to trust drift-derived currents on a flat OCV curve.
