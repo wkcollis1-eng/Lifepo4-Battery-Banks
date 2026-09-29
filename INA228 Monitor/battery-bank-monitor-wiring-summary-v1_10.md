@@ -92,7 +92,7 @@ The high-side era (1.3–1.6) was driven by two real concerns: the V1-carrier VB
 | Monitor PCB | **Battery_Bank-Monitor-THT V2 Rev 1.1** | OSH Park (target) | Native INA228 8-pin socket. **Electrically verified fab-ready (§8.5); item L hygiene before Gerber export.** |
 | INA228 breakout | Adafruit 5832 (or 6349 INA228 variant) | Adafruit / DigiKey | **Onboard 15 mΩ shunt must be removed; VBUS jumper LEFT OPEN (low-side default); see §3.3** |
 | Microcontroller | Seeed XIAO ESP32-C3 | Seeed Studio | OTA-flashable. **Antenna: included U.FL external flex (item J closed)** — placement per §8.2. |
-| Regulator | Pololu D24V7F3 | Pololu #2842 | 4–36 V → 3.3 V at 600 mA. **Verify VIN/GND/VOUT pin order against module silk before fab (§13 item H).** |
+| Regulator | Pololu D24V7F3 | Pololu #5592 | 4–36 V → 3.3 V at 600 mA. **Verify VIN/GND/VOUT pin order against module silk before fab (§13 item H).** |
 | Reverse-voltage protector | (none on board) | — | **Accepted risk for this single self-wired build: the V2 board has NO on-board or external reverse protection (§13 item C). Be deliberate about TB1 polarity at connect time — a reversed feed puts reverse voltage on C4 (electrolytic).** |
 | Temperature sensor | DS18B20 module (integral 4.7 kΩ pull-up) | Generic | Mount to battery case (isolated from any conductive surface). |
 | Board input fuse | 1 A slow-blow 5×20 mm | Würth 696108003002 | F1 — protects the board power feed only (not the sense/VBUS leads). |
@@ -167,7 +167,11 @@ Power: Positive busbar → **TB1 BATT_RAW** → on-board F1 (1 A SB) → VIN rai
 
 Ground: Negative busbar → **TB1 GND** → board GND pour → INA228 GND, XIAO GND, regulator GND. **Single-point ground at the negative busbar.**
 
+> **As built, 2026-09-28.** The shunt is in the busbar → inverter cable, not between the busbar and the cells, so "negative busbar" in this design means the shunt's inverter-side bolt (Bill, Q7). TB1 GND sat on the physical busbar, the battery side and unmetered, until 20:33 EDT that day; it is now on that bolt. See the correction below.
+
 **Monitor self-draw is captured.** The board's supply current returns via GND → negative busbar → through the negative-leg shunt → battery−, so the ~10–25 mA self-draw flows through the shunt and the Coulomb counter sees it (a small constant discharge offset). The status LED adds ~1.2 mA while lit ((3.3 V − ~2.1 V Vf) / 1 kΩ), ~0.6 mA average at idle (50 % slow-flash duty) — also through the shunt, also captured. No SOC blind spot. *(Keep GND on the busbar side for this reason; referencing it to the battery-negative side would clean up the VBUS reading but would route the self-draw around the shunt — a worse trade.)*
+
+> **Correction, 2026-09-28 (R13).** Until 20:33 EDT that day the self-draw was not captured: TB1 GND was on the battery side of the shunt (as-built note above), so every idle "self-draw" before then was the inverter cable plus INA228 offset. Moving TB1 GND onto the shunt's inverter-side bolt stepped the idle current -22.7 mA [M: Welch on 30-s blocks, p<1e-300]. The monitor draws 22.6 mA with the OLED dark [D], inside the ~10–25 mA above, and 1.5 mA more while lit [M]. See the [FAQ](../docs/faq.md#how-accurate-is-the-parasitic-draw-figure).
 
 **Reverse-polarity protection — none, accepted.** The V2 board has no on-board reverse protection and this build adds no external device. For a single, self-wired install where the builder controls and double-checks polarity at connect time, the residual risk is accepted. The only consequence to keep in mind: a reversed TB1 connection puts reverse voltage on C4 (polarized electrolytic) and the buck input, so **confirm TB1 polarity before energizing**. Power-up tell: the status LED is *firmware-driven* (GPIO20, §6.7), not a power-rail indicator, and the XIAO ESP32-C3 has no power LED — so the tell is the LED staying **dark beyond ~10 s** after power-up (boot + first pattern tick complete well inside that). F1 does not block reverse voltage.
 

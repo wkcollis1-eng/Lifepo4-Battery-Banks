@@ -67,6 +67,16 @@
 #   Shunt installed in the negative cable between battery− and the negative busbar.
 #   VIN+ at shunt battery-side Kelvin tap, VIN− at shunt load-side Kelvin tap.
 #   VBUS wired from positive busbar to breakout VBUS terminal (jumper open).
+#   AS BUILT (Bill, 2026-09-28): the five battery negatives land on the
+#   physical negative busbar, and the shunt sits in the busbar -> inverter
+#   cable; the charger's negative also goes through the shunt. So "the
+#   negative busbar" above is, electrically, the shunt's inverter-side bolt.
+#   TB1 GND sat on the physical busbar - unmetered - until 20:33 EDT
+#   2026-09-28, then moved to that bolt: idle current stepped -22.7 mA [M:
+#   2-s battery_current, 19:30-20:27 n=1725 vs 20:33-22:01 n=2530
+#   less handled windows; Welch on 30-s blocks p<1e-300]. Idle "self-draw"
+#   figures dated before then are the inverter cable plus INA228 offset, not
+#   the monitor. Only the cells' own self-discharge is now unmetered.
 #
 #   POSITIVE current → CHARGING     (LiTime charger delivering current to bank)
 #   NEGATIVE current → DISCHARGING  (net load exceeds charge rate)
@@ -89,6 +99,14 @@
 #   Seeed's own XIAO test: 24 mA modem sleep, 74 mA no sleep), i.e. ~7-8 mA at
 #   the bank. Was "~100 mA" (the no-sleep figure). Sleeping it would buy ~2 h,
 #   not ~1 day. Protection: HA 3-tier automation + inverter LVC + BMS.
+#   R13 2026-09-28: the ~25 mA / modem-sleep reading above is withdrawn. TB-1
+#   and B1 read a shunt the monitor's return never crossed (AS BUILT above).
+#   Metered: 22.6 mA at the bank with the OLED dark = 0.30 W, 0.54 Ah/day
+#   [D: pre-move mean - dark mean; x 13.497 V; x 24 h], +1.5 mA while lit
+#   [M: 14 lit / 152 dark 30-s blocks, Welch p=3e-11].
+#   The driver reads power save NONE [M: 5 of 5 valid states, 2026-09-25 to 09-28],
+#   and the draw sits in the 21.2-27.7 mA no-sleep spec budget [D]. The ~2 h
+#   above rests on the withdrawn figure and is not re-derived.
 #
 # vs ups-monitor.yaml: INA228 0x40 (not 0x41), external 375 µΩ shunt, 397 Ah,
 #   float_voltage 13.26 V, no BP-65, no survival sleep.
@@ -216,7 +234,8 @@
 #                Lost either way: charge that moved while the monitor was off
 #                (neither ledger can see it) and HW charge since the last save:
 #                <= 10 mAh (save step) + ~2 min of flow (60 s read + 60 s flash
-#                commit) = ~10.3 mAh at idle [D: 10 + 8.66 mA x 120 s / 3600],
+#                commit) = ~10.8 mAh at idle [D: 10 + 25 mA x 120 s / 3600;
+#                2026-09-28, was ~10.3 at 8.66 mA before TB1 GND was metered],
 #                1.0 Ah at a 30 A load [D: 30 x 120 / 3600].
 #                CYCLE CONFIRM prints how many resets the cycle bridged.
 #            (b) discharge_peak_a_raw persisted: a power loss between a
@@ -557,7 +576,7 @@ esphome:
             // nothing saved to bridge from: invalidate. Neither ledger sees charge
             // that moved while the monitor was off, or HW charge since the last
             // save: <= 10 mAh (save step) + ~2 min of flow (60 s read + 60 s flash
-            // commit) — ~10.3 mAh at idle [D: 10 + 8.66 mA x 120 s / 3600], 1.0 Ah
+            // commit) — ~10.8 mAh at idle [D: 10 + 25 mA x 120 s / 3600], 1.0 Ah
             // at 30 A [D: 30 x 120 / 3600].
             // V1.28 (review B2b): the V1.26 "sentinel gone but CHARGE still counting
             // = first boot on sentinel firmware" branch is RETIRED. V1.25-V1.27
@@ -634,7 +653,7 @@ esphome:
               //   off_new   = off_old + raw_now x (LSB_old / LSB_new - 1)
               // raw_now is R x LSB_new (hw_charge_raw_ah). Counts taken between the
               // driver's SHUNT_CAL write and this read (~1-3 s) are mis-scaled by
-              // the same factor: ~0.01 mAh at idle [D: 10 mA x 3 s].
+              // the same factor: ~0.02 mAh at idle [D: 25 mA x 3 s].
               {
                 const float lsb_now = ${ina_max_current_a}f / 524288.0f;
                 const float lsb_old = id(hw_lsb_a);
@@ -774,12 +793,20 @@ wifi:
   # radio off moved the shunt only +2.3 mA against >= 11.4 mA for a receiver
   # that stays on (diag2 TB-1). Left unchanged so the readback tests that.
   # Forcing true no-sleep would add ~12-16 mA of real drain for no noise gain.
+  # R13 2026-09-28: B1's premise is withdrawn. The shunt did not carry the
+  # monitor's return until 20:33 EDT that day (header AS BUILT note), so the
+  # +2.3 mA was the inverter cable. The readback has read NONE in every valid
+  # state [M: 5 of 5 valid states, 2026-09-25 to 09-28],
+  # and the metered 22.6 mA at the bank [D] fits no sleep. This setting is
+  # what the driver runs; nothing to change.
   power_save_mode: none
   # V1.28: 11 dBm (was the 20 dBm default). diag2 TB-2 [M]: unlit noise fell
   # from sd 5.15 mA / ENERGY 0.449 W at 20 dBm to 1.84 mA / 0.231 W at 11 dBm,
   # the lit-OLED floor, and Q moved -2.2 mA with it. The knee is between 17
   # and 14 dBm; no disconnect in 48 min at <= 14 dBm. ESPHome also caps the
   # PHY calibration power at ceil(11) = 11 dBm [S: wifi/__init__.py].
+  # 2026-09-28: twisting the sense fan-out beside U3 took the idle 2-s sd to
+  # 0.33 mA [M: 19:30-20:27 EDT, n=1725] (docs/soc-noise-deep-dive.md).
   output_power: 11dB
   reboot_timeout: 0s  # same rationale as api reboot_timeout above
   ap:
@@ -1017,6 +1044,8 @@ display:
 # Draw: ~1.2 mA while lit ((3.3 V − ~2.1 V Vf) / 1 kΩ); ~0.6 mA average at idle
 # (50% duty). Flows through the shunt — the Coulomb counter sees it like the
 # rest of the board's self-draw.
+# 2026-09-28: true only since 20:33 EDT that day; TB1 GND was unmetered
+# before (header AS BUILT note).
 # ============================================================================
 output:
   - platform: gpio
@@ -1340,6 +1369,10 @@ globals:
   # history, 24.8 h to 09-18 19:48Z, n=1489] -> ~270 saves/day [D: 1.124 x 24
   # / 0.1]. Each is capped at one save per 60 s read. NVS is 0x70000 = 112 pages
   # [S: generated partitions.csv], so neither rate is a wear concern.
+  # 2026-09-28, TB1 GND metered and sense leads twisted: charge -0.0251 Ah/h,
+  # energy 0.299 Wh/h [M: HA history of the two HW sensors, 20:47:40-22:00:28 EDT]
+  # -> ~60 + ~72 saves/day [D: |rate| x 24 / step]. Still no wear
+  # concern.
   - id: hw_charge_offset_ah
     type: float
     initial_value: '0.0'
@@ -1370,6 +1403,8 @@ globals:
   # pages [S: generated partitions.csv]; each is one small entry. The bracket
   # accumulators persist in steps (10 mAh / 0.1 Wh), like hw_charge_saved_ah:
   # ~1 save per accumulator per hour at idle [D: 10 mA -> 10 mAh per 60 min].
+  # 2026-09-28: ~2.5/h (charge) and ~3/h (energy) at the metered idle
+  # [D: 25 mA -> 10 mAh per 24 min; 0.299 Wh/h / 0.1 Wh].
   - id: hw_prov_anchor_ah
     type: float
     initial_value: 'NAN'    # provisional anchor (review B3). Used only while
@@ -1755,6 +1790,7 @@ interval:
 
   # V1.28: what the Wi-Fi driver is actually doing (B1: modem sleep despite
   # power_save_mode: none; TX cap 11 dBm). esp_wifi_* fail before Wi-Fi starts.
+  # 2026-09-28: it reads NONE; B1's premise is withdrawn (see the wifi: note).
   - interval: 300s
     then:
       - lambda: |-
@@ -1908,7 +1944,7 @@ sensor:
       // (unsigned product each 4.12 ms sample, THEN averaged), so near-zero
       // current it reads the rectified raw-noise floor (~1 W at this shunt) —
       // averaging cannot cancel magnitudes. V x I of the 128-averaged signed
-      // registers is accurate at idle (~0.09 W) and identical under load.
+      // registers is accurate at idle (~0.34 W) and identical under load.
       float i = id(ina228_current).state;
       float v = id(ina228_voltage).state;
       if (millis() > 15000u && (millis() - id(last_ina228_update)) > 10000u) return 0.0f;
@@ -1962,14 +1998,14 @@ sensor:
     update_interval: 1s
 
   # Signed power — V1.24: V x I from averaged signed registers (accurate at idle,
-  # ~0.09 W self-draw). The chip POWER register rectifies per raw conversion and
+  # ~0.34 W idle, 2026-09-28). The chip POWER register rectifies per raw conversion and
   # floors at ~1 W near zero current (see discharge_power note); it remains
   # exposed as "INA228 Power (register)" for the energy-path caveat only.
   - platform: template
     name: "Battery Power"
     id: signed_power
     unit_of_measurement: "W"
-    accuracy_decimals: 3   # mW resolution: idle self-draw (~0.09 W) visible in HA
+    accuracy_decimals: 3   # mW resolution: idle draw (~0.34 W, 2026-09-28) visible in HA
     device_class: power
     state_class: measurement
     lambda: |-
@@ -3255,7 +3291,7 @@ binary_sensor:
                 // At a genuine LiTime absorption completion, current tapers to near-zero
                 // before the charger stops — net current should be > -1.0A at that point.
                 // Threshold -1.0A gives 1A headroom for minor standby loads (monitor
-                // self-consumption ~0.1A is well clear of this guard).
+                // self-consumption ~0.023 A [D] is well clear of this guard).
                 if (id(ina228_current).state < -1.0f) return false;
                 if (!id(absorption_reached)) return false;
                 // V1.28 (review O2): absorption for 60 s is not a full charge. A

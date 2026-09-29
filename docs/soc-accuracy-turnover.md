@@ -61,6 +61,10 @@ were split in 5-min blocks.
 - The two drains differ by **0.88 mA**, Welch t=10.7 on n=37/37 h [M]. The
   monitor draws more in the noisy regime. That extra is either real current
   (its own radio working harder) or a small non-zero mean in the noise.
+  *Correction 2026-09-28 (R13): neither drain was the monitor's. Its return did
+  not cross the shunt until 20:33 EDT that day (FAQ, parasitic draw), so both
+  are the inverter cable plus offset. The 0.88 mA difference stands [M]; the
+  radio explanation does not.*
 - **The CHARGE register already averages the noise away** [M]. Per sample the
   noisy sd is 18.11 mA. The register's hourly drain values scatter by only
   0.39 mA sd. This is the measured basis for V1.28.
@@ -204,6 +208,10 @@ Each item is recorded with its evidence in `open_questions.yaml` (entries dated
   n.s.).
 - **Some of the monitor's current bypasses the shunt.** Bill: impossible, by
   construction.
+  *Correction 2026-09-28 (R13): true of the design, not of this build. TB1 GND
+  sat on the battery side of the shunt until 20:33 EDT that day, so all of the
+  monitor's current bypassed it. That is a fixed offset, not noise, so it is
+  still not a cause of the noise.*
 - **A constant source (router RF, the ESP radio) as the whole cause.** A
   constant cannot make two states or a 41.7 h quiet spell (Bill). A constant
   can still be the coupling path once the state is set, and that is §4 (a)/(b).

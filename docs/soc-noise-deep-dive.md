@@ -1,5 +1,26 @@
 # Battery-bank SOC: noise root cause and INA228 accuracy (deep dive)
 
+**Rev 4.3, 2026-09-28 (late).** B1 is settled, as reading (ii)(a) of §10.4:
+the TB1 GND lug sat on the battery side of the shunt. As built, the five
+battery negatives land on the physical busbar and the shunt is in the
+busbar → inverter cable (Bill, Q7), so the monitor's return never crossed
+it. Bill moved TB1 GND to the shunt's inverter-side bolt at 20:33 EDT, and
+the idle current stepped -22.7 mA [M: 2-s samples, n=1725 vs 2530;
+Welch on 30-s blocks p<1e-300]. The monitor draws 22.6 mA with the OLED
+dark [D], and 1.5 mA more while lit [M]. The driver reads power save
+NONE [M: 5 of 5 valid states, 2026-09-25 to 09-28], so
+reading (i), modem sleep, is refuted. P-1 is superseded. Consequences:
+
+- Every SOC before 20:33 on 09-28 ran without the monitor's draw, an unseen
+  drain of 4.2 %/month [D: 22.6 mA x 0.184, §1.1].
+- The current anchor (manual Mark-as-Full, about 18:10 EDT 09-26) carries
+  about 1.14 Ah of it [D: 22.6 mA x 50.3 h], so SOC reads about
+  0.29 points high [D: / 397 Ah]. The −0.71 Ah booked by the lead
+  moves (Rev 2 note §8.1) reads the other way; net about 0.43 Ah, 0.11
+  points [D]. The next Mark-as-Full clears both.
+- The 10 mA zero move at the twist (below) is not the monitor. It is still
+  unexplained.
+
 **Rev 4.2, 2026-09-28.** Bill ran P-2a, P-2b and P-4 on the Rev 1.1 board,
 plus a 1 A load check. The results live in
 `INA228 Monitor/pcb-rev2-noise-fix-design.md` §8.1 and are not copied here.
