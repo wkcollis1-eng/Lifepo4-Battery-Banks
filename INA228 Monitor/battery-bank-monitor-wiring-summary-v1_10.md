@@ -92,7 +92,7 @@ The high-side era (1.3–1.6) was driven by two real concerns: the V1-carrier VB
 | Monitor PCB | **Battery_Bank-Monitor-THT V2 Rev 1.1** | OSH Park (target) | Native INA228 8-pin socket. **Electrically verified fab-ready (§8.5); item L hygiene before Gerber export.** |
 | INA228 breakout | Adafruit 5832 (or 6349 INA228 variant) | Adafruit / DigiKey | **Onboard 15 mΩ shunt must be removed; VBUS jumper LEFT OPEN (low-side default); see §3.3** |
 | Microcontroller | Seeed XIAO ESP32-C3 | Seeed Studio | OTA-flashable. **Antenna: included U.FL external flex (item J closed)** — placement per §8.2. |
-| Regulator | Pololu D24V7F3 | Pololu #2842 | 4–36 V → 3.3 V at 600 mA. **Verify VIN/GND/VOUT pin order against module silk before fab (§13 item H).** |
+| Regulator | Pololu D24V7F3 | Pololu #5592 | 4–36 V → 3.3 V at 600 mA. **Verify VIN/GND/VOUT pin order against module silk before fab (§13 item H).** |
 | Reverse-voltage protector | (none on board) | — | **Accepted risk for this single self-wired build: the V2 board has NO on-board or external reverse protection (§13 item C). Be deliberate about TB1 polarity at connect time — a reversed feed puts reverse voltage on C4 (electrolytic).** |
 | Temperature sensor | DS18B20 module (integral 4.7 kΩ pull-up) | Generic | Mount to battery case (isolated from any conductive surface). |
 | Board input fuse | 1 A slow-blow 5×20 mm | Würth 696108003002 | F1 — protects the board power feed only (not the sense/VBUS leads). |
