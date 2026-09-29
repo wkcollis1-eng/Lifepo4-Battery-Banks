@@ -413,6 +413,18 @@ right. Until it is run, the FAQ's 7.4 ± 2.4 mA monitor draw (measured on
 the untwisted leads) and the SOC's idle drain both carry this uncertainty.
 Each 1 mA is 0.72 Ah/month (§1.1).
 
+**Outcome, 2026-09-28 (late): P-1 is superseded.** Neither reading
+contained the monitor. As built, the shunt is in the busbar → inverter
+cable and TB1 GND sat on the physical busbar, so the monitor's return
+never crossed the shunt (Bill, Q7). The 10.2 mA move is therefore still
+unexplained, and it is not the monitor's draw. The third candidate above
+(a split of the monitor's return across the shunt) does not apply as
+stated, since none of the return crossed it. With TB1 GND moved to the
+shunt's inverter-side bolt at 20:33 EDT, the idle current stepped
+-22.7 mA [M: Welch on 30-s blocks, p<1e-300]; the monitor draws
+22.6 mA with the OLED dark [D]. The zero-move test is now the only open
+input to the Rev 2 call below.
+
 **Side effect: false charge from the lead moves.** While a lead was off the
 shunt, the counters booked:
 

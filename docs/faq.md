@@ -75,13 +75,21 @@ For example, with ~3-second median cadence:
 
 ### How accurate is the parasitic draw figure?
 
+> **Correction, 2026-09-28 (late; R13).** The figure below is not the monitor. As built, the shunt sits in the busbar → inverter cable, and the monitor's TB1 GND sat on the physical busbar, so its return never crossed the shunt. Bill moved TB1 GND to the shunt's inverter-side bolt at 20:33 EDT that day, and the idle current stepped -22.7 mA [M: 2-s samples, n=1725 before, n=2530 after; Welch on 30-s blocks p<1e-300]. **The monitor draws 22.6 mA with the OLED dark** (0.30 W, 0.54 Ah/day [D]), and 1.5 mA more while it is lit [M]. The 7.4 mA, the 99 mW and "effectively nil" below were the inverter cable plus INA228 offset. The whole idle load, about 25 mA [M], is now metered; only the cells' own self-discharge is not.
+
 **It is now measured, not inferred: 7.4 ± 2.4 mA**, time-weighted over 41 quiescent days and 1.79 M samples at 2 s on a 375 µΩ shunt, 99.93% integrated coverage.
 
 > **Caveat, 2026-09-28.** That figure was measured with the sense leads untwisted inside the monitor's enclosure. Twisting them removed the noise, and the idle reading moved from −12.75 mA to −2.54 mA, stable for an hour [M]. Twisting wires adds no load, so unless the reboot between the two readings changed the monitor's draw, a DC error of at least 5 mA sits in one of them [D], possibly the one behind this figure. Why is not known [I]. A DMM in series with the monitor (P-1) decides it. See the [Rev 2 design note §8.1](../INA228%20Monitor/pcb-rev2-noise-fix-design.md).
+>
+> **Settled, 2026-09-28 (late).** P-1 was not needed. Neither reading contained the monitor, because its return did not cross the shunt until 20:33 that day (correction above). The 10.2 mA move between them [D: −12.75 → −2.54] is still unexplained, and it is not the monitor's draw.
 
 **And it is the monitor.** The Shelly and the DROK panel meter are retired and the inverter is off, so the INA228 monitor — powered from the busbars, its return through the shunt — is the only load on the bus. 99 mW at 13.35 V is what a Wi-Fi-associated XIAO ESP32-C3 behind an 87% buck should draw. **The bank's own external parasitic load is effectively nil.** See [report §7](../reports/LiFePO4_Report_2026-08-26.md).
 
+*Withdrawn 2026-09-28 (R13): the monitor's return did not cross the shunt, so the paragraph above describes the inverter cable plus INA228 offset, not the monitor. See the correction at the top of this answer.*
+
 The earlier answer here gave 13–20 mA inferred from voltage drift, and listed direct bus-current measurement as the highest-value improvement. That measurement was made in July 2026, and the inferred band turned out to be **42–63% high** — a useful calibration on how much to trust drift-derived currents on a flat OCV curve.
+
+*Withdrawn 2026-09-28 (R13): the measured side of that comparison did not include the monitor, so it is not a calibration of the drift method. It has not been re-run against the metered figure.*
 
 **What still limits the measured figure:**
 
