@@ -9,6 +9,9 @@ measured on Rev 2 yet.
 reading carries interference from the on-board 3.3 V buck regulator. The
 interference adds per-conversion noise about 9× the chip's own floor, and
 it moves the zero reading by 1–3 mA whenever wiring or equipment is moved.
+Since the fan-out was twisted on 2026-09-28, Rev 1.1 idles at the
+converter's resolution. What that leaves for Rev 2 is in §8.1 (the
+2026-09-30 results).
 
 **Companion documents.**
 
@@ -436,6 +439,10 @@ What each shows:
     against a 2-s V × |I| of 14.238/14.212/14.191/14.176 W: 0.28 % low
     (paired t = 5.55, df 3, p = 0.012). The shortfall is real; its cause
     is unknown. CHARGE matched the 2-s current to within 0.6 mA.
+  - **Revised 2026-10-01** (results below). The shortfall is a constant
+    of about −0.040 W [D: mean of the four pair differences], not a 0.28 %
+    gain error: at a 25.6 mA idle on 09-30, ENERGY ran 0.038 W below
+    V × |I| as well.
   - Near zero, ENERGY reads low (deep-dive §3.1 note).
 
 What this does not establish:
@@ -497,6 +504,156 @@ reset_check].
 **For Rev 2.** Its path-1 fix (relocation and a routed pair) is aimed at
 the right path. Whether Rev 1.1 with a twisted fan-out already does enough
 is Bill's call; the zero-move test and P-1 are its inputs.
+
+#### Results on Rev 1.1, 2026-09-30 to 10-01
+
+Board as left on 09-28: fan-out twisted (P-4), and TB1 GND on the shunt's
+inverter-side bolt since 20:33 that evening, so the monitor's own draw now
+crosses the shunt. Firmware V1.29 (build 2026-09-28 22:08, 11 dBm), up since
+09-30 14:19 [M: HA ESPHome-version and uptime entities]. One discharge and
+one charge at about 80 A, then 15 h idle. Figures are [M] from the HA 2-s
+current and voltage, forward-filled onto the 2-s publish grid because HA
+stores a value only when it changes, and from the 60-s `HW Energy` and
+`HW Net Charge` registers. Scatter is defined as above. Times are EDT.
+
+| window | state | 2-s n | mean | 2-s scatter | Allan dev. 20 s / 200 s |
+|---|---|---|---|---|---|
+| 09-30 14:30–14:48:50 | idle, before | 565 | −25.63 mA | 0.349 mA | 0.138 / 0.065 mA |
+| 15:05–15:30 | discharge hold, inverter | 751 | −80.768 A | 106 mA | 35 / 121 mA |
+| 15:45–16:07:20 | idle, after the discharge | 671 | −26.25 mA | 0.239 mA | 0.105 / 0.196 mA |
+| 16:10–16:45 | charge, constant-current hold | 1051 | +78.745 A | 1.86 mA | 4.6 / 30 mA |
+| 16:52–18:00 | idle, after the charge | 2041 | −25.08 mA | 0.282 mA | 0.089 / 0.058 mA |
+| 18:00–10-01 09:00 | idle, overnight | 27,001 | −25.59 mA | 0.335 mA | 0.105 / 0.036 mA |
+
+What each shows:
+
+- **At idle the reading is at the INA228's resolution.**
+  - 99.86 % of the overnight samples sit on two adjacent codes, −33 and
+    −34 [M, n = 27,001]. The noise left is the last bit toggling.
+  - The quantization floor is 0.22–0.24 mA [D: the 0.763 mA CURRENT LSB and
+    the 0.833 mA ADC step (312.5 nV / 375 µΩ), each / √12]. A mean that sits
+    on a step boundary toggles more, up to 0.38–0.42 mA [D: half a step].
+  - The chip's own noise is about 0.16 mA rms [D: SLYS021A Table 8-2,
+    19.7 noise-free bits at 4.12 ms × 256], below one step.
+  - VBUS scatter was 0.073–0.147 mV against a 0.056 mV floor [D: 195.3 µV
+    / √12].
+- **Averaging gains as white noise would, out to 200 s.**
+  - Overnight Allan deviation was 0.335 / 0.105 / 0.036 mA at 2 / 20 /
+    200 s. White noise predicts 0.106 and 0.034 [D: 0.335 / √10, / √100].
+  - It levels at 0.032 mA at 30 min [M, 30 blocks]. An hour's mean is good
+    to about 0.03 mA. No interference or 1/f term shows above that.
+- **Under load, the scatter is the load.** The charger's output wanders by
+  30 mA over 200 s, and the inverter's draw scatters 106 mA. Neither is
+  measurement noise, so neither bears on the filter.
+- **The idle zero moved by up to 1.9 mA during the test: two sudden steps
+  and one smooth drift.** The figures are 1-min means [M].
+  - Before the test it read −25.41 to −25.69 mA (14:44–14:47).
+  - At 14:48 it stepped by −0.66 mA, just before the inverter came on.
+  - After the discharge it held flat at −25.91 to −26.09 mA for 14 min.
+  - At 15:59 it stepped by −0.8 mA and held flat until the charge began
+    at 16:07.
+  - After the charge it rose smoothly from −25.5 to −24.8 mA over 20 min,
+    was back to −25.2 mA by 18:30, and read −25.8 mA by 08:00.
+  - The full range of 5-min means was 1.94 mA [D].
+- **The two steps.**
+  - They are sudden and then flat. That is the shape of the 1–3 mA zero
+    steps seen when the harness is moved (deep-dive §3.5), not of heating.
+  - If the cables were handled at 14:48 and 15:59, the steps are an
+    unplanned zero-move result on the twisted board. Whether they were is
+    Bill's to say [I until then].
+- **The post-charge drift.**
+  - It is smooth over 20 min, which is the shape of a thermal process.
+  - It is not the monitor's draw following battery voltage. The voltage
+    fell from 14.06 to 13.91 V. A constant-power load would then draw
+    more, which moves the reading the other way [D].
+  - Overnight, battery voltage covers only 0.21 of the 0.65 mA drift [D:
+    constant-power fit on 30-min means].
+  - It is not chip drift. 0.7 mA is 0.26 µV at the shunt; at 10 nV/°C
+    [S: SLYS021A §6.5] that would need about 26 °C of die heating [D].
+  - Working model [I]: thermocouple EMF at the shunt or its lugs after
+    the 80 A. It is falsified if shunt and lug temperatures, logged
+    through a post-charge idle, stay flat while the zero moves.
+- Each 1 mA held is 0.72 Ah/month of SOC error (§1.1).
+- **The idle residual is about −3.0 mA.**
+  - The overnight mean of −25.59 mA, less the monitor's 22.6 mA draw [D,
+    from the 09-28 20:33 step], leaves −3.0 mA [D]. That is about the size of
+    the ±2.67 mA offset spec [S].
+  - The 22.6 mA is itself [D], so this is not a measurement of the offset.
+    §8.2 step 2 (JP fitted) measures the offset directly on Rev 2.
+- **ENERGY's "0.28 % low" on 09-28 is a constant shortfall of about
+  0.04 W, not a gain error.**
+  - Overnight, ENERGY ran 0.3153 W against a 2-s V × |I| of 0.3536 W.
+  - Hour by hour, the difference was −0.0383 W, sd 0.0027 W [M: n = 15
+    hours, one-sample t = −54.3, p = 1e-17].
+  - The three shorter idle windows gave −0.041, −0.037 and −0.037 W [M].
+  - The 09-28 load minutes at −1.05 A averaged −0.040 W [D: mean of the
+    four pairs].
+  - A 0.28 % gain error would make the idle shortfall 0.001 W [D], against
+    0.038 W measured.
+  - Cost: about 0.9 Wh/day of ENERGY [D: 0.0383 W × 24 h]. CHARGE, which
+    drives the SOC, does not carry it.
+  - The cause is unknown. 0.038 W is 2.8 mA at 13.82 V [D], close to the
+    −3.0 mA residual above. So one reading is that CURRENT and CHARGE carry
+    an offset that ENERGY does not [I]. SLYS021A §7.3.2 [S] says power and
+    energy are computed from the same current result, which argues against
+    it.
+  - A charging check at 1–5 A decides it. A fixed ENERGY shortfall reads
+    about 0.04 W low in both directions. A current offset makes ENERGY read
+    about 0.04 W **high** while charging.
+- **CHARGE reads about 0.06 % above the 2-s current, at every level and in
+  both directions.**
+  - Compare the register rate with the 2-s mean over the same register
+    window [M]:
+    - charge hold: +78.798 against +78.748 A (z ≈ 870);
+    - discharge hold: −80.828 against −80.776 A (z ≈ 13);
+    - overnight: −25.606 against −25.590 mA (z ≈ 8).
+  - Those are +0.063 %, +0.064 % and +0.061 % in magnitude [D]. Each z is
+    the difference over the 2-s sampling error, scatter / √n [D].
+  - On 09-28, CHARGE matched to within 0.6 mA at 1.05 A, which is
+    consistent with this.
+  - At 80 A, ENERGY also reads high: +0.06 % (charge) and +0.11 %
+    (discharge) above V × |I| [D]. At that power the 0.04 W shortfall is
+    under 0.004 % and cannot be seen.
+  - Working model [I]: the INA228's internal time base. CHARGE and ENERGY
+    count each conversion at its nominal length, so a clock running 0.06 %
+    fast books 0.06 % more per wall-clock hour. That is inside the ±0.5 %
+    oscillator tolerance at 25 °C [S: SLYS021A §6.5, FOSC_TOL]. Falsified
+    if the ratio differs from 1.0006 by more than its sampling error in
+    some window, at any current or sign.
+  - For SOC it is 0.3 Ah over a full 500 Ah [D]. It inflates both
+    directions alike, so over a cycle that returns the charge it took,
+    most of it cancels.
+- **The charger cut off cleanly.** It tapered from 78 A to 7.1 A over 2.2 min,
+  then fell to −0.027 A within 4 s, from 16:49:30 to 16:49:34, with one
+  partial sample between [M]. |I| never fell below 24.4 mA in the 18.6 h [M, n = 33,426],
+  so no idle window crossed zero.
+
+What this does not establish:
+
+- **One test day**, with one 80 A discharge, one charge and one 15 h idle.
+- **No independent current reference.** Scatter and Allan deviation
+  describe the INA228's repeatability, not its accuracy. Gain is unverified
+  until a clamp reading lands (open question to Bill, 09-30), and the
+  shunt's tolerance is unknown.
+- **The 22.6 mA monitor draw is [D]**, so the −3.0 mA residual inherits
+  its uncertainty.
+- **Every cause above is [I]:** the steps, the thermal drift, the time
+  base and the ENERGY shortfall.
+- **The zero-move test** (§8.2 step 4) has still not been run on purpose
+  on the twisted board.
+
+**For Rev 2.** At idle, Rev 1.1 with a twisted fan-out is already at the
+converter's resolution. No filter can lower a number that is the last bit
+toggling. So the case for Rev 2 rests on what this run cannot show:
+
+- the zero's robustness to harness movement. If the 14:48 and 15:59
+  steps were handling, Rev 1.1 still has the problem, and Rev 2's routing
+  is aimed at it;
+- input protection (R5/R6);
+- the in-place zero (JP).
+
+The other accuracy terms are offset, the thermal drift, gain and the ENERGY
+shortfall. None of them is noise, and Rev 2 changes none of them.
 
 ### 8.2 After building Rev 2
 
