@@ -293,6 +293,12 @@ each conversion, unaveraged, and POWER is unsigned.
 > gauge still ranks noise. But a σ or a "real power" subtraction derived
 > from it (§10.2, §10.7 item 8) assumes a fidelity near zero that the
 > register does not have.
+>
+> **Revised 2026-10-01** (Rev 2 note §8.1, 2026-09-30 results). The 0.28 %
+> is a constant shortfall of about 0.040 W, not a gain error. At a 25.6 mA
+> idle, ENERGY ran 0.038 W below V × |I| hour after hour through a 15 h
+> night (n = 15, t = −54.3, p = 1e-17) [M]. The "reads low near zero"
+> above may be the same shortfall [I]. The figures are in the Rev 2 note.
 
 | press (UTC) | before: ENERGY / drain / drain scatter | lit: ENERGY / drain / drain scatter | after: ENERGY / drain |
 |---|---|---|---|
