@@ -516,6 +516,12 @@ current and voltage, forward-filled onto the 2-s publish grid because HA
 stores a value only when it changes, and from the 60-s `HW Energy` and
 `HW Net Charge` registers. Scatter is defined as above. Times are EDT.
 
+*R13 2026-11-05: "Firmware V1.29" above is wrong. The 2026-09-28 22:08
+build was V1.28, a comments-only rebuild (H:/CHANGELOG.md, 2026-09-28), and
+V1.29 was never flashed: on 2026-11-05 the device still exposed V1.28's
+`Display Button` entity [M: HA /api/states]. The figures in this section
+stand; only the version label was wrong. The same error is in §8.2 and §9.*
+
 | window | state | 2-s n | mean | 2-s scatter | Allan dev. 20 s / 200 s |
 |---|---|---|---|---|---|
 | 09-30 14:30–14:48:50 | idle, before | 565 | −25.63 mA | 0.349 mA | 0.138 / 0.065 mA |
@@ -659,6 +665,14 @@ shortfall. None of them is noise, and Rev 2 changes none of them.
 
 Firmware V1.29, 11 dBm, bank idle.
 
+*R13 2026-11-05: read V1.30 (V1.29 was never flashed - see the note under
+"Results on Rev 1.1"). V1.30 keeps 11 dBm, and by their changelog entries
+neither V1.29 nor V1.30 touches acquisition. But against the Rev 1.1 runs
+(V1.28) it adds the VEML7700 on the INA228's I2C bus, read every 500 ms. That
+is a second change beside the board: if a Rev 2 figure differs from Rev 1.1,
+the poll stays a candidate cause until ruled out [I; falsified if the figure
+is unchanged with `light_poll` set to 60 s].*
+
 1. **Sign check.** A discharge reads negative (Option B). The pin order is
    now right by construction; this confirms it.
 2. **Zero, with a jumper fitted on JP.** Record the reading: it is the
@@ -697,6 +711,10 @@ Firmware V1.29, 11 dBm, bank idle.
   - §8.5: a Rev 2 verification record.
 - **Firmware:** no change required. Rev 2 has no J2, which matches V1.29.
   The JP zero procedure could be added to the commissioning steps.
+  *R13 2026-11-05: true of V1.29, but the device ran V1.28, which has the
+  button, so Rev 2 needs a flash. It gets V1.30: V1.29's light wake, a 10 s
+  page cycle, and no Charge page. V1.30's header adds Rev 2's TB1, whose
+  polarity is reversed from Rev 1.1 (pin 1 = BATT_RAW "+", pin 2 = GND).*
 
 ---
 
