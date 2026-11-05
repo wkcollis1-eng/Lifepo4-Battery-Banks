@@ -1,5 +1,5 @@
 # ============================================================================
-# Battery Bank Monitor V1.29 — PRODUCTION Configuration
+# Battery Bank Monitor V1.32 — PRODUCTION Configuration
 #   CORE (backup readiness — must be correct): V/I/T acquisition, stale-bus FAULT
 #     watchdog, 3-tier low-voltage alarms + overvoltage guard, bank_state machine,
 #     runtime-remaining, and SOC (INA228 CHARGE register against a full-charge
@@ -13,12 +13,18 @@
 #     socket; external 375 µΩ DROK Kelvin shunt in negative cable (low-side).
 #     INA228 onboard 15 mΩ shunt REMOVED; VBUS jumper LEFT OPEN (low-side default);
 #     VBUS driven from positive busbar via inline-fused lead at breakout terminal block.
+#   V1.30: PCB Rev 2 (OSH Park, Oct 2026) - same pins as Rev 1.1 (GPIO5 ALERT,
+#     GPIO6/7 I2C, GPIO10 DQ, GPIO20 LED), no J2/GPIO4. Sense leads and VBUS move
+#     to TB3, and TB1's polarity is REVERSED from Rev 1.1: see item 6 below.
 #   Source-level reviewed against ESPHome 2026.5.x; V1.28 validated against
 #     ESPHome 2026.9.0 (config, codegen, host g++ of every lambda; the real
 #     compile is Device Builder's). V1.29: config, codegen, host g++ of the
 #     new display lambdas, AND a full ESP-IDF 5.5.5 compile under ESPHome
 #     2026.9.0 - 0 errors, RAM 36.2 %, flash 56.3 %. Flash-ready after
 #     credentials are set in secrets.yaml. Apparent Ri (V1.8) remains PROVISIONAL.
+#   V1.30: config + full ESP-IDF 5.5.6 compile under ESPHome 2026.10.2 (the
+#     Device Builder add-on version) - 0 errors, RAM 36.0 %, flash 56.1 %; a
+#     lambda fault injected into page_main failed that same compile (R7).
 # ============================================================================
 # Purpose : Full instrumentation for 12V/500Ah LiFePO4 battery bank with
 #           Giandel 1500W inverter and LiTime 80A charger. Reports V/I/P,
@@ -29,7 +35,7 @@
 #           + Pololu D24V7F3 (3.3V buck) + Adafruit 938 OLED (J1)
 #           + Adafruit VEML7700 light sensor (4162), chained from the OLED's
 #             second STEMMA QT port — V1.29, replaces the J2 wake button
-#           on Battery_Bank-Monitor-THT V2 PCB (OSH Park).
+#           on Battery_Bank-Monitor-THT V2 PCB (OSH Park). Rev 2 from V1.30.
 #           Wiring per: battery-bank-monitor-wiring-summary-v1.8.md (low-side topology)
 #
 # INA228 hardware pre-build requirements (MANDATORY — V2 board, low-side topology):
@@ -45,7 +51,20 @@
 #      from the heavy-current bolts). Sense leads sit near ground in low-side — no
 #      inline fuses required on Kelvin leads.
 #   5. Confirm TB1 polarity (pin 1 = GND, pin 2 = BATT_RAW) before energizing —
-#      the V2 board has no reverse-polarity protection.
+#      the V2 board has no reverse-polarity protection. (Rev 1.1 only - see 6.)
+#   6. PCB Rev 2 (V1.30, 2026-11-05; from the Rev 2 .kicad_pcb, 2026-10-09 save):
+#      - TB1 is pin 1 = BATT_RAW ("+" on the silkscreen), pin 2 = GND - the
+#        REVERSE of Rev 1.1 (pin 1 GND). A harness moved across unflipped feeds
+#        the board backwards. Follow the silkscreen, not the old harness.
+#      - Kelvin sense leads and VBUS go to TB3: pin 1 VIN+RAW, pin 2 VIN-RAW,
+#        pin 3 VBus (VBUS still fused 100-250 mA at the busbar). TB3 feeds the
+#        INA228 through the R5/R6 10 ohm + C7 1 uF input filter. LEAVE the
+#        breakout's own terminal block EMPTY: it is the filtered side, so leads
+#        there bypass the filter (pcb-rev2-noise-fix-design.md section 5.5). Items 1
+#        (onboard shunt removed) and 2's VBUS jumper OPEN still apply; 2's wiring
+#        to the breakout's terminal block is Rev 1.1 only.
+#      - JP (2-pin, across VIN+/VIN-): leave OPEN in service. Fitted only for
+#        the in-place zero (design note section 8.2 step 2).
 #
 # Dashboard panels:
 #   ① Real-time V / I / P (signed: positive = charging, negative = discharging)
@@ -112,6 +131,89 @@
 #   float_voltage 13.26 V, no BP-65, no survival sleep.
 #
 # Changelog:
+#   V1.32 — SOC carry-over fix (2026-11-05, Bill: "lets fix with v1.32",
+#            "Correct it once"). CORE: the boot reset check only.
+#            (a) Defect, V1.26-V1.31 (R13 note at the bridge): a bridge, an LSB
+#                migration or an anchor invalidation changed globals in RAM,
+#                which reached flash only at the next 60 s commit, while the
+#                TEMP_LIMIT sentinel went to the chip at once. 2026-11-05
+#                19:50:33Z bridged HW Net Charge to -27.046 Ah; an ESP reboot at
+#                19:50:48Z restored the old offset under the intact sentinel:
+#                -7.806 Ah, SOC 94.25 -> 99.10 % [M: HA history]. Now every
+#                global the check can change is committed (update() +
+#                global_preferences->sync()) before the sentinel is written. A
+#                failed commit is published in the INA228 Reset Check text and
+#                the sentinel is still written: the runtime check reboots on
+#                any TEMP_LIMIT but 0x7FFE, and a re-bridge on a chip that kept
+#                power would double-count CHARGE.
+#            (b) One-shot correction of that loss: HW Net Charge -19.2396 Ah,
+#                HW Energy +1651.2394 Wh, offsets and saved values [M: HA history
+#                19:50:33 vs 19:50:48Z]. Only if the live anchor is the 09-30
+#                20:51:04Z full charge (source 1, epoch within 2 h) AND the CHARGE
+#                bracket still shows the shift: (hw - a) - (in - out) within 2 Ah
+#                of +19.24 (-0.012 Ah before the loss, +19.220 after [D: Influx/
+#                HA]). Decided once (soc_fix_1105_done), applied or skipped, and
+#                published in the INA228 Reset Check text.
+#   V1.31 — Panel fixes and redesign from the V1.30 mockup sheet; wake lux from
+#            HA (2026-11-05, Bill's picks). DISPLAY ONLY: no CORE path reads the
+#            panel, the light sensor, g_lux_wake_on or panel_fault.
+#            (a) Page (1): the NaN branch printed "0.0A"/"0.0W" AND "--A"/"--W"
+#                at the same x,y - garbled (mockup tile 5; in the repo since
+#                a93d57f, 2026-09-08). Only the "--" pair is printed now.
+#            (b) Page (4) rebuilt (tiles 6, 10, 11). "STATUS: %s" ran off the
+#                panel for 5 of the 11 states (OVERVOLTAGE, CHARGING_ABSORPT,
+#                CHARGING_BULK, HEAVY_LOAD, DISCHARGING). Now: an inverted title
+#                "HEALTH" with the pack temperature, a big "ALL OK" over the
+#                state name ("_" -> " ", centred). In OVERVOLTAGE / EMERGENCY /
+#                CRITICAL / WARNING the big word is "ALARM" - "ALL OK" would be
+#                false there. On a fault (binary_sensor panel_fault: INA228
+#                watchdog, current channel, temp sensor NaN, or bank_state FAULT)
+#                the WHOLE panel inverts: "FAULT", the causes, and the state when
+#                it is not FAULT.
+#            (c) While panel_fault is on, a wake opens on page (4) and the 10 s
+#                cycle re-shows it instead of advancing (tile 11). A light edge
+#                while lit still advances, so pages (1)-(3) stay reachable for
+#                one period (in a lit room: cover the sensor ~1 s, uncover).
+#            (d) Position bar on the right edge of pages (1)-(4), x 126-127:
+#                four 14-px segments, this page's 2 px wide, the others 1 px
+#                (tile 7). Every page's content ends at x <= 124 [M: host render
+#                with ESPHome 2026.10.2's glyph code, worst-case strings]. Page
+#                (3) is otherwise unchanged (tile 12, Bill's choice over tile 9).
+#            (e) Wake lux from HA: input_number.basement_display_lux_wake, the
+#                basement TH node's own setting - the two nodes sit side by side
+#                (Bill, 2026-11-05) - mirrored into restore global g_lux_wake_on
+#                (NVS), so the last value HA sent survives reboots with HA or
+#                Wi-Fi down; light_wake_on_lux (20 lx) until HA first reports.
+#                Re-arm = min(light_wake_off_lux, wake / 2), so the hysteresis
+#                holds at any HA value (helper range 2-200 lx); at the 15 lx set
+#                on 2026-11-05 it is 5 lx, as in V1.30. The blank delay is NOT
+#                shared: this panel's timer counts from the wake edge, the TH
+#                node's from its last lit reading.
+#
+#   V1.30 — For PCB Rev 2: pages cycle every 10 s; the Charge page is deleted
+#            (2026-11-05). DISPLAY ONLY, like V1.29, which was never flashed:
+#            the running image up to this one is V1.28 (button wake). So this
+#            Install is the first with the VEML7700 wake, the V/I/P page and
+#            the new Display Light/Lit entities - V1.29 (a)-(e) below all
+#            arrive with it, and "Display Button" leaves HA.
+#            (a) display_page_period 30 s -> 10 s (Bill). 4 pages = 40 s a lap,
+#                7.5 laps per 5-min wake.
+#            (b) Page (5) "Charge" deleted (Bill: the HA dashboard covers it).
+#                It showed, by state: charging and absorbed - "absorb
+#                CONFIRMED / OK to stop charger / SOC anchors 100%"; charging,
+#                not yet - "absorb: not yet / hold >=14.2V 60s / then stop
+#                charger"; otherwise "idle / discharging / Mark Full button /
+#                if anchor missed". The panel now has no absorption cue; the
+#                absorption_reached global and every CORE path are unchanged.
+#                Pages are now (1) main, (2) V/I/P, (3) runtime, (4) health.
+#            (c) Header: PCB Rev 2 wiring (item 6 of the pre-build list) - TB1
+#                polarity is reversed from Rev 1.1, the sense leads and VBUS
+#                land on TB3, and the breakout's own terminal block stays empty.
+#            (d) Built on ESPHome 2026.10.2, the Device Builder's version on
+#                2026-11-05 (the running V1.28 image is 2026.9.1). The 2026.10.0
+#                breaking changes and the 10.1/10.2 notes name no component
+#                this file uses; sensor raw_state, removed in 10.0, is not used.
+#
 #   V1.29 — Light wake replaces the button; V/I/P page; pages cycle every 30 s
 #            (2026-09-27). DISPLAY ONLY: no CORE path reads the panel, the
 #            light sensor or the new entities.
@@ -480,13 +582,15 @@ substitutions:
 
   # --- Display ---------------------------------------------------------------
   display_timeout:          "5min"   # auto-sleep, counted from the last light-wake edge
-  display_page_period:      "30s"    # V1.29: each page shows this long, then the next (wraps)
+  display_page_period:      "10s"    # V1.29: each page shows this long, then the next (wraps); V1.30: 30s -> 10s
   # V1.29 light wake (VEML7700). Lux at the sensor, behind its window. Decimal
   # REQUIRED (lambdas append f). PROVISIONAL: set both from the "Display Light
   # Level" history after install - room dark with the OLED lit and the status
   # LED flashing (must stay below off), then the lights on (must clear on).
-  light_wake_on_lux:        "20.0"   # lx; rising to >= this (held 2 s) = a wake
-  light_wake_off_lux:       "5.0"    # lx; must fall to <= this to re-arm the next wake
+  # V1.31: the wake level is set in HA (input_number.basement_display_lux_wake ->
+  # g_lux_wake_on); light_wake_on_lux is only its default until HA reports.
+  light_wake_on_lux:        "20.0"   # lx; rising to >= this (held 2 s) = a wake (V1.31: default only)
+  light_wake_off_lux:       "5.0"    # lx; must fall to <= this to re-arm the next wake (V1.31: capped at wake / 2)
   light_poll:               "500ms"  # VEML7700 poll; wake latency <= this + 100 ms + 2 s hold
 
   # --- Current thresholds (Option B: positive = charging) -------------------
@@ -521,13 +625,13 @@ esphome:
     - "<esp_wifi.h>"   # V1.28: esp_wifi_get_ps / esp_wifi_get_max_tx_power readbacks
   project:
     name: "wkcollis1.battery-bank-monitor"
-    version: "1.29"
+    version: "1.32"
   on_boot:
     - priority: -200
       then:
         - logger.log:
             level: INFO
-            format: "Battery Bank Monitor V1.29 boot -- INA228 @ 0x40, DS18B20 on GPIO10"
+            format: "Battery Bank Monitor V1.31 boot -- INA228 @ 0x40, DS18B20 on GPIO10"
         # Start panel dark — wakes on a light-wake edge only (V1.29). turn_off() not setup() (issue #1393).
         - lambda: 'id(panel).turn_off();'
         # alert_reason shows "none" from boot (V1.21) — not "unknown" until first alert
@@ -624,6 +728,15 @@ esphome:
                   tl, anchored ? "still valid" : "not yet seeded");
                 ESP_LOGI("bank.hwcheck", "%s", rc);
               } else if (!isnan(id(hw_charge_saved_ah))) {
+                // R13, 2026-11-05 (V1.26 defect, fixed in V1.32 (a)): this offset
+                // lived in RAM until the next flash commit (flash_write_interval
+                // default 60 s [S: esphome 2026.10.2 preferences/__init__.py:19])
+                // while the sentinel below went to the chip at once. An ESP-only
+                // reboot inside that window restored the OLD offset under an
+                // intact sentinel, and no bridge ran: 19:50:33Z bridged HW Net
+                // Charge to -27.046 Ah; the reboot at 19:50:48Z read -7.806 Ah,
+                // SOC 94.25 -> 99.10 % [M: HA history]. The commit is now made
+                // before the sentinel; V1.32 (b) corrects that one loss.
                 id(hw_charge_offset_ah) = id(hw_charge_saved_ah);
                 if (!isnan(id(hw_energy_saved_wh)))
                   id(hw_energy_offset_wh) = id(hw_energy_saved_wh);
@@ -674,6 +787,63 @@ esphome:
                   }
                   id(hw_lsb_a) = lsb_now;
                 }
+              }
+              // V1.32 (b): one-shot correction of the 2026-11-05 loss (R13 note at
+              // the bridge above). D = -27.0460587 - (-7.8064489) = -19.2396 Ah and
+              // 2268.6277 - 617.3883 = +1651.2394 Wh [M: HA history 19:50:33 vs
+              // 19:50:48Z]. Applied only to the anchor that predates the loss - the
+              // 09-30 20:51:04Z full charge, epoch 1790801464 [D: Hours Since Anchor
+              // 864.638 h at 11-05 21:29:21Z] - and only while the CHARGE bracket
+              // still shows the shift: (hw - a) - (in - out) was -0.012 Ah before
+              // the loss and +19.220 Ah after [D: a = -4.2278 Ah, Influx 09-30
+              // 20:51Z]. 2 Ah takes a reboot during an 80 A charge (the bracket
+              // loses the first poll, up to 1.33 Ah, see hw_charge_ah) and still
+              // parts 19 from 0. Decided once, applied or skipped, and published.
+              if (!id(soc_fix_1105_done)) {
+                const float d_ah = -19.2396f, d_wh = 1651.2394f;
+                const uint32_t ae0 = 1790801464u;
+                const uint32_t ae = id(anchor_epoch);
+                const float a = id(hw_charge_anchor_ah);
+                const float res = (raw_ah + id(hw_charge_offset_ah) - a)
+                                - (id(brk_in_saved) - id(brk_out_saved));
+                const bool same_anchor = id(soc_anchor_src) == 1 && !isnan(a) && ae != 0u &&
+                                         (ae > ae0 ? ae - ae0 : ae0 - ae) <= 7200u;
+                const bool shifted = !isnan(res) && fabsf(res + d_ah) <= 2.0f;
+                char fx[128];
+                if (same_anchor && shifted) {
+                  id(hw_charge_offset_ah) += d_ah;
+                  id(hw_charge_saved_ah)  += d_ah;   // NAN stays NAN
+                  id(hw_energy_offset_wh) += d_wh;
+                  id(hw_energy_saved_wh)  += d_wh;
+                  snprintf(fx, sizeof(fx),
+                    "V1.32 SOC fix APPLIED: HW Net Charge %+.4f Ah, HW Energy %+.1f Wh (bracket residual %+.3f -> %+.3f Ah)",
+                    d_ah, d_wh, res, res + d_ah);
+                } else {
+                  snprintf(fx, sizeof(fx),
+                    "V1.32 SOC fix SKIPPED, nothing changed: %s (bracket residual %+.3f Ah)",
+                    !same_anchor ? "the 09-30 anchor is not live" : "no 19.24 Ah shift", res);
+                }
+                id(soc_fix_1105_done) = true;
+                ESP_LOGW("bank.hwcheck", "%s", fx);
+                size_t n = strlen(rc);
+                snprintf(rc + n, sizeof(rc) - n, " | %s", fx);
+              }
+              // V1.32 (a): commit every global this check can change BEFORE the
+              // sentinel below tells the next boot "nothing to bridge". update()
+              // queues a changed value; sync() writes the queue to NVS and clears
+              // it even on a failure, so a failed item is not retried until it
+              // changes again [S: esphome 2026.10.2 globals_component.h
+              // store_value_(), esp32/preferences.cpp ESP32Preferences::sync()].
+              hw_charge_offset_ah->update();  hw_energy_offset_wh->update();
+              hw_charge_saved_ah->update();   hw_energy_saved_wh->update();
+              hw_charge_anchor_ah->update();  hw_prov_anchor_ah->update();
+              hw_bridge_count->update();      hw_lsb_a->update();
+              soc_fix_1105_done->update();
+              if (!global_preferences->sync()) {
+                ESP_LOGE("bank.hwcheck", "Flash commit FAILED before the TEMP_LIMIT sentinel write");
+                size_t n = strlen(rc);
+                snprintf(rc + n, sizeof(rc) - n,
+                  " | FLASH COMMIT FAILED: an ESP reboot in the next 60 s may restore the previous offsets");
               }
               id(hw_anchor_checked) = true;
               id(ina228_reset_check).publish_state(rc);   // V1.27
@@ -856,25 +1026,26 @@ one_wire:
 
 # ============================================================================
 # FONTS (V1.16) — four sizes for the local panel display.
-# font_soc(24)     Page ① SOC + voltage lines; page ② (V1.29) V / I / P lines
+# font_soc(24)     Page ① SOC + voltage lines; page ② (V1.29) V / I / P lines;
+#                  page ④ ALL OK / ALARM / FAULT (V1.31)
 # font_runtime(28) not drawn by any page (V1.29 check)
-# font_body(12)    Body text on pages ① ③ ④ ⑤
-# font_hdr(10)     not drawn by any page (V1.29 check)
+# font_body(12)    Body text on pages ① ③ ④ (V1.30: page ⑤ deleted)
+# font_hdr(10)     page ④ title bar (V1.31); not drawn by any page in V1.29-V1.30
 # Roboto (Google Fonts) is fetched by ESPHome at compile time and baked into
 # the binary; keep the font tables small.
 # ============================================================================
 font:
   - file: "gfonts://Roboto"
-    id: font_soc          # Pages ①②  SOC / V lines; V / I / P lines
+    id: font_soc          # Pages ①②  SOC / V lines; V / I / P lines; ④ big word (V1.31)
     size: 24
   - file: "gfonts://Roboto"
     id: font_runtime      # not drawn by any page (V1.29 check)
     size: 28
   - file: "gfonts://Roboto"
-    id: font_body         # Pages ①③④⑤  body lines (current, watts, slope, state, charge)
+    id: font_body         # Pages ①③④  body lines (current, watts, slope, state)
     size: 12
   - file: "gfonts://Roboto"
-    id: font_hdr          # not drawn by any page (V1.29 check)
+    id: font_hdr          # page ④ title bar (V1.31); not drawn by any page in V1.29-V1.30
     size: 10
 
 # ============================================================================
@@ -882,7 +1053,9 @@ font:
 # on bus_a (shared w/ INA228). OFF by default (on_boot turns it off); woken by the
 # VEML7700 light sensor (binary_sensor room_lit -> script display_wake).
 # Sleep/wake via turn_on()/turn_off() ONLY — never setup() (ESPHome issue #1393).
-# Five pages, each shown display_page_period (30 s) by script display_page_cycle
+# Four pages (V1.30; five in V1.29), each shown display_page_period (10 s) by script display_page_cycle
+# V1.31: a position bar on the right edge of every page; while panel_fault is on, a wake
+# opens on page ④ and the cycle holds there (changelog V1.31 (c), (d)).
 # (display.page.show_next, wraps). update_interval 1s is cheap: the panel is dark
 # almost always, and a lit page refreshes its values each second.
 # ============================================================================
@@ -913,8 +1086,8 @@ display:
           float p = id(signed_power).state;
           // Bottom line - split columns to fit 128px with max values
           if (isnan(i) || isnan(p)) {
-            it.printf(6, 52, id(font_body), "%.1fA", 0.0);
-            it.printf(68, 52, id(font_body), "%.1fW", 0.0);
+            // V1.31: two printfs of "0.0A"/"0.0W" also drew here, at the same x,y as
+            // the "--" pair - a garbled line (changelog V1.31 (a)). Removed.
             it.print(6, 52, id(font_body), "--A");
             it.print(68, 52, id(font_body), "--W");
           } else if ((i <= ${charge_threshold_a}f) && (i >= ${discharge_threshold_a}f)) {
@@ -924,6 +1097,8 @@ display:
             it.printf(6, 52, id(font_body), "%.1fA", fabsf(i));
             it.printf(68, 52, id(font_body), "%.1fW", fabsf(p));
           }
+          // V1.31 position bar (page 1 of 4): this page 2 px wide, the others 1 px.
+          for (int j = 0; j < 4; j++) it.filled_rectangle(j == 0 ? 126 : 127, j * 16 + 1, j == 0 ? 2 : 1, 14);
 
       # ── Page ②: V / I / P, full precision (V1.29) ─────────────────────────
       # font_soc (Roboto 24): digit and capital ink is rows y+6..y+22 of the
@@ -947,6 +1122,8 @@ display:
           float p = id(signed_power).state;
           if (isnan(p)) it.print(6, 61, id(font_soc), TextAlign::BASELINE_LEFT, "-- W");
           else          it.printf(6, 61, id(font_soc), TextAlign::BASELINE_LEFT, "%.2f W", p);
+          // V1.31 position bar (page 2 of 4).
+          for (int j = 0; j < 4; j++) it.filled_rectangle(j == 1 ? 126 : 127, j * 16 + 1, j == 1 ? 2 : 1, 14);
 
       # ── Page ③: Runtime — remaining + slope + curve + SOC cue ──────────────
       - id: page_runtime
@@ -969,52 +1146,61 @@ display:
 
           float soc = id(soc_estimate).state;
           if (!isnan(soc)) it.printf(6, 52, id(font_body), "SOC %.0f%% stop@20%%", soc);
+          // V1.31 position bar (page 3 of 4).
+          for (int j = 0; j < 4; j++) it.filled_rectangle(j == 2 ? 126 : 127, j * 16 + 1, j == 2 ? 2 : 1, 14);
 
       # ── Page ④: Health — state + fault status + temperature ────────────────
+      # V1.31 (changelog (b), (c)): on panel_fault the whole panel inverts and
+      # lists the causes; otherwise an inverted "HEALTH" title with the pack
+      # temperature, and "ALL OK" or "ALARM" over the state name. V1.30's
+      # "STATUS: %s" line ran off the panel for 5 of the 11 states.
       - id: page_health
         lambda: |-
-          if (id(bank_state).has_state())
-            it.printf(6, 0, id(font_body), "STATUS: %s", id(bank_state).state.c_str());
-          else
-            it.print(6, 0, id(font_body), "STATUS: --");
+          bool wd  = id(ina228_watchdog).state;
+          bool ich = id(current_channel_fault).state;
+          bool ts  = isnan(id(battery_temp).state);
+          bool has = id(bank_state).has_state();
+          std::string st = has ? id(bank_state).state : std::string("--");
+          std::string name = st;
+          std::replace(name.begin(), name.end(), '_', ' ');   // CHARGING_ABSORPT fits as CHARGING ABSORPT
 
-          it.printf(6, 13, id(font_body), "INA228 wd: %s",
-                    id(ina228_watchdog).state ? "FAULT" : "ok");
+          if (id(panel_fault).state) {
+            it.fill(COLOR_ON);
+            it.print(64, 0, id(font_soc), COLOR_OFF, TextAlign::TOP_CENTER, "FAULT");
+            int y = 27;
+            if (wd)  { it.print(6, y, id(font_body), COLOR_OFF, "INA228 watchdog"); y += 12; }
+            if (ich) { it.print(6, y, id(font_body), COLOR_OFF, "current channel"); y += 12; }
+            if (ts)  { it.print(6, y, id(font_body), COLOR_OFF, "temp sensor");     y += 12; }
+            if (st == "FAULT" && !wd && !ich) {
+              // bank_state's other FAULT paths: a NaN reading, or |I| above
+              // i_max_plausible_a before current_channel_fault's 5 s delayed_on.
+              bool nan_rd = isnan(id(ina228_voltage).state) || isnan(id(ina228_current).state);
+              it.print(6, y, id(font_body), COLOR_OFF, nan_rd ? "INA228 no reading" : "current implausible");
+              y += 12;
+            }
+            if (y <= 51 && has && st != "FAULT")
+              it.print(64, y, id(font_body), COLOR_OFF, TextAlign::TOP_CENTER, name.c_str());
+            return;
+          }
 
-          it.printf(6, 26, id(font_body), "I-chan: %s",
-                    id(current_channel_fault).state ? "FAULT" : "ok");
-
-          it.printf(6, 39, id(font_body), "Temp sensor: %s",
-                    isnan(id(battery_temp).state) ? "FAULT" : "ok");
-
+          it.filled_rectangle(0, 0, 125, 12);   // title bar; stops short of the position bar
+          it.print(4, 0, id(font_hdr), COLOR_OFF, "HEALTH");
           // battery_temp already publishes deg F (sensor filter converts) —
           // v6 bug: reapplied C->F here and showed 155.4F for a 68.5F reading.
           float t = id(battery_temp).state;
-          if (isnan(t)) it.print(6, 52, id(font_body), "T: -- F");
-          else          it.printf(6, 52, id(font_body), "T: %.1f F", t);
+          // NaN is a panel_fault, but that sensor and this redraw run on different
+          // cycles, so one frame can still see it here.
+          if (isnan(t)) it.print(121, 0, id(font_hdr), COLOR_OFF, TextAlign::TOP_RIGHT, "-- F");
+          else          it.printf(121, 0, id(font_hdr), COLOR_OFF, TextAlign::TOP_RIGHT, "%.1f F", t);
 
-      # ── Page ⑤: Charge — absorption cue ────────────────────────────────────
-      - id: page_charge
-        lambda: |-
-          float i = id(ina228_current).state;
-          bool charging = (!isnan(i) && i > ${charge_threshold_a}f);
-          if (charging) it.printf(6, 0, id(font_body), "CHARGE: +%.1f A", i);
-          else          it.print(6, 0, id(font_body), "CHARGE: --");
+          bool alarm = st == "OVERVOLTAGE" || st == "EMERGENCY" || st == "CRITICAL" || st == "WARNING";
+          it.print(62, 14, id(font_soc), TextAlign::TOP_CENTER, !has ? "--" : (alarm ? "ALARM" : "ALL OK"));
+          it.print(62, 49, id(font_body), TextAlign::TOP_CENTER, name.c_str());
+          // V1.31 position bar (page 4 of 4).
+          for (int j = 0; j < 4; j++) it.filled_rectangle(j == 3 ? 126 : 127, j * 16 + 1, j == 3 ? 2 : 1, 14);
 
-          bool absorbed = id(absorption_reached);
-          if (absorbed) {
-            it.print(6, 13, id(font_body), "absorb CONFIRMED");
-            it.print(6, 26, id(font_body), "OK to stop charger");
-            it.print(6, 39, id(font_body), "SOC anchors 100%");
-          } else if (charging) {
-            it.print(6, 13, id(font_body), "absorb: not yet");
-            it.print(6, 26, id(font_body), "hold >=14.2V 60s");
-            it.print(6, 39, id(font_body), "then stop charger");
-          } else {
-            it.print(6, 13, id(font_body), "idle / discharging");
-            it.print(6, 26, id(font_body), "Mark Full button");
-            it.print(6, 39, id(font_body), "if anchor missed");
-          }
+      # Page ⑤ "Charge" (absorption cue) deleted in V1.30 - the HA dashboard
+      # covers it; what it showed is in the V1.30 changelog entry (b).
   # on_boot: start dark (the panel only lights on a light-wake edge)
   # (handled in esphome: on_boot below)
 
@@ -1063,7 +1249,7 @@ script:
 
   # V1.29: the light-wake edge - what a button press did up to V1.28. Dark:
   # light the panel on page ①. Lit: advance a page. Either way the 5-min
-  # sleep and the 30 s page clock start over.
+  # sleep and the page clock (display_page_period, 10 s from V1.30) start over.
   - id: display_wake
     then:
       - if:
@@ -1071,14 +1257,21 @@ script:
             lambda: 'return !id(panel).is_on();'
           then:
             - lambda: 'id(panel).turn_on();'
-            - display.page.show: page_main
+            # V1.31: a fault opens on page ④ (changelog V1.31 (c)).
+            - if:
+                condition:
+                  binary_sensor.is_on: panel_fault
+                then:
+                  - display.page.show: page_health
+                else:
+                  - display.page.show: page_main
           else:
             - display.page.show_next: panel
       - script.execute: display_sleep_timer
       - script.execute: display_page_cycle
 
   # V1.29: page cycle - each page for display_page_period, then the next
-  # (wraps after page ⑤). Runs only while the panel is lit; stopped by the
+  # (wraps after the last page: ④ from V1.30). Runs only while the panel is lit; stopped by the
   # sleep timer and restarted by each wake, so every page gets its full period.
   - id: display_page_cycle
     mode: restart
@@ -1092,7 +1285,14 @@ script:
                 condition:
                   lambda: 'return id(panel).is_on();'
                 then:
-                  - display.page.show_next: panel
+                  # V1.31: hold page ④ while panel_fault is on (changelog V1.31 (c)).
+                  - if:
+                      condition:
+                        binary_sensor.is_on: panel_fault
+                      then:
+                        - display.page.show: page_health
+                      else:
+                        - display.page.show_next: panel
 
   # V1.28: the ONE place a SOC anchor is set - full charge (src 1, clean), the
   # manual button (2) and a provisional seed (3 ledger, 4 carried, 5 assumed).
@@ -1135,6 +1335,14 @@ script:
       - lambda: 'App.safe_reboot();'
 
 globals:
+
+  # V1.31: panel wake level (lx), mirrored from HA input_number.basement_display_lux_wake
+  # (sensor display_lux_wake_ha) and kept in NVS, so the last value HA sent survives
+  # reboots with HA or Wi-Fi down. Default until HA first reports: light_wake_on_lux.
+  - id: g_lux_wake_on
+    type: float
+    restore_value: yes
+    initial_value: '${light_wake_on_lux}'
 
   # Voltage slope (transient)
   - id: voltage_1min_ago
@@ -1466,6 +1674,10 @@ globals:
     type: bool
     initial_value: 'true'   # V1.25-V1.27 wrote the TEMP_LIMIT sentinel on every boot
     restore_value: yes      # (review B2b: a missing sentinel now always = reset)
+  - id: soc_fix_1105_done
+    type: bool
+    initial_value: 'false'  # V1.32 (b): the one-shot 2026-11-05 correction has been
+    restore_value: yes      # decided (applied or skipped); it never runs again
   # Transient
   - id: brk_in_ah           # live bracket accumulators (seeded from *_saved at boot)
     type: float
@@ -2919,6 +3131,9 @@ sensor:
   # driver leaves power saving off): ~45 uA at 3.3 V [datasheet typ, via a
   # search summary], ~13 uA at the bank [D: 45 x (3.3 / 13.3) / 0.85].
   # Cut the breakout's LED jumper: its power LED sits beside the photodiode.
+  # V1.30: optional, not required. On the mmwave bench a VEML7700 breakout with
+  # its green LED lit read <= 0.45 lx, room lamp off [M: one dark run, 2026-10,
+  # gain 2 / 800 ms, H:/CHANGELOG.md], about a tenth of the 5 lx re-arm.
   - platform: veml7700
     id: veml
     i2c_id: bus_a
@@ -2938,13 +3153,19 @@ sensor:
             // timer every 500 ms, so the wake would never fire.
             static bool lit = false;
             static bool published = false;
-            bool now = lit ? (x > ${light_wake_off_lux}f) : (x >= ${light_wake_on_lux}f);
+            // V1.31: wake level from HA via g_lux_wake_on; re-arm capped at half
+            // of it, so on > off whatever HA sends (changelog V1.31 (e)).
+            float on = id(g_lux_wake_on);
+            if (!(on > 0.0f)) on = ${light_wake_on_lux}f;   // NaN-safe: never a dead wake
+            float off = fminf(${light_wake_off_lux}f, 0.5f * on);
+            bool now = lit ? (x > off) : (x >= on);
             if (!published || now != lit) {
               lit = now;
               published = true;
               id(room_lit).publish_state(now);
             }
 
+  # V1.31: the wake level itself is set in HA (input_number.basement_display_lux_wake).
   # V1.29: the lux the wake logic sees, for setting the two thresholds. On a
   # > 2 lx change or once a minute, not at the 2 Hz poll rate.
   - platform: copy
@@ -2956,6 +3177,17 @@ sensor:
       - or:
           - throttle: 60s
           - delta: 2.0
+
+  # V1.31: the wake level, from the basement TH node's own HA setting - the two
+  # nodes sit side by side (Bill, 2026-11-05). That node's mirror pattern: an
+  # id-only import -> restore global; the consumer reads the GLOBAL. Guard x > 0
+  # as there; the helper's own range is 2-200 lx (packages/dehumidifier.yaml).
+  - platform: homeassistant
+    id: display_lux_wake_ha
+    entity_id: input_number.basement_display_lux_wake
+    on_value:
+      then:
+        - lambda: 'if (!std::isnan(x) && x > 0.0f) id(g_lux_wake_on) = x;'
 
 
 text_sensor:
@@ -3107,6 +3339,18 @@ binary_sensor:
     name: "Display Lit"
     entity_category: diagnostic
     lambda: 'return id(panel).is_on();'
+
+  # V1.31: the one definition of "the panel shows FAULT" - page ④'s inverted
+  # form, a wake opening on page ④, and the cycle holding there. Internal: HA
+  # already has each part (INA228 Watchdog, Current Channel Fault, DS18B20
+  # Healthy, Bank State).
+  - platform: template
+    id: panel_fault
+    internal: true
+    lambda: |-
+      return id(ina228_watchdog).state || id(current_channel_fault).state ||
+             isnan(id(battery_temp).state) ||
+             (id(bank_state).has_state() && id(bank_state).state == "FAULT");
 
   # --------------------------------------------------------------------------
   # GPIO20 history: V1.11 input clamp REMOVED in V1.15 (pin was a true NC pad
