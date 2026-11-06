@@ -14,6 +14,14 @@ Since the fan-out was twisted on 2026-09-28, Rev 1.1 idles at the
 converter's resolution. What that leaves for Rev 2 is in §8.1 (the
 2026-09-30 results).
 
+R13, 2026-11-05: the comparison above against "the chip's own floor" has
+no derivation in this note, in any version since 362909a, and that floor
+is the 0.16 mA typical-table figure that the §8.1 note shows is not a
+measured floor. What was measured: the interference left an unlit 2-s sd
+of about 1.8 mA at the 0xFDC5 settings [M, §1.1], and the chip's own
+noise at those settings is at most 0.176 mA [D, §8.2 "Against the chip's
+own noise"].
+
 **Companion documents.**
 
 - `battery-bank-monitor-wiring-summary-v1_10.md`: the Rev 1.1 board,
@@ -543,6 +551,17 @@ What each shows:
     on a step boundary toggles more, up to 0.38–0.42 mA [D: half a step].
   - The chip's own noise is about 0.16 mA rms [D: SLYS021A Table 8-2,
     19.7 noise-free bits at 4.12 ms × 256], below one step.
+    - R13, 2026-11-05: the tag is stronger than the figure. The arithmetic
+      is 327.68 mV / 2^19.7 / 6.6 / 375 µΩ = 0.155 mA [D]. But 19.7 bits
+      is a peak-to-peak of 1.23 codes of the 312.5 nV shunt register
+      [D: 2^(20 − 19.7)], so at this row the table is at the register's
+      own resolution. Dividing by 6.6 assumes Gaussian tails that a one-
+      or two-code spread cannot show. The table also reads 19.7 at every
+      period from 527 to 2,124 ms [S: SLYS021A Table 8-2, pp. 33–34],
+      where white noise would gain 1.0 bit [D: ½ log2(2,124 / 527)].
+      Figure 7-5 (12.5 µV/div) cannot resolve it either. So 0.16 mA is
+      the datasheet's typical figure, not a measured floor. JP fitted
+      (§8.2 step 2) measures it.
   - VBUS scatter was 0.073–0.147 mV against a 0.056 mV floor [D: 195.3 µV
     / √12].
 - **Averaging gains as white noise would, out to 200 s.**
@@ -883,6 +902,23 @@ for independent samples [D: σ through the quantizer]:
 - That rests on a typical-table figure. At 0.150 or 0.165 mA instead,
   Rev 2's excess is 0.08 or 0.05 mA [D]. So Rev 2 is near the chip's own
   noise, and what is left above it cannot be sized from this data.
+- R13, 2026-11-05: "near the chip's own noise" claims more than the data
+  holds. The 0.16 mA is the table read at the shunt register's own
+  resolution (§8.1 note), so it cannot fix the floor to the 0.01 mA these
+  excesses turn on. What holds without it:
+  - The re-spin removed 0.114 mA rms in quadrature, 95 % [0.107, 0.121]
+    [D: √(0.2060² − 0.1717²), se from the two bootstrap se]. Over the
+    same UTC hours, 0.117 [0.108, 0.125] [D]. Both builds used the same
+    breakout, so the chip's share drops out, if it did not change between
+    them.
+  - The chip's own noise at these settings is at most Rev 2's total,
+    0.176 mA at the top of its 95 % interval [D], if the sources are
+    independent.
+  - The split of Rev 2's 0.172 mA is open: about 0.05 mA above the chip
+    if the chip is at 0.165 mA, 0.14 mA if it is at 0.10 mA
+    [D: √(0.1717² − floor²)]. Whether a Rev 3 has anything left to remove
+    turns on that split. JP fitted measures it, provided JP's fixed zero
+    sits away from a code boundary (the fit uses centred blocks only).
 
 **Allan deviation** (mA, non-overlapping) [M]:
 
