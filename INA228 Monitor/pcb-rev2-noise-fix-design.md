@@ -1,9 +1,10 @@
 # Battery_Bank-Monitor-THT-V2 Rev 2: fixing the INA228 current-channel noise (design note)
 
-**Status.** Draft, pre-fabrication. Reviewed against the Rev 2 KiCad file
-of 2026-10-01 (the 11:19 save). The first review, of the 2026-09-28 file, is
-kept where its figures differ, marked "09-28". Nothing here is built or
-measured on Rev 2 yet.
+**Status.** Rev 2 built and installed 2026-11-05. The first five hours of
+Rev 2 results are in §8.2 ("Results on Rev 2"). The design review below was
+made before fabrication, against the Rev 2 KiCad file of 2026-10-01 (the
+11:19 save). The first review, of the 2026-09-28 file, is kept where its
+figures differ, marked "09-28".
 
 **Problem it fixes.** On the built board (V2 Rev 1.1), the INA228 current
 reading carries interference from the on-board 3.3 V buck regulator. The
@@ -34,6 +35,7 @@ converter's resolution. What that leaves for Rev 2 is in §8.1 (the
 | **Rev 1.1 layout** | The INA228 breakout sits 3.8 mm from the buck. The shunt sense leads land on the breakout's own terminal block, about 1 cm from the buck's inductor, and fan out untwisted. There is no input filter. |
 | **Rev 2 fix** | Move the INA228 to the far end of the board. Bring the sense lines in at a new edge terminal block (TB3) as a routed pair. Add TI's input RC filter. Add a ceramic capacitor at the buck input. |
 | **Expected result** | Magnetic pickup largely removed (~131× less stray field at the sense path [I]; ~46× on the 09-28 layout). Anything left, from any path, attenuated 42 dB at 1 MHz by the filter [D]. |
+| **Measured (first 5 h, 2026-11-05)** | Idle noise before the quantizer fell from σ = 0.206 to 0.172 mA [D: z = −14.7, 22 Rev 2 blocks against 4,226 Rev 1.1, §8.2]. Most of the calmer display is position, not the board: Rev 2's zero sits near a code centre, and Rev 1.1's had drifted near a code boundary. That share of the calm will go when the zero drifts [I]. |
 | **Not fixed** | The INA228's own offset (±1 µV, ±2.67 mA [S]). The external shunt run was listed here too. It is already a twisted pair, and with it in place §8.1 found the 2-s scatter at the quantization floor. |
 | **Status** | On the 2026-10-01 layout, §7 has four items still open before fabrication: two value fields, the mechanical checks (including C7's height under U2), refilling zones before the Gerbers, and a board-size typo on the back silk. The §8.1 tests ran on the Rev 1.1 board on 2026-09-28. The pickup entered at the untwisted fan-out beside U3 (path 1), and twisting it there took the 2-s scatter to the floor. The twist also moved the idle zero by about 10 mA, which is unexplained (§8.1). |
 
@@ -698,10 +700,343 @@ is unchanged with `light_poll` set to 60 s].*
    current, about 2.5 mA at the bank [D], with no change in the noise
    gauge.
 
+#### Results on Rev 2, 2026-11-05
+
+The first five hours of Rev 2 at idle, set against five weeks of Rev 1.1.
+Times are EST (UTC−5) unless marked Z. Rev 1.1 dates before 11-01 were EDT,
+so the matched-hours comparison below matches UTC hours.
+
+**In short.**
+
+- **Rev 2's analog noise is lower.** "Analog noise" means σ before the
+  converter's quantizer, fitted as described under "Method".
+  - Rev 2: 0.1717 mA. Rev 1.1: 0.2060 mA [D].
+  - The difference is −0.034 mA, se 0.0023, z = −14.7 [D: block bootstrap,
+    22 Rev 2 blocks against 4,226 Rev 1.1 blocks].
+  - Matched to the same UTC hours of day: −0.036 mA, z = −13.2 [D: 893
+    Rev 1.1 blocks].
+- **Most of the calm you can see on the display is where the zero sits, not
+  the board.** With noise below one code, the reading flickers more when its
+  mean sits near a code boundary.
+  - In its last week, Rev 1.1's idle mean had drifted near a boundary: 30.3 %
+    of samples were off the most common code [M: 969 blocks].
+  - Rev 2 idles near a code centre: 5.3 % [M: 22 blocks].
+  - On days when Rev 1.1 also idled near a centre, it showed 7.6 % [M: 720
+    blocks, 10-11 to 10-15].
+- **That part of the calm will go when the zero moves [I].**
+  - On a boundary, the fitted σ gives about 0.38 mA of 2-s scatter on either
+    board [D].
+  - Rev 2's fitted mean is about 0.28 mA from the nearer boundary [D].
+  - Over five weeks, Rev 1.1's idle mean moved over a 1.6 mA range [M: daily
+    medians −25.07 to −26.69 mA].
+  - Falsified if Rev 2's 2-s scatter stays near 0.18 mA after its idle mean
+    reaches −27.85 or −27.08 mA.
+- **ENERGY's constant shortfall is unchanged.**
+  - Rev 2: −0.0378 W [M: 2 h].
+  - Rev 1.1: −0.0385 W [M: 161 h, sd 0.0003 W].
+  - It is not noise, and Rev 2 was not expected to change it.
+- **The noise gauge measures the monitor's own draw, not noise.** Its
+  thresholds have been stale since 09-28 (below).
+- **Not run yet:** the JP zero (step 2) and the zero-move test (step 4). The
+  idle zero stepped by about −1 mA at the swap, and its cause is open.
+
+**Setup.**
+
+- **Board.** Rev 2, with the INA228 powered on at 14:50:33 (19:50:33Z). It
+  reuses the Rev 1.1 Adafruit breakout, onboard 15 mΩ shunt still removed,
+  so chip-to-chip spread plays no part. JP is open (Bill; H:/CHANGELOG.md
+  2026.11.05).
+- **Firmware.**
+  - Timeline: V1.28 for the first 17 min, then V1.30 (15:08:04), V1.31
+    (15:37:22) and V1.32 (16:49:29) [M: HA uptime].
+  - The INA228 block is identical in V1.28 and V1.32 [M: diff of all 100
+    lines]: ADC_CONFIG 0xFDC5, AVG 256, 2 s update, ADCRANGE 0, 375 µΩ,
+    400 A max current. Both run 11 dBm.
+  - What differs is the VEML7700, polled every 500 ms on the INA228's I2C
+    bus, and the OLED light wake (R13 note above).
+- **Data.**
+  - HA's 2-s current, rebuilt onto the 2-s grid as in §8.1. 99.98 % of
+    voltage-change intervals are whole multiples of 2 s [M: 10-12,
+    n = 12,702].
+  - The unit is a 10-min block that meets all of these:
+    - idle throughout, |I| < 0.1 A;
+    - OLED dark, with the lit spans plus 60 s after each excluded;
+    - no reboot in the block or the 2 min before it;
+    - no stored value held over 15 min.
+- **Rev 2 set.**
+  - 15:10–20:10 (20:10Z–01:10Z): 22 blocks, 6,603 samples [M].
+  - Outside it or excluded:
+    - two loads, at 15:01:02–15:01:44 (to −4.26 A) and 17:43:30–17:46:28
+      (to −4.09 A);
+    - three lit spans.
+- **Rev 1.1 set.** 10-01 09:00 EDT to 11-05 12:30 EST, after the §8.1
+  overnight run ended: 5,066 blocks [M].
+
+**Method check.** The same rebuild on the §8.1 overnight window (09-30
+18:00 – 10-01 09:00 EDT) gives these [M], all matching the §8.1 table except
+the 20-s Allan figure there (0.105):
+
+- n 27,001;
+- mean −25.59 mA;
+- 2-s scatter 0.335 mA;
+- Allan 0.106 / 0.036 mA;
+- 99.86 % on two adjacent codes.
+
+**The quantizer is the CURRENT register's LSB.**
+
+- It is 0.7629 mA [S: firmware, 400 A / 2^19], not the 0.833 mA ADC step.
+- Codes such as −18, −6, 6, 18 and 30 occur [M: 09-28 to 11-05].
+- ADC counts relabelled into CURRENT units would skip every 12th code:
+  −30, −18, −6, 6, 18, 30 [D: round(k × 0.833 / 0.7629)]. Since those codes
+  occur, the readings are not relabelled counts.
+- So the floor for a mean placed at random is 0.220 mA [D: 0.7629 / √12].
+  This settles which end of §8.1's 0.22–0.24 mA range applies.
+
+**Raw scatter depends on where the mean sits.** Below one code of noise,
+a reading whose mean sits on a code boundary splits between two codes. A
+reading whose mean sits at a code centre mostly stays on one.
+
+| distance of the block mean from the nearest code boundary | Rev 1.1 blocks | median 2-s scatter | samples off the most common code |
+|---|---|---|---|
+| 0.0–0.1 code (on a boundary) | 268 | 0.380 mA | 44.4 % |
+| 0.1–0.2 code | 614 | 0.364 mA | 34.5 % |
+| 0.2–0.3 code | 808 | 0.334 mA | 25.3 % |
+| 0.3–0.4 code | 1,213 | 0.272 mA | 14.9 % |
+| 0.4–0.5 code (code centre) | 2,241 | 0.212 mA | 8.0 % |
+| Rev 2, all at 0.43–0.50 code | 22 | 0.177 mA | 5.3 % |
+
+[M: Rev 1.1 idle blocks 09-30 20:00 EDT – 11-05 12:30 EST, n = 5,144; this
+window starts 13 h before the Rev 1.1 set above.] The block mean here is the
+mean of the quantized readings. The quantizer pulls it toward the code
+centre, so a row-five block can have its analog mean well off centre. Rev
+2's blocks do: median 0.14 code [D: fitted].
+
+**Why Rev 1.1 looked worse in its last week.**
+
+- Its daily idle mean moved from about −26.67 to −26.43 mA in the week
+  before the swap [M: daily medians]. That put it in the 0.1–0.2-code row.
+- Its median 2-s scatter that week was 0.354 mA [M: 969 blocks]. Earlier
+  windows gave 0.203 mA (10-11 to 10-15) and 0.212 mA (10-24 to 10-28) [M:
+  720 blocks each].
+- Its fitted σ did not change (next table). The mean moved; the board did
+  not get noisier.
+
+**Method: analog σ through the quantizer.**
+
+- Each 10-min block is modelled as Gaussian noise with its own mean and
+  with one σ shared by all of a board's blocks. The noise passes through
+  the 0.7629 mA quantizer.
+- σ is fitted by maximum likelihood, with each block's mean profiled out.
+- On synthetic data the fit recovers σ down to about 0.2 code when the mean
+  is off a boundary, but not when it sits on one [D: synthetic test]. So
+  only blocks whose quantized mean is at least 0.2 code from a boundary are
+  fitted, on both boards.
+- **Check on the real data.** The pooled σ, with each block's fitted mean,
+  predicts the share of samples off the most common code [D]. Measured [M]:
+  - Rev 2: 5.27 % predicted, 5.26 % measured;
+  - Rev 1.1: 13.30 % predicted, 13.24 % measured.
+
+| window | blocks fitted (of idle) | median 2-s scatter | σ, 95 % profile interval |
+|---|---|---|---|
+| Rev 1.1, 09-30 18:00 – 10-01 09:00 EDT (§8.1 overnight) | 48 (of 90) | 0.347 mA | 0.198 [0.192, 0.203] mA |
+| Rev 1.1, 10-11 to 10-15 | 720 (of 720) | 0.203 mA | 0.207 [0.207, 0.207] mA |
+| Rev 1.1, 10-24 to 10-28 | 719 (of 720) | 0.212 mA | 0.206 [0.206, 0.207] mA |
+| Rev 1.1, 10-30 to 11-05 12:30 EST | 450 (of 969) | 0.354 mA | 0.203 [0.202, 0.205] mA |
+| Rev 2, 15:10–20:10 | 22 (of 22) | 0.177 mA | 0.171 [0.166, 0.176] mA |
+| Rev 2, V1.32 only | 17 (of 17) | 0.176 mA | 0.173 [0.166, 0.179] mA |
+
+[D: profile likelihood on the [M] blocks.]
+
+- Rev 1.1's σ held at 0.198–0.207 mA across four windows whose raw scatter
+  ran from 0.203 to 0.354 mA.
+- V1.32 alone gives the same σ as V1.30–V1.32 together.
+- The profile intervals assume independent samples and are too narrow. The
+  comparison uses a block bootstrap (B = 2,000) instead [D]:
+
+| comparison | Rev 1.1 σ | Rev 2 σ (22 blocks, 6,603 samples) | difference | z |
+|---|---|---|---|---|
+| all idle: 4,226 of 5,066 blocks, 1,268,729 samples | 0.2060 mA, se 0.0004 | 0.1717 mA, se 0.0023 | −0.0343 mA, se 0.0023 | −14.7 |
+| same UTC hours, 20:10–01:10Z, 35 evenings: 893 of 1,049 blocks | 0.2075 mA, se 0.0014 | 0.1717 mA, se 0.0023 | −0.0359 mA, se 0.0027 | −13.2 |
+
+- **Intervals.** The bootstrap 95 % intervals are [0.1663, 0.1755] mA for
+  Rev 2, [0.2052, 0.2068] for all of Rev 1.1, and [0.2052, 0.2106] for the
+  matched hours [D].
+- **Per evening.** 31 Rev 1.1 evenings had at least 10 fitted blocks. None
+  fitted at or below Rev 2's 0.1717 mA [D]: min 0.1991, median 0.2068, max
+  0.2426 mA.
+
+**What the σ change means on the display.** These are 2-s scatter figures
+for independent samples [D: σ through the quantizer]:
+
+- With the mean at a code centre: 0.193 mA on Rev 1.1, 0.124 mA on Rev 2.
+- With the mean on a boundary: 0.382 and 0.381 mA. The quantizer hides the
+  difference there.
+- Rev 2's measured 0.177 mA falls between the two. Its fitted mean sits
+  0.14 code from the centre of code −36 (median over the 22 blocks) [D].
+
+**Against the chip's own noise.**
+
+- §8.1 put the INA228's own noise at about 0.16 mA rms [D: SLYS021A Table
+  8-2].
+- Taking that as given, the noise above the chip is about 0.13 mA on Rev 1.1
+  and about 0.06 mA on Rev 2 [D: √(σ² − 0.16²)].
+- That rests on a typical-table figure. At 0.150 or 0.165 mA instead,
+  Rev 2's excess is 0.08 or 0.05 mA [D]. So Rev 2 is near the chip's own
+  noise, and what is left above it cannot be sized from this data.
+
+**Allan deviation** (mA, non-overlapping) [M]:
+
+| run | 2-s n | 2 s | 20 s | 200 s | 600 s | 1800 s |
+|---|---|---|---|---|---|---|
+| Rev 2, 17:52–20:10 | 4,140 | 0.169 | 0.056 | 0.013 | 0.011 | 0.008 |
+| Rev 1.1, 10-12 16:00–21:10 EDT (mean near a code centre) | 9,300 | 0.199 | 0.059 | 0.019 | 0.014 | 0.012 |
+| Rev 1.1, 09-30 overnight (mean near a boundary) | 27,001 | 0.335 | 0.106 | 0.036 | 0.026 | 0.031 |
+
+- Rev 2 averages down as white noise would, out to 200 s: 0.053 and 0.017
+  predicted [D: 0.169 / √10, / √100], against 0.056 and 0.013 measured.
+- At 20 s the two centred runs are within 0.003 mA.
+- At 200 s Rev 2 is 0.006 mA lower, about 3 se [D: Allan uncertainty
+  1/√(2(N − 1)) on 41 and 93 blocks].
+- Rev 2's 600 s and 1800 s figures rest on 13 and 4 blocks, which leaves
+  them uncertain by about 20 % and 40 % [D: same formula]. No difference
+  is claimed beyond 200 s.
+
+**ENERGY against V × |I|.**
+
+- Rev 2 (V1.32, 2 clean hours): ENERGY 0.3280 W, V × |I| 0.3658 W, a
+  difference of −0.0378 W [M].
+- Rev 1.1 (10-30 to 11-05, 161 h): −0.0385 W, sd 0.0003 W [M]. §8.1 found
+  −0.0383 W on 09-30.
+- So the shortfall is the same to within 0.0007 W [D]. With n = 2 hours, no
+  test of the difference is meaningful.
+
+**The noise gauge no longer measures noise.**
+
+- Since TB1 GND moved to the shunt's inverter-side bolt (09-28 20:33 EDT),
+  the monitor's own draw crosses the shunt. The gauge, an idle ENERGY rate,
+  reads that draw.
+- Rev 1.1 medians [M]:
+  - 09-29 to 10-01: 0.2965 W (n = 2,753);
+  - 10-01 to 10-15: 0.3155 W (n = 20,103);
+  - 10-15 to 11-01: 0.3154 W (n = 24,477);
+  - 11-01 to 11-05 12:30: 0.3137 W (n = 6,809).
+- From 10-01 on, every publication fell between the 0.25 W "quiet" and
+  0.40 W "noisy" thresholds. So `noise_state` read "elevated" all the time
+  [M: 51,389 publications, range 0.3076–0.3287 W].
+- Rev 2 (V1.32, 16:52–20:10): median 0.3286 W [M: n = 192]. That is
+  +0.015 W on Rev 1.1's last days. The 1.07 mA larger idle draw at 13.3 V
+  accounts for 0.014 W of it [D: 0.00107 A × 13.3 V].
+- Rev 2's 26 "noisy" publications (≥ 0.40 W) fall in two runs [M]:
+  - 7 at 15:01:38–15:07:38, after the load at 15:01:02–15:01:44;
+  - 19 at 17:44:27–18:02:27, after the load at 17:43:30–17:46:28.
+  - Each run starts within a minute of its load and ends 6 and 16 min after
+    the load ends.
+  - That is the gauge's ~5-min average carrying the load, not noise [D:
+    timing].
+- The gauge publishes only when |I| < 0.5 A at the 60-s read. So it reports
+  the tail of a load, never the load itself.
+- **Since 09-28, "elevated" means "the monitor is drawing current", and
+  "noisy" means "a load just ended".** See §9.
+
+**VBUS.**
+
+- Median block scatter: 0.0577 mV on Rev 2 (n = 22) against 0.0716 mV on
+  Rev 1.1's last week (n = 969) [M]. The floor is 0.056 mV [D: 195.3 µV /
+  √12].
+- Mann–Whitney p = 0.085. 32 % of Rev 1.1 blocks were at or below Rev 2's
+  median [M]. No VBUS difference is claimed.
+
+**The zero.**
+
+- Rev 2 idles at −27.47 to −27.52 mA [M: 22 dark blocks].
+- Rev 1.1 read −26.43 mA on its last idle day. Over its last 16 nights it
+  read −26.57 mA, sd 0.10 [M: 06–10Z; H:/open_questions.yaml, 2026-11-05].
+- So the step at the swap is −0.9 to −1.1 mA [D].
+- That is inside the range Rev 1.1's own zero covered over five weeks [M:
+  daily medians −25.07 to −26.69 mA]. On its own, the step says nothing
+  about the board.
+- Candidate causes:
+  - (a) **A real rise in the monitor's draw:** the VEML7700 board, whose
+    green power LED is lit (Bill, 2026-11-05), or V1.30's 500 ms poll.
+  - (b) **An offset change from re-landing the sense leads on TB3.** The
+    step is 0.40 µV at the shunt [D: 1.07 mA × 375 µΩ], inside the ±1 µV
+    offset spec (§0).
+- SOC books a real draw correctly. It does not book an offset correctly.
+  Two tests tell them apart:
+  - JP fitted (step 2) reads the offset alone;
+  - unplugging the VEML cable for 10 min with Light Wake off reads the
+    board's draw (H:/open_questions.yaml, 2026-11-05).
+
+**OLED lit against dark (step 5, in part).**
+
+- **Spans used.** Two lit spans had no load and no reboot [M]:
+  - 15:41:40–15:47:30;
+  - 17:35:56–17:43:28, cut 2 s before the 17:43:30 load.
+  - The first 10 s after switch-on are dropped from each.
+- **Draw.**
+  - The first span read −28.905 mA [M: 175 samples]. The dark windows read
+    −27.494 mA in the 10 min before (that window includes the 15:37:22
+    reboot) and −27.511 mA in the 10 min starting 1 min after.
+  - The second read −29.245 mA [M: 226 samples], against −27.496 mA in the
+    10 dark minutes before.
+  - So the lit OLED draws 1.39–1.41 and 1.75 mA at the bank [D], against
+    about 2.5 mA expected [D, step 5].
+- **Spread.** The sample sd is 0.36–0.68 mA lit, against 0.15–0.20 mA dark
+  [M]. Pages change every 10 s, so the likely cause is the panel's draw
+  following what it shows [I]. Falsified if a lit span held on one page
+  shows the dark sd.
+- **Gauge.** It cannot be judged on spans this short, because it averages
+  over about 5 min.
+
+**§8.2 steps after day 1.**
+
+| step | status |
+|---|---|
+| 1. Sign | Done [D]. The monitor's own draw is a discharge, and it reads −27.5 mA. That is the same sign as on Rev 1.1, where an 80 A discharge read −80.8 A (§8.1). The two ~4 A loads also read negative. |
+| 2. JP zero | Not run. |
+| 3. Noise | This section. The step-3 table was set in noise-gauge terms before P-4 and before the GND move. The gauge no longer measures noise, so judge Rev 2 by σ. |
+| 4. Zero-move | Not run. With nothing moved, Rev 2's zero held at −27.47 to −27.52 mA across 22 blocks. |
+| 5. Lit vs dark | In part: the current step is 1.4–1.75 mA. The gauge was not judged. |
+
+**What this does not establish.**
+
+- **Five hours, one afternoon and evening, 22 blocks.**
+  - Rev 2's se of 0.0023 mA comes from resampling those 22 blocks. It
+    leaves out any day-to-day change in σ.
+  - Rev 1.1's per-evening σ ranged 0.199–0.243 mA (n = 31) [D], so σ does
+    vary from day to day.
+  - The Rev 2 figure stands only after a week of evenings and nights.
+- **Two changes at once.**
+  - Rev 2 runs V1.30 or later, which polls the VEML7700 on the INA228's bus
+    every 500 ms. Rev 1.1 ran V1.28, without it.
+  - Extra bus activity seems unlikely to lower noise, but that is [I].
+    Setting `light_poll` to 60 s for a few hours would rule it out.
+- **The model.**
+  - The fit assumes Gaussian noise that is constant within a block, with
+    one σ for every block.
+  - It reproduces the off-code share to within 0.06 percentage points on
+    both boards [D]. That supports the model; it does not prove it.
+- **Fitted blocks only.** Only blocks with their quantized mean at least 0.2
+  code from a boundary are fitted: 4,226 of 5,066 Rev 1.1 blocks and all 22
+  of Rev 2.
+- **No independent current reference.** Everything here is repeatability.
+  Gain waits on the clamp reading (open question, 09-30).
+- **Untested.** This run does not touch the case §8.1 made for Rev 2: zero
+  robustness, input protection and the JP zero. Steps 2 and 4 have not been
+  run, and the cause of the −1 mA zero step is open.
+
 ---
 
 ## 9. Follow-ups
 
+- **Noise gauge (2026-11-05).** Its 0.25 W and 0.40 W states have been stale
+  since the 09-28 GND move (§8.2, "Results on Rev 2"). Two options:
+  - re-base them on the idle draw, about 0.31–0.33 W [M];
+  - replace the state with a measure that tracks noise. The share of
+    samples off the most common code is one, but it follows the mean's grid
+    position as well.
+- **Rev 2 σ, again.** Re-fit after a week that includes nights, and again
+  once the idle mean has drifted near a code boundary.
 - **Wiring summary** (`battery-bank-monitor-wiring-summary-v1_10.md`):
   - New revision entry for PCB Rev 2.
   - §3.1 BOM: add R5, R6, C7, JP and TB3; remove J2, R3 and the 1505
