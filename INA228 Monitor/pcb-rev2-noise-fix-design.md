@@ -1,8 +1,9 @@
 # Battery_Bank-Monitor-THT-V2 Rev 2: fixing the INA228 current-channel noise (design note)
 
 **Status.** Rev 2 built and installed 2026-11-05. The first five hours of
-Rev 2 results are in §8.2 ("Results on Rev 2"), and the first full day is
-in "Results on Rev 2, first day" (2026-11-06). The design review below was
+Rev 2 results are in §8.2 ("Results on Rev 2"), the first full day is in
+"Results on Rev 2, first day" (2026-11-06), and the in-place zero is in
+"Results on Rev 2, JP zero" (2026-11-07). The design review below was
 made before fabrication, against the Rev 2 KiCad file of 2026-10-01 (the
 11:19 save). The first review, of the 2026-09-28 file, is kept where its
 figures differ, marked "09-28".
@@ -45,7 +46,7 @@ own noise"].
 | **Rev 2 fix** | Move the INA228 to the far end of the board. Bring the sense lines in at a new edge terminal block (TB3) as a routed pair. Add TI's input RC filter. Add a ceramic capacitor at the buck input. |
 | **Expected result** | Magnetic pickup largely removed (~131× less stray field at the sense path [I]; ~46× on the 09-28 layout). Anything left, from any path, attenuated 42 dB at 1 MHz by the filter [D]. |
 | **Measured (first day, 2026-11-05 to 11-06)** | Idle noise before the quantizer fell from σ = 0.206 to 0.170 mA [D: z = −26.4, 141 Rev 2 blocks against 4,226 Rev 1.1, §8.2 "first day"]. That day is below all 28 Rev 1.1 days [D: lowest 0.2014 mA]. The gain is at short averaging times: from about 10 min up, the zero wanders as much as on Rev 1.1 [M: Allan deviation]. Most of the calmer display is position, not the board: Rev 2's zero has stayed near a code centre, and Rev 1.1's had drifted near a code boundary. That share of the calm will go when the zero drifts [I]. |
-| **Not fixed** | The INA228's own offset (±1 µV, ±2.67 mA [S]). The external shunt run was listed here too. It is already a twisted pair, and with it in place §8.1 found the 2-s scatter at the quantization floor. |
+| **Not fixed** | The INA228's own offset (±1 µV, ±2.67 mA [S]). Measured in place on 2026-11-07 with JP: −3.090 mA, −1.159 µV, which includes the path from JP to the chip [D, §8.2 "JP zero"]. The external shunt run was listed here too. It is already a twisted pair, and with it in place §8.1 found the 2-s scatter at the quantization floor. |
 | **Status** | On the 2026-10-01 layout, §7 has four items still open before fabrication: two value fields, the mechanical checks (including C7's height under U2), refilling zones before the Gerbers, and a board-size typo on the back silk. The §8.1 tests ran on the Rev 1.1 board on 2026-09-28. The pickup entered at the untwisted fan-out beside U3 (path 1), and twisting it there took the 2-s scatter to the floor. The twist also moved the idle zero by about 10 mA, which is unexplained (§8.1). |
 
 ---
@@ -1254,6 +1255,254 @@ note).
 - **Steps 2 and 4** have not been run, and the −1 mA step at the swap is
   still unexplained.
 
+#### Results on Rev 2, JP zero, 2026-11-07
+
+Step 2, and step 4 in part. Bill fitted a jumper on JP at 14:37:13 EST
+(19:37:13Z) and took it off at 16:30:53 EST (21:30:53Z) [M: the reading
+stepped from code −39 to −4 in 4 s, and back in 4 s]. Firmware V1.32, with
+no reboot since 16:49 EST 11-05 [M: uptime 174,484 s at 17:17 EST]. The fit
+is the one in the sections above, on the 2-s forward-filled current. The
+in-service reference is the same day's dark idle, 10:00:00–14:29:30 EST.
+Data pulled to 17:11 EST.
+
+**In short.**
+
+- **The in-place offset is −3.090 mA**, 95 % [−3.109, −3.075] [D: 3,407
+  samples, 1.89 h]. At the input that is −1.159 µV [D: × 375 µΩ].
+  - TI's limit is ±1 µV at 25 °C [S: SLYS021A §6.5 p.5]. The die was 4–5 °C
+    cooler, which allows at most 0.05 µV more [D, below].
+  - So the reading is 0.11 µV past the limit. JP also reads whatever sits
+    between its pins and the chip's, so this does not show the chip out of
+    specification (below).
+- **The chip is not all of Rev 2's noise.** σ with JP is 0.1495 mA [0.1434,
+  0.1572], against 0.1648 mA [0.1602, 0.1709] in service before it [D].
+  - The difference is −0.015 mA, z = −3.4 [D].
+  - In quadrature that leaves 0.069 mA rms, 95 % about [0.046, 0.087],
+    entering outside JP [D].
+  - Where is not established. Part of it may be real change in the
+    monitor's own draw, which no board change removes [I, below].
+- **Zero-move, informal.** Taking JP off meant opening the lid and handling
+  the board.
+  - After it, the dark zero read −27.671 mA, 0.106 mA from before [D]. That
+    is inside step 4's 0.3 mA.
+  - It is also the size of the zero's hourly wander on 11-06 (0.086 mA
+    [D]), so it does not separate handling from wander.
+  - The deliberate move is still to run.
+- **ENERGY** ran 0.031 W short of V × |I| with JP, against 0.038 W short in
+  service [D]. The shortfall is mostly a constant.
+- **The noise gauge read "quiet" all through JP.** It follows the draw, not
+  the noise (§9).
+- **`soc_offset_ma` is not changed.** JP gives the chip's share, −3.09 mA
+  (sign below); the recharge bracket gives the rest (step 2).
+
+**Setup.**
+
+- **OLED.** Light wake lit it with the lid open:
+  - 14:29:43–14:34:43 EST;
+  - 14:35:33–14:42:20 EST;
+  - 16:30:25–16:38:34 EST [M: display_lit].
+
+  The reference window ends before the first span. With JP fitted, the
+  reading did not move when the OLED went dark at 14:42:20 [M]. So JP was
+  shorting the inputs.
+- **No load** in any window [M].
+- **Die temperature** [M]:
+  - 68.45–70.13 °F (20.3–21.2 °C) with JP;
+  - 70.00–70.33 °F in service;
+  - 69.68–70.47 °F after.
+
+  Its low was 0.9 °C below anything in service [D]. The JP offset did not
+  follow it [D]:
+  - −3.090 mA over the first 12 min;
+  - −3.098 mA at 1.39 h;
+  - −3.090 mA at 1.89 h.
+- **VBUS** 13.30 V in all three windows [M].
+
+**The offset.**
+
+- **Data.** 3,407 samples over 1.89 h [M]:
+  - codes −5 (40), −4 (3,358) and −3 (9);
+  - readings mean −3.059 mA;
+  - fitted mean −3.090 mA [−3.109, −3.075] [D], 0.05 code below code
+    −4's centre.
+- **In volts:** −1.159 µV [−1.166, −1.153] [D: × 375 µΩ]. The firmware
+  converts with the same 375 µΩ (SHUNT_CAL 3750), so the volts do not
+  depend on the shunt's true resistance.
+- **Against TI's limits** [S: SLYS021A §6.5 p.5]:
+  - Offset: ±1 µV max, ±0.3 µV typical, at 25 °C, a 3.3 V supply, VCM = 0 V
+    and conversions over 280 µs.
+  - This board meets those conditions except temperature. The shunt is
+    low-side, so VCM is about 0 V, and shunt conversions are 4,120 µs [D:
+    ADC_CONFIG 0xFDC5, VSHCT 7h].
+  - Drift: ±10 nV/°C max. The die was 3.8–4.8 °C below 25 °C, so at most
+    0.05 µV [D].
+  - Supply rejection: ±0.5 µV/V max. The 3.3 V rail was not measured, so
+    this term is open.
+  - With drift allowed, the reading is 0.11 µV past the limit [D: 1.159 −
+    1.047].
+- **What sits in the JP reading.** JP reads the chip's offset plus anything
+  between JP's pins and the chip: the breakout's traces, U2's header
+  joints, JP's own joints and the jumper.
+  - Thermoelectric EMFs at those joints add to the reading [I: falsified if
+    a second JP run, with the board at another temperature, reads −3.09 mA
+    within 0.03 mA].
+  - So this does not show the chip out of specification.
+- **What JP leaves out.** In service the reading is −27.565 mA, so the real
+  draw plus whatever the sense path adds is −24.475 mA [D]. JP cannot split
+  those two. The filter's own terms are among them: at most 0.07 mA from
+  bias current and 0.04 mA from C7 leakage [D, §4.3].
+- **Against the 09-28 P-2a.** P-2a shorted Rev 1.1's input with a wire held
+  across this same breakout's terminal block, and read −0.80 mA [M, §8.1
+  table]. JP reads 2.29 mA more negative [D].
+  - P-2a ran with the buck's pickup still in the reading (2-s sd 0.82 mA,
+    90 samples [M]).
+  - It also shorted at another point.
+  - So the two do not measure a change in the offset.
+
+**Noise with JP against in service.**
+
+| window | samples, 10-min blocks | codes | σ: one per window, each block its own mean |
+|---|---|---|---|
+| in service, dark, 10:00:00–14:29:30 EST | 8,086, 26 | −37: 379, −36: 7,692, −35: 15 | 0.1648 mA [0.1602, 0.1709] |
+| JP, 14:37:17–16:30:49 EST | 3,407, 11 | −5: 40, −4: 3,358, −3: 9 | 0.1495 mA [0.1434, 0.1572] |
+
+[D: Gaussian-quantizer fit, 95 % profile intervals. One fit over each whole
+window with a single mean gives 0.1678 [0.1621, 0.1717] and 0.1526 [0.1450,
+0.1564] mA. The zero's slow wander adds 0.003 mA to both.]
+
+- **The difference** is −0.0153 mA, se 0.0045, z = −3.4 [D: se from the
+  interval half-widths]. The intervals do not overlap.
+- **In quadrature:** √(0.1648² − 0.1495²) = 0.069 mA rms, 95 % about
+  [0.046, 0.087] [D: delta method]. At the input that is 26 nV rms [D]. It
+  enters outside JP, or comes with the inputs no longer shorted at the
+  pins.
+- **The in-service figure** matches 11-06's daytime 0.1656 mA [0.1602,
+  0.1694] [D].
+- **Candidates for the 0.069 mA**, none tested:
+  - pickup in the filter, the board's sense traces, TB3, the leads or the
+    shunt;
+  - real change in the monitor's own draw from one 1.6-s conversion to the
+    next. The draw passes through the shunt, so that part is signal, and no
+    board change removes it [I];
+  - the chip's own noise differing with its inputs shorted at the pins
+    rather than fed through R5, R6 and C7 [I].
+- **The test that splits them.** A repeat of 09-28's P-2b on Rev 2: both
+  leads on one shunt screw, which keeps the loop and the filter and removes
+  the shunt's voltage.
+  - If σ falls to JP's 0.150 mA, the excess is in the shunt's voltage,
+    that is, the draw.
+  - If it stays at 0.165 mA, the excess is pickup, or the inputs' source
+    [I: the test].
+
+**R13, 2026-11-07: my early read withdrawn.** At 14:52 EST I told Bill,
+from the first 12 min, that the chip was essentially all of Rev 2's noise.
+Those 12 min had 352 samples, 9 of them off the most common code.
+- The fit then gave σ 0.1678 mA [0.1469, 0.1869] [D]. The point estimate
+  matched in service, but the interval was too wide to separate the two.
+- The full run puts JP below in service, z = −3.4 (above).
+
+**Zero-move (step 4), informal.**
+
+- **Data.** The OLED went dark at 16:38:34 EST. The window is the next
+  30 min, from 1 min after (16:39:38–17:09:30 EST): 897 samples, mean
+  −27.577 mA [M]. They fell on code −37 (131) and code −36 (766) [M]. Before
+  JP, the readings meant −27.500 mA [M].
+- **Fit.** With two codes only, σ cannot be fitted from this window [D: its
+  interval runs 0.004–0.195 mA].
+  - With σ held at the in-service 0.1678 mA, the fitted mean is −27.671 mA
+    [−27.687, −27.653] [D].
+  - σ anywhere in 0.162–0.172 mA moves it by under 0.006 mA [D].
+- **Result.** Against −27.565 mA before JP, the zero moved −0.106 mA [D].
+  Step 4's limit is 0.3 mA.
+- **Why it does not settle step 4.**
+  - On 11-06, with nothing moved, the hourly fitted mean ranged over
+    0.086 mA [D]. So handling and wander cannot be told apart here.
+  - The die read 69.68–70.47 °F, as in service [M].
+  - This is not the step-4 test, which moves the harnesses and the
+    enclosure on purpose.
+
+**ENERGY against V × |I|.**
+
+| window | ENERGY | V × \|fitted mean\| | difference |
+|---|---|---|---|
+| in service, 10:00–14:29 EST | 0.3286 W [M: 4.47 h] | 0.3666 W [D] | −0.0380 W [D] |
+| JP, 14:38:28–16:30:28 EST | 0.0099 ± 0.0001 W [M: 112 min] | 0.0411 W [D] | −0.0312 W [D] |
+| after JP, 16:41:28–17:09:28 EST | 0.3296 ± 0.0005 W [M: 28 min] | 0.3680 W [D] | −0.0384 W [D] |
+
+[± from the float32 step: 2.441 × 10⁻⁴ Wh at 2,284 Wh [D].]
+
+- At JP's 3.1 mA, the shortfall is 0.0068 W smaller than at 27.6 mA [D].
+- A line through the first two rows has slope 0.979 and intercept
+  −0.030 W [D]. Two points cannot test that form, so the 11-05 note's word
+  stands: the shortfall is mostly a constant.
+
+**Noise gauge.**
+
+- From 14:50 EST to the removal: 101 publications at 0.0083–0.0261 W,
+  settling at 0.0099 W [M].
+- `noise_state` read "quiet" from 14:39:28 to 16:36:28 EST, and "elevated"
+  either side [M].
+- After JP: 0.3202–0.3301 W [M: 31 publications].
+
+The gauge fell with |I|, while σ fell only 0.015 mA (above). It follows the
+draw, not the noise, as §9 says; this run shows it with the draw removed.
+
+**What this means for the firmware.** Nothing flashed.
+
+- **`soc_offset_ma` stays at 0.0.**
+  - The reading is 3.090 mA too negative. So the CHARGE SOC books
+    0.074 Ah/day of drain that is not there, 2.2 Ah over 30 days [D:
+    3.090 mA × 24 h; × 30].
+  - A positive `soc_offset_ma` lowers SOC, so JP's share of the setting is
+    −3.09 mA [D].
+  - Step 2 sets it from JP together with the recharge bracket. The
+    bracket's suggestion less −3.09 mA is what the sense path and the
+    bank's self-discharge add.
+  - The open bracket spans the swap. It was anchored about 2026-09-30
+    20:50Z. At 22:36Z on 11-07 it had run 913.76 h [M: hours since
+    anchor], and only 50.8 h of those were on Rev 2 [D: from the INA228
+    power-on, 19:50:33Z 11-05]. So the RECON suggestion at the next full
+    charge is a record, not a setting. The bracket after it is all Rev 2,
+    and its suggestion is the setting.
+  - Setting −3.09 mA now would raise SOC 2.82 Ah at the flash, about 0.71
+    of a point [D: 3.09 mA × 913.76 h; × 6.096 points / 24.180 Ah out].
+    The firmware multiplies the offset by the hours since the anchor. So a
+    Rev 2 figure would also cover the 863 Rev 1.1 hours, which JP did not
+    measure.
+- **The JP span booked 0.046 Ah less than it would have without JP** [D:
+  24.475 mA × 1.894 h]. SOC reads that much high until the next anchor.
+  On the open bracket it is 0.050 mA of the suggested offset [D: 0.046 Ah /
+  913.76 h]. (An uncommitted draft of this line assumed a 14-day bracket
+  and gave 0.14 mA. I did not check the live bracket; R13, 2026-11-07.)
+- **`ina_offset_max_ma` (2.67 mA)** is the RECON σ's offset term: the
+  datasheet's ±1 µV at 375 µΩ. The measured 3.09 mA is past it (above).
+  Once `soc_offset_ma` carries the measured offset, the term should be the
+  uncertainty of what is left (§9).
+
+**What this does not establish.**
+
+- **One JP run**, 1.89 h on one afternoon. Its repeatability, and how it
+  depends on temperature, are untested.
+- **Whether the chip is inside its limit.** JP includes the path from its
+  pins to the chip (above).
+- **Where the 0.069 mA enters**, or whether it is noise at all.
+- **The −1 mA step at the swap.**
+  - It is the same breakout on both boards (11-05 Setup).
+  - The only Rev 1.1 short, P-2a, is not comparable.
+  - The VEML board's draw is still to be measured by unplugging it
+    (H:/open_questions.yaml, answered 2026-11-05).
+- **Gain.** Untouched; it waits on the clamp reading (open question, 09-30).
+
+**§8.2 steps after 11-07.**
+
+| step | status |
+|---|---|
+| 1. Sign | Done (11-05). |
+| 2. JP zero | Done once: −3.090 mA [−3.109, −3.075] [D], 1.89 h. `soc_offset_ma` waits on the first all-Rev 2 recharge bracket (above). |
+| 3. Noise | σ 0.165 mA in service, 0.150 mA with JP [D] (this section). |
+| 4. Zero-move | In part. Taking JP off moved the dark zero −0.106 mA [D], inside 0.3 mA but within the zero's own wander. The deliberate move is still to run. |
+| 5. Lit vs dark | As after the first day (11-05). |
+
 ---
 
 ## 9. Follow-ups
@@ -1266,6 +1515,14 @@ note).
     position as well.
 - **Rev 2 σ, again.** Re-fit after a week that includes nights, and again
   once the idle mean has drifted near a code boundary.
+- **`ina_offset_max_ma` (2026-11-07).** The RECON σ uses 2.67 mA, the
+  datasheet limit. JP measured 3.09 mA [D, §8.2 "JP zero"]. When
+  `soc_offset_ma` takes the measured offset, set the term to the
+  uncertainty of what is left. A proposal; nothing flashed.
+- **JP, again.** A second run, with the board at another temperature,
+  tests the offset's repeatability and the thermoelectric candidate.
+- **P-2b on Rev 2.** Both leads on one shunt screw. It tells whether the
+  0.069 mA that JP removes is the draw or pickup (§8.2 "JP zero").
 - **Wiring summary** (`battery-bank-monitor-wiring-summary-v1_10.md`):
   - New revision entry for PCB Rev 2.
   - §3.1 BOM: add R5, R6, C7, JP and TB3; remove J2, R3 and the 1505
