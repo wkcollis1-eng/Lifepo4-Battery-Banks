@@ -1,7 +1,8 @@
 # Battery_Bank-Monitor-THT-V2 Rev 2: fixing the INA228 current-channel noise (design note)
 
 **Status.** Rev 2 built and installed 2026-11-05. The first five hours of
-Rev 2 results are in §8.2 ("Results on Rev 2"). The design review below was
+Rev 2 results are in §8.2 ("Results on Rev 2"), and the first full day is
+in "Results on Rev 2, first day" (2026-11-06). The design review below was
 made before fabrication, against the Rev 2 KiCad file of 2026-10-01 (the
 11:19 save). The first review, of the 2026-09-28 file, is kept where its
 figures differ, marked "09-28".
@@ -43,7 +44,7 @@ own noise"].
 | **Rev 1.1 layout** | The INA228 breakout sits 3.8 mm from the buck. The shunt sense leads land on the breakout's own terminal block, about 1 cm from the buck's inductor, and fan out untwisted. There is no input filter. |
 | **Rev 2 fix** | Move the INA228 to the far end of the board. Bring the sense lines in at a new edge terminal block (TB3) as a routed pair. Add TI's input RC filter. Add a ceramic capacitor at the buck input. |
 | **Expected result** | Magnetic pickup largely removed (~131× less stray field at the sense path [I]; ~46× on the 09-28 layout). Anything left, from any path, attenuated 42 dB at 1 MHz by the filter [D]. |
-| **Measured (first 5 h, 2026-11-05)** | Idle noise before the quantizer fell from σ = 0.206 to 0.172 mA [D: z = −14.7, 22 Rev 2 blocks against 4,226 Rev 1.1, §8.2]. Most of the calmer display is position, not the board: Rev 2's zero sits near a code centre, and Rev 1.1's had drifted near a code boundary. That share of the calm will go when the zero drifts [I]. |
+| **Measured (first day, 2026-11-05 to 11-06)** | Idle noise before the quantizer fell from σ = 0.206 to 0.170 mA [D: z = −26.4, 141 Rev 2 blocks against 4,226 Rev 1.1, §8.2 "first day"]. That day is below all 28 Rev 1.1 days [D: lowest 0.2014 mA]. The gain is at short averaging times: from about 10 min up, the zero wanders as much as on Rev 1.1 [M: Allan deviation]. Most of the calmer display is position, not the board: Rev 2's zero has stayed near a code centre, and Rev 1.1's had drifted near a code boundary. That share of the calm will go when the zero drifts [I]. |
 | **Not fixed** | The INA228's own offset (±1 µV, ±2.67 mA [S]). The external shunt run was listed here too. It is already a twisted pair, and with it in place §8.1 found the 2-s scatter at the quantization floor. |
 | **Status** | On the 2026-10-01 layout, §7 has four items still open before fabrication: two value fields, the mechanical checks (including C7's height under U2), refilling zones before the Gerbers, and a board-size typo on the back silk. The §8.1 tests ran on the Rev 1.1 board on 2026-09-28. The pickup entered at the untwisted fan-out beside U3 (path 1), and twisting it there took the 2-s scatter to the floor. The twist also moved the idle zero by about 10 mA, which is unexplained (§8.1). |
 
@@ -729,7 +730,8 @@ so the matched-hours comparison below matches UTC hours.
 
 - **Rev 2's analog noise is lower.** "Analog noise" means σ before the
   converter's quantizer, fitted as described under "Method".
-  - Rev 2: 0.1717 mA. Rev 1.1: 0.2060 mA [D].
+  - Rev 2: 0.1717 mA. Rev 1.1: 0.2060 mA [D]. On the full data Rev 2 reads
+    0.1724 mA (R13 note under "Per evening").
   - The difference is −0.034 mA, se 0.0023, z = −14.7 [D: block bootstrap,
     22 Rev 2 blocks against 4,226 Rev 1.1 blocks].
   - Matched to the same UTC hours of day: −0.036 mA, z = −13.2 [D: 893
@@ -883,6 +885,24 @@ centre, so a row-five block can have its analog mean well off centre. Rev
 - **Per evening.** 31 Rev 1.1 evenings had at least 10 fitted blocks. None
   fitted at or below Rev 2's 0.1717 mA [D]: min 0.1991, median 0.2068, max
   0.2426 mA.
+- R13, 2026-11-06: the Rev 2 figures in this section came from a pull that
+  ended at 01:03:34Z. The rebuild holds the last stored value to the end of
+  the window, so the last block (01:00–01:10Z) carried 192 copies of one
+  reading. Its 2-s scatter was 0.108 mA, against 0.171 mA on the full data
+  [M]. The same 22 blocks on the full data [D]:
+  - σ 0.1724 mA, se 0.0021, 95 % [0.1678, 0.1762] (was 0.1717);
+  - against Rev 1.1, −0.0336 mA, z = −15.7, and over the matched hours
+    −0.0351 mA, z = −13.9 (were −14.7 and −13.2);
+  - off the most common code, 5.39 % predicted and 5.39 % measured (were
+    5.27 and 5.26 %);
+  - Allan, 17:52–20:10: 0.172, 0.057, 0.013, 0.011 and 0.0075 mA (were
+    0.169, 0.056, 0.013, 0.011 and 0.008);
+  - removed in quadrature, 0.113 mA (was 0.114).
+
+  The median 2-s scatter (0.177 mA) and the fitted mean's distance from the
+  boundary (0.28 mA) are unchanged, and so is every conclusion here. Ledger
+  row 85 (H:/CHANGELOG.md, 2026-11-05) cites 0.1717 as its basis; none of
+  its bands depends on the shift.
 
 **What the σ change means on the display.** These are 2-s scatter figures
 for independent samples [D: σ through the quantizer]:
@@ -1060,6 +1080,179 @@ for independent samples [D: σ through the quantizer]:
 - **Untested.** This run does not touch the case §8.1 made for Rev 2: zero
   robustness, input protection and the JP zero. Steps 2 and 4 have not been
   run, and the cause of the −1 mA zero step is open.
+
+#### Results on Rev 2, first day, 2026-11-06
+
+The first full day of Rev 2 at idle: 15:10 EST 11-05 to 16:00 EST 11-06
+(20:10Z–21:00Z), the five hours above plus 19.8 more. The method, the
+block rules and the Rev 1.1 set are those of "Results on Rev 2,
+2026-11-05". Data pulled to 16:05:57 EST.
+
+**In short.**
+
+- **The lower σ held through the night and the next day.**
+  - Rev 2: 0.1701 mA, se 0.0013, 95 % [0.1671, 0.1724] [D: block
+    bootstrap, 141 blocks, 42,320 samples].
+  - Against Rev 1.1's 0.2060 mA: −0.0359 mA, se 0.0014, z = −26.4 [D].
+  - The 19.8 new hours alone give 0.1694 mA [0.1663, 0.1717] on 119
+    blocks. The first five hours give 0.1724 [0.1678, 0.1762] on 22 (R13
+    note above). The difference is −0.0030 mA, z = −1.1 [D], so the new
+    hours repeat the first result.
+- **It is below every Rev 1.1 day.**
+  - Rev 1.1's σ per UTC day: mean 0.2059 mA, sd 0.0027, range 0.2014 to
+    0.2121 [D: the 28 of 36 days with at least 100 fitted blocks].
+  - Rev 2's day is 0.031 mA below the lowest of them, and 13.3 of their sd
+    below their mean [D].
+  - The bootstrap se leaves out day-to-day change. This comparison allows
+    for it, but on one Rev 2 day.
+- **The gain is at short averaging times.** From about 10 min up, Rev 2's
+  zero wanders as much as Rev 1.1's [M: Allan deviation, below].
+- **The zero has stayed on one code.**
+  - Its hourly fitted mean ran from −27.540 to −27.626 mA, lowest from
+    about 23:00 to 10:00 EST [D].
+  - Every block stayed on code −36. The nearest approach to a boundary was
+    0.135 mA, at 06:10 EST [D].
+  - No block came within 0.1 code of a boundary, so ledger row 86 is still
+    untested. Row 85 is scored on 11-06 to 11-12, not here.
+- **Unchanged:** ENERGY's shortfall, the noise gauge (still "elevated"
+  throughout) and VBUS.
+- **Not run yet:** steps 2 (JP zero) and 4 (zero-move). The OLED has not
+  been lit since 17:50 EST 11-05, so step 5 has nothing new.
+
+**Setup.**
+
+- V1.32 throughout, from 16:49:29 EST 11-05 [M: HA uptime]. So
+  `light_poll`, a substitution, is still 500 ms [S: battery-bank-monitor.yaml].
+- After the lit span that ended at 17:50:40 EST, there was no reboot, no
+  load (|I| ≥ 0.1 A) and no lit OLED to the end of the data [M].
+- 141 of the 149 ten-minute blocks qualify. All 141 have their quantized
+  mean at least 0.2 code from a boundary, so all are fitted [M].
+
+**σ by part of the day.**
+
+| window | blocks | median 2-s scatter | σ, 95 % bootstrap interval |
+|---|---|---|---|
+| first 5 h, 15:10–20:10 EST 11-05 (full data) | 22 | 0.177 mA | 0.1724 [0.1678, 0.1762] mA |
+| the 19.8 h after, to 16:00 EST 11-06 | 119 | 0.188 mA | 0.1694 [0.1663, 0.1717] mA |
+| night, 00:00–06:00 EST 11-06 | 36 | 0.188 mA | 0.1724 [0.1663, 0.1778] mA |
+| daytime, 08:00–16:00 EST 11-06 | 48 | 0.182 mA | 0.1656 [0.1602, 0.1694] mA |
+| whole day | 141 | 0.182 mA | 0.1701 [0.1671, 0.1724] mA |
+
+[D: block bootstrap on the [M] blocks; B = 2,000 for the first row, 1,000
+for the others.]
+
+- Night and daytime differ by 0.0068 mA, z = 1.9 [D]. No day/night
+  difference is claimed. Rev 1.1 read 0.2060 mA in both windows over five
+  weeks [D: 1,033 and 1,435 blocks].
+- **Model check.** The pooled σ predicts 6.76 % of samples off the most
+  common code; 6.75 % measured [D/M, 141 blocks].
+
+**Grid position, on the same board.** The day's blocks fill two rows of
+the 11-05 table. In both, Rev 2 is calmer than Rev 1.1 at the same
+position. Like Rev 1.1, it flickers more off the centre.
+
+| distance of the block mean from the nearest boundary | Rev 1.1: blocks, median 2-s scatter, off the most common code | Rev 2 | Mann–Whitney p (scatter; off-code) |
+|---|---|---|---|
+| 0.3–0.4 code | 1,213, 0.272 mA, 14.9 % | 14, 0.252 mA, 13.0 % | 0.008; 0.009 |
+| 0.4–0.5 code (code centre) | 2,241, 0.212 mA, 8.0 % | 126, 0.182 mA, 5.9 % | < 10⁻³²; < 10⁻²⁶ |
+
+[M: Rev 1.1 rows as in the 11-05 table. One Rev 2 block fell in the
+0.2–0.3 row.]
+
+- At the code centre the board is worth 0.030 mA of median scatter [D:
+  0.212 − 0.182]. Rev 1.1's drift from the centre row to its last week
+  cost it 0.142 mA [D: 0.354 − 0.212]. So most of the calmer display at
+  the swap was position.
+- Rev 2's own hourly median scatter ran from 0.140 to 0.238 mA [M]. It was
+  highest at 06:10–07:10 EST, when its blocks came within 0.29 code of a
+  boundary and 12.3 % of samples left the most common code [M].
+
+**The zero over the day.**
+
+- Hourly mean of the readings: −27.491 to −27.558 mA [M]. Hourly fitted
+  analog mean: −27.540 to −27.626 mA [D]. The readings show less movement
+  because the quantizer pulls each block's mean toward the code centre.
+- Over the day the fitted mean averaged −27.585 mA and the readings
+  −27.514 mA [D].
+- The fitted mean sat near −27.56 mA through the first evening and again
+  in the last afternoon. It was mostly −27.58 to −27.63 mA from about
+  23:00 to 10:00 EST [D: hourly]. On one day the cause is not established,
+  and nothing here says whether the pattern repeats.
+- It always sat on the negative side of code −36's centre (−27.47 mA),
+  toward the −27.85 mA boundary. The closest it came was 0.135 mA [D].
+
+**Allan deviation over the day** (mA, non-overlapping) [M]:
+
+| run, each 22.1 h | 2 s | 20 s | 200 s | 600 s | 1800 s | 3600 s | 7200 s |
+|---|---|---|---|---|---|---|---|
+| Rev 2, 17:52 EST 11-05 – 16:00 EST 11-06 | 0.192 | 0.060 | 0.019 | 0.017 | 0.018 | 0.016 | 0.011 |
+| Rev 1.1, four centre-day runs: range | 0.202–0.215 | 0.064–0.068 | 0.021–0.024 | 0.015–0.026 | 0.014–0.020 | 0.014–0.016 | 0.009–0.013 |
+
+- The Rev 1.1 runs are 00:00–22:08 EDT on 10-11, 10-12, 10-13 and 10-24,
+  each with no reboot and |I| < 0.03 A [M]. Those days sat near a code
+  centre (11-05 table).
+- Each run has 39,839–39,841 samples. At 600, 1800, 3600 and 7200 s that
+  leaves 132, 44, 22 and 11 averages, so each figure there is uncertain by
+  about 6, 11, 15 and 22 % [D: 1/√(2(N − 1))].
+- To 200 s, Rev 2 is below all four Rev 1.1 runs. With one run against
+  four, that happens by chance with p = 0.20, so on its own it is weak.
+  The σ fit is the test at short times.
+- From 600 s up, Rev 2 is inside the Rev 1.1 range. That is the zero's
+  slow wander, the hour-scale motion above, and Rev 2 has not reduced it
+  [M].
+- The 5-h run put Rev 2 0.006 mA lower at 200 s, about 3 se. Over the day
+  the gap is 0.002–0.005 mA, and the four Rev 1.1 runs alone spread over
+  0.003 mA [M]. That difference is withdrawn.
+- Rev 2's 2-s figure is 0.192 mA here, against 0.172 mA over the first
+  5 h. The day includes hours with the mean further off the centre. That
+  is position: σ did not rise (table above).
+- Near a code centre the readings move less than the analog mean (above),
+  so these long-τ figures understate the analog wander on both boards.
+
+**ENERGY against V × |I|.**
+
+- Rev 2, 22 clean hours: ENERGY 0.3282 W, V × |I| 0.3660 W, difference
+  −0.0378 W, sd 0.0001 W [M].
+- Rev 1.1, 161 h: −0.0385 W, sd 0.0003 W [M].
+- The boards differ by 0.0007 W, z = 17.2 against the hourly scatter [D].
+  But V × |I| is built from the quantized readings, whose mean sits
+  0.070 mA inside the fitted analog mean (above). At 13.3 V that is
+  0.0009 W [D], more than the difference. So no change in the shortfall
+  is claimed.
+
+**Noise gauge.**
+
+- 1,393 publications on V1.32, median 0.3281 W [M].
+- The 19 at or above 0.40 W are the run after the 17:43 EST load on 11-05
+  [M].
+- From 18:05 EST 11-05 on: 1,320 publications at 0.3263–0.3690 W, none at
+  or below 0.25 W and none at or above 0.40 W [M]. So `noise_state` read
+  "elevated" all day: the monitor's own draw (§9).
+
+**VBUS.** Median block scatter 0.0698 mV on Rev 2 (n = 141) against
+0.0716 mV on Rev 1.1's last week (n = 969) [M]. Mann–Whitney p = 0.27,
+and 48 % of Rev 1.1 blocks were at or below Rev 2's median [M]. The 5-h
+gap (0.0577 mV, n = 22) has gone. No VBUS difference.
+
+**Against the chip's own noise.** On the day's σ, the re-spin removed
+0.116 mA rms in quadrature, 95 % [0.112, 0.120] [D: √(0.2060² − 0.1701²),
+se from the two bootstrap se]. The chip's own noise at these settings is
+at most 0.172 mA [D: top of the day's interval], if the sources are
+independent. How the rest of Rev 2's σ splits is still open (11-05 R13
+note).
+
+**What this does not establish.**
+
+- **One day.** Ledger row 85 is scored on 11-06 to 11-12. The per-day
+  comparison is one Rev 2 day against 28 Rev 1.1 days.
+- **The second change.** The VEML7700 poll is still every 500 ms, so it is
+  not ruled out as a cause [I, as in the 11-05 note].
+- **The calm at a boundary.** Rev 2's zero has not reached a boundary, so
+  row 86 is untested. The grid table above shows the direction on Rev 2's
+  own blocks, not the size at a boundary.
+- **No independent current reference**, as before.
+- **Steps 2 and 4** have not been run, and the −1 mA step at the swap is
+  still unexplained.
 
 ---
 
