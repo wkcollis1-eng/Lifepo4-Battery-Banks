@@ -3,7 +3,9 @@
 **Status.** Rev 2 built and installed 2026-11-05. The first five hours of
 Rev 2 results are in §8.2 ("Results on Rev 2"), the first full day is in
 "Results on Rev 2, first day" (2026-11-06), and the in-place zero is in
-"Results on Rev 2, JP zero" (2026-11-07). The design review below was
+"Results on Rev 2, JP zero" (2026-11-07). Twelve days of Rev 2 against
+Rev 1.1 and JP are in "Results on Rev 2, twelve days" (2026-11-17). The
+design review below was
 made before fabrication, against the Rev 2 KiCad file of 2026-10-01 (the
 11:19 save). The first review, of the 2026-09-28 file, is kept where its
 figures differ, marked "09-28".
@@ -46,6 +48,7 @@ own noise"].
 | **Rev 2 fix** | Move the INA228 to the far end of the board. Bring the sense lines in at a new edge terminal block (TB3) as a routed pair. Add TI's input RC filter. Add a ceramic capacitor at the buck input. |
 | **Expected result** | Magnetic pickup largely removed (~131× less stray field at the sense path [I]; ~46× on the 09-28 layout). Anything left, from any path, attenuated 42 dB at 1 MHz by the filter [D]. |
 | **Measured (first day, 2026-11-05 to 11-06)** | Idle noise before the quantizer fell from σ = 0.206 to 0.170 mA [D: z = −26.4, 141 Rev 2 blocks against 4,226 Rev 1.1, §8.2 "first day"]. That day is below all 28 Rev 1.1 days [D: lowest 0.2014 mA]. The gain is at short averaging times: from about 10 min up, the zero wanders as much as on Rev 1.1 [M: Allan deviation]. Most of the calmer display is position, not the board: Rev 2's zero has stayed near a code centre, and Rev 1.1's had drifted near a code boundary. That share of the calm will go when the zero drifts [I]. |
+| **Measured (twelve days, to 2026-11-17)** | σ 0.2060 mA on Rev 1.1 (4,231 blocks), 0.1715 mA on Rev 2 (1,519 blocks), 0.1475 mA with JP (10 blocks) [D: z = −39.8 and −7.0, §8.2 "twelve days"]. The [I] above held: on the 67 Rev 2 blocks within 0.1 code of a boundary the 2-s scatter is 0.381 mA, as on Rev 1.1, while σ stayed 0.1675–0.1815 mA by day [M, D]. From 8 min up both boards level near 0.023 mA and JP does not [M]. |
 | **Not fixed** | The INA228's own offset (±1 µV, ±2.67 mA [S]). Measured in place on 2026-11-07 with JP: −3.090 mA, −1.159 µV, which includes the path from JP to the chip [D, §8.2 "JP zero"]. The external shunt run was listed here too. It is already a twisted pair, and with it in place §8.1 found the 2-s scatter at the quantization floor. |
 | **Status** | On the 2026-10-01 layout, §7 has four items still open before fabrication: two value fields, the mechanical checks (including C7's height under U2), refilling zones before the Gerbers, and a board-size typo on the back silk. The §8.1 tests ran on the Rev 1.1 board on 2026-09-28. The pickup entered at the untwisted fan-out beside U3 (path 1), and twisting it there took the 2-s scatter to the floor. The twist also moved the idle zero by about 10 mA, which is unexplained (§8.1). |
 
@@ -1503,6 +1506,184 @@ draw, not the noise, as §9 says; this run shows it with the draw removed.
 | 4. Zero-move | In part. Taking JP off moved the dark zero −0.106 mA [D], inside 0.3 mA but within the zero's own wander. The deliberate move is still to run. |
 | 5. Lit vs dark | As after the first day (11-05). |
 
+#### Results on Rev 2, twelve days, 2026-11-17
+
+Step 3 again: the re-fit §9 asked for, after a week with nights and once
+the idle mean had drifted near a code boundary. Bill asked for Rev 1.1
+against Rev 2, with the JP short beside them. The data were pulled from
+InfluxDB on 2026-11-17 for 2026-09-29 to 11-17 14:00Z: the 2-s current,
+the 60-s CHARGE heartbeat and the display state [M]. HA writes on change
+only, so the current is forward-filled onto a 2-s grid.
+
+**Method.** As in the sections above, applied to every block in each
+window.
+
+- 10-min blocks, idle (|I| < 0.1 A) and dark. Each lit span plus 60 s, and
+  360 s after each Rev 1.1 button press, are removed.
+- No CHARGE gap over 150 s in the block or the 2 min before it (so no
+  reboot), and no reading held over 15 min.
+- σ: a Gaussian through the 0.7629 mA quantizer, one σ per condition, each
+  block its own mean (profiled out). Fitted only on blocks whose mean sits
+  at least 0.2 code from a boundary.
+- Uncertainty: block bootstrap, B = 2000; 95 % profile intervals on a
+  0.0005 mA grid.
+
+**Windows.**
+
+- Rev 1.1: 2026-10-01 13:00Z to 11-05 17:30Z.
+- Rev 2: 11-05 19:50:33Z (power-on) to 11-17 13:30Z, less 11-07
+  19:30–21:40Z.
+- JP: 11-07 19:40–21:30Z. That is one block fewer than the 11-07 fit: the
+  lit span to 14:42:20 EST, plus 60 s, reaches into the first block.
+
+**In short.**
+
+- **Rev 2 is quieter than Rev 1.1 over twelve days with nights**: σ 0.1715
+  against 0.2060 mA, z = −39.8 [D].
+- **JP is quieter than Rev 2**: 0.1475 mA, z = −7.0 against the block
+  bootstrap and z = −4.6 against the spread of Rev 2's daily fits [D]. JP
+  is below every Rev 2 day.
+- **The raw 2-s scatter cannot see the board change**: 0.259 against
+  0.257 mA [M]. It follows where the zero sits. On Rev 2 it ran 0.168–0.368
+  mA by day while σ held at 0.1675–0.1815 mA [M, D]. Both 2026-11-05 ledger
+  rows score HIT (below).
+- **From 8 min up both boards level near 0.023 mA**; JP shows no floor in
+  its 1.7 h [M]. Whatever sets the floor enters at or outside JP's pins
+  [I, below].
+- **Outside JP: 0.0875 mA rms**, se 0.0062, against all twelve days [D].
+  The 11-07 figure, 0.069 mA [0.046, 0.087], used that afternoon as its
+  reference. Each stands with its reference.
+- **Neither of two on-device σ estimators works** (below). The noise gauge
+  goes at the next flash, with no replacement on the device (H:/docs/pending.md P30).
+
+**σ by condition.**
+
+| condition | blocks: fitted / all | σ, mA [95 %] | bootstrap se, mA | raw 2-s scatter, median | off the modal code: predicted / measured |
+|---|---|---|---|---|---|
+| Rev 1.1 | 4,231 / 5,061 | 0.2060 [within one grid step] | 0.0004 | 0.259 mA | 13.22 % / 13.15 % |
+| Rev 2 | 1,519 / 1,650 | 0.1715 [0.1700, 0.1720] | 0.0008 | 0.257 mA | 13.01 % / 12.99 % |
+| JP | 10 / 10 | 0.1475 [0.1395, 0.1550] | 0.0034 | 0.088 mA | 1.30 % / 1.30 % |
+
+[D: σ, intervals, se and predicted shares, from the fit. M: raw scatter
+and measured shares; 1,518,300, 495,000 and 3,000 samples, 300 per
+block.]
+
+- **Rev 2 − Rev 1.1:** −0.0345 mA, se 0.0009, z = −39.8 [D].
+- **JP − Rev 2:** −0.0240 mA, se 0.0034, z = −7.0 [D].
+  - Rev 2's thirteen daily fits (below) have an SD of 0.0041 mA, more than
+    the bootstrap se [D].
+  - Taking JP as one more day: z = (0.1475 − 0.1723) / √(0.0041² +
+    0.0034²) = −4.6 [D].
+- **The model fits.** Its predicted share of samples off the modal code is
+  within 0.07 points of the measured share in all three conditions [D].
+
+**Rev 2 by UTC day.** Distance is the median distance of the block means
+from the nearest code boundary, in codes.
+
+| day | blocks: fitted / all | distance | raw 2-s scatter, median | σ, mA |
+|---|---|---|---|---|
+| 11-05 | 19 / 19 | 0.45 | 0.172 | 0.1705 |
+| 11-06 | 143 / 143 | 0.44 | 0.186 | 0.1700 |
+| 11-07 | 130 / 130 | 0.45 | 0.168 | 0.1675 |
+| 11-08 | 137 / 142 | 0.33 | 0.287 | 0.1735 |
+| 11-09 | 124 / 143 | 0.31 | 0.300 | 0.1815 |
+| 11-10 | 139 / 144 | 0.34 | 0.281 | 0.1785 |
+| 11-11 | 141 / 144 | 0.37 | 0.260 | 0.1695 |
+| 11-12 | 139 / 142 | 0.39 | 0.243 | 0.1750 |
+| 11-13 | 129 / 130 | 0.39 | 0.239 | 0.1720 |
+| 11-14 | 55 / 144 | 0.13 | 0.368 | 0.1740 |
+| 11-15 | 138 / 144 | 0.32 | 0.295 | 0.1685 |
+| 11-16 | 144 / 144 | 0.40 | 0.233 | 0.1700 |
+| 11-17 | 81 / 81 | 0.43 | 0.209 | 0.1690 |
+
+[M: distance and scatter. D: σ.] The day with the zero nearest a boundary,
+11-14, has the highest scatter and the most blocks left out of the fit.
+
+**The 2026-11-05 ledger rows, scored** (H:/CHANGELOG.md, prediction
+ledger).
+
+- *"Rev 2 is quieter by σ over a full week."* Pooled σ over 11-06 to 11-12,
+  nights included, inside 0.160–0.190 mA for a HIT.
+  - Measured: 0.1715 mA [0.1705, 0.1730] on UTC days, 0.1720 mA on EST
+    days, 953 of 988 blocks fitted [D].
+  - **HIT.**
+- *"Rev 2's visible calm is grid position."* Blocks within 0.1 code of a
+  boundary show a median 2-s scatter of at least 0.33 mA (0.381 mA
+  derived); under 0.30 mA falsifies.
+  - Measured: the 67 such blocks, 11-08 to 11-14, read 0.381 mA, quartiles
+    0.378–0.382 [M].
+  - **HIT**, scored on the blocks to 11-17 13:30Z.
+  - Rev 1.1's blocks within 0.1 code read 0.380 mA [M: 244 blocks]. On a
+    boundary the two boards look the same.
+
+**Allan deviation of the 2-s current, mA** (overlapping, on contiguous
+runs of accepted blocks [M]).
+
+| condition | runs, longest | 2 s | 8 s | 30 s | 2 min | 8 min | 20 min | 40 min |
+|---|---|---|---|---|---|---|---|---|
+| Rev 1.1 | 5, 628.8 h | 0.2773 | 0.1380 | 0.0719 | 0.0377 | 0.0236 | 0.0227 | 0.0231 |
+| Rev 2 | 11, 88.5 h | 0.2641 | 0.1312 | 0.0691 | 0.0350 | 0.0228 | 0.0255 | 0.0262 |
+| JP | 1, 1.7 h | 0.0859 | 0.0435 | 0.0233 | 0.0114 | 0.0042 | 0.0026 | 0.0008 |
+
+- **Up to 2 min** the points fall as 1/√τ, white noise. They carry the
+  same position effect as the raw scatter, so the σ table is the
+  comparison between boards.
+- **From 8 min up** both boards sit near 0.023 mA, and longer averaging
+  gains nothing.
+- **JP keeps falling.** Its long points are thin: about 12 independent
+  8-min intervals, and 2.5 at 40 min [D: 6,000 s / τ].
+- **So the floor enters at or outside JP's pins.** It is the monitor's own
+  draw wandering, or pickup on the sense path [I: falsified if a JP run of
+  several hours levels near 0.02 mA]. This data cannot split the two;
+  P-2b on Rev 2 would (§9).
+- **What it costs SOC.** The CHARGE register's own Allan deviation (Rev 2,
+  11-14 to 11-17 13:30Z) is 0.044 mA at 17 h, about 0.001 Ah a day [D:
+  × 24 h]. A constant offset is invisible here; step 2 handles it.
+
+**Outside JP, again.**
+
+- √(0.1715² − 0.1475²) = 0.0875 mA rms, se 0.0062 [D: delta method, with
+  Rev 2's se from its daily spread].
+- On 11-07 the same sum gave 0.069 mA [0.046, 0.087], against that
+  afternoon's 0.1648 mA.
+- Against 11-07's own day in this run (0.1675 mA) it is 0.079 mA [D].
+- The figure moves with the reference, and none of the three says where
+  the excess enters.
+
+**On-device noise measures, tested on these blocks.** The noise gauge
+follows the draw (11-07). Two replacements an ESP32 could run cheaply
+were tried on the same blocks [D]:
+
+| estimator, median over blocks, mA | Rev 1.1 | Rev 2 | JP | Rev 2 by day |
+|---|---|---|---|---|
+| per block, from the block's mean code and its share off the modal code | 0.2281 | 0.2295 | 0.1539 | 0.192–0.261, following position |
+| per block, from both tails: s = 1 / (Φ⁻¹(1 − p₊) − Φ⁻¹(p₋)) | 0.2073 (3,202 blocks usable) | 0.1880 (328 of 1,650) | 0.1545 (6 of 10) | 0.178–0.213, following position |
+| the pooled fit above | 0.2060 | 0.1715 | 0.1475 | 0.1675–0.1815 |
+
+- **The first cannot see the board change.** A block's mean code is
+  pulled toward the code centre when σ is under half a code. So it places
+  the zero too near the centre, and σ comes out too high [D: at μ = 0.2
+  code and σ = 0.225 code, the expected mean code is 0.09].
+- **The second needs counts on both sides of the modal code.** Most Rev 2
+  blocks have one side empty, and those that do not are the noisy ones.
+- **Only the pooled fit separates the boards.** It is a grid search over σ
+  and every block's mean, which is a job for the host.
+
+**What this does not establish.**
+
+- **JP's noise beyond one afternoon.** One run, 10 blocks.
+- **Whether the floor near 0.023 mA is the draw or pickup.**
+- **Anything about the constant offset or the gain.** σ and Allan
+  deviation are both blind to a constant. The gain was checked with a
+  clamp on 2026-11-13 (H:/CHANGELOG.md [2026.11.13]); the offset waits on
+  step 2.
+- **Reproduction from this repository.** The analysis scripts are not in
+  it.
+
+**§8.2 steps after 11-17.** Step 3, noise: re-fit over twelve days, σ
+0.1715 mA in service, 0.1475 mA with JP, 0.2060 mA on Rev 1.1 [D] (this
+section). Steps 1, 2, 4 and 5 are as after 11-07.
+
 ---
 
 ## 9. Follow-ups
@@ -1513,8 +1694,14 @@ draw, not the noise, as §9 says; this run shows it with the draw removed.
   - replace the state with a measure that tracks noise. The share of
     samples off the most common code is one, but it follows the mean's grid
     position as well.
+  - *2026-11-17: decided.* Two on-device estimators, that share among them,
+    were tested and both follow position (§8.2 "twelve days"). At Bill's
+    request the gauge and its state are deleted at the next flash made for
+    another reason, with no replacement on the device (H:/docs/pending.md
+    P30).
 - **Rev 2 σ, again.** Re-fit after a week that includes nights, and again
-  once the idle mean has drifted near a code boundary.
+  once the idle mean has drifted near a code boundary. *Done 2026-11-17
+  (§8.2 "twelve days").*
 - **`ina_offset_max_ma` (2026-11-07).** The RECON σ uses 2.67 mA, the
   datasheet limit. JP measured 3.09 mA [D, §8.2 "JP zero"]. When
   `soc_offset_ma` takes the measured offset, set the term to the
